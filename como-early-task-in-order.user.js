@@ -7,6 +7,7 @@
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/store/*/dash*
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/store/*/tasks*
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/store/*/jobs*
+// @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/store/*/task/*
 // @run-at       document-start
 // @grant        GM_xmlhttpRequest
 // @connect      drive.corp.amazon.com
@@ -181,6 +182,104 @@
       user-select: none;
     }
     #cbt-drag-bottom:hover { background: #0066cc; }
+
+    /* ── Task Detail Panel (tp) ── */
+    #cbt-tp {
+      position: fixed; top: 90px; right: 10px; width: 500px; z-index: 9999;
+      background: #fff; border: 1px solid #c8c8c8; border-radius: 4px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+      font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
+      color: #333; overflow: hidden;
+    }
+    #cbt-tp.dark { background: #000 !important; border-color: #333 !important; color: #fff !important; }
+    #cbt-tp-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 12px; background: #f5f5f5; border-bottom: 1px solid #ddd;
+    }
+    #cbt-tp.dark #cbt-tp-header { background: #111 !important; border-bottom-color: #333 !important; }
+    #cbt-tp-title { font-weight: 700; font-size: 16px; color: #333; }
+    #cbt-tp.dark #cbt-tp-title { color: #fff !important; }
+    #cbt-tp-controls { display: flex; gap: 8px; align-items: center; cursor: pointer; }
+    #cbt-tp-stats {
+      display: flex; justify-content: space-around; align-items: center;
+      flex-wrap: wrap; gap: 4px; padding: 5px 8px;
+      border-bottom: 1px solid #ddd; background: #fafafa;
+    }
+    #cbt-tp.dark #cbt-tp-stats { background: #111 !important; border-bottom-color: #333 !important; }
+    #cbt-tp-tabs {
+      display: flex; justify-content: center;
+      border-bottom: 1px solid #ddd; background: #f5f5f5;
+    }
+    #cbt-tp.dark #cbt-tp-tabs { background: #111 !important; border-bottom-color: #333 !important; }
+    .cbt-tp-tab {
+      flex: 1; text-align: center; padding: 6px 0; font-size: 14px;
+      font-weight: 600; color: #888; cursor: pointer;
+      text-transform: uppercase; letter-spacing: 0.06em;
+    }
+    .cbt-tp-tab.active { color: #0066cc; border-bottom: 2px solid #0066cc; }
+    #cbt-tp.dark .cbt-tp-tab { color: #aaa !important; }
+    #cbt-tp.dark .cbt-tp-tab.active { color: #58a6ff !important; border-bottom-color: #58a6ff !important; }
+    #cbt-tp-body { height: 160px; min-height: 160px; max-height: 160px; overflow-y: auto; background: #fff; }
+    #cbt-tp.dark #cbt-tp-body { background: #000 !important; }
+    #cbt-tp-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+    #cbt-tp-table th {
+      color: #333; font-weight: 700; font-size: 12px; text-transform: uppercase;
+      letter-spacing: 0.06em; padding: 4px 6px; text-align: center; background: #fff;
+      border-bottom: 1px solid #ddd;
+    }
+    #cbt-tp-table th:first-child { text-align: left; }
+    #cbt-tp.dark #cbt-tp-table th { background: #000 !important; color: #fff !important; border-bottom-color: #333 !important; }
+    #cbt-tp-table td {
+      padding: 5px 6px; border-bottom: 1px solid #f0f0f0;
+      vertical-align: middle; text-align: center; font-size: 15px; color: #333;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    #cbt-tp-table td:first-child { text-align: left; }
+    #cbt-tp.dark #cbt-tp-table td { color: #e6edf3 !important; border-bottom-color: #222 !important; }
+    .cbt-tp-assoc { font-size: 15px; font-weight: 700; color: #333; cursor: pointer; }
+    .cbt-tp-assoc:hover { color: #0066cc; }
+    #cbt-tp.dark .cbt-tp-assoc { color: #e6edf3 !important; }
+    #cbt-tp.dark .cbt-tp-assoc:hover { color: #58a6ff !important; }
+    .cbt-tp-ref { display: block; font-size: 10px; color: #aaa; font-family: monospace; }
+    #cbt-tp-empty { display: none; text-align: center; color: #aaa; padding: 12px; font-size: 13px; font-style: italic; }
+    #cbt-tp-search-wrap { padding: 4px 6px 2px; display: flex; align-items: center; gap: 4px; }
+    #cbt-tp-search-input {
+      flex: 1; padding: 4px 8px; background: #fff; border: 1px solid #ccc;
+      border-radius: 6px; color: #333; font-size: 13px; outline: none;
+    }
+    #cbt-tp.dark #cbt-tp-search-input { background: #111 !important; border-color: #333 !important; color: #fff !important; }
+    #cbt-tp-search-clear { font-size: 14px; border: none; background: none; cursor: pointer; color: #888; padding: 0 2px; }
+    #cbt-tp-cross, #cbt-tp-results { margin-top: 4px; }
+    .cbt-tp-section { font-size: 11px; font-weight: 800; color: #555; text-transform: uppercase;
+      padding: 5px 8px 3px; border-top: 2px solid #333; border-bottom: 1px solid #ddd;
+      background: #f5f5f5; }
+    #cbt-tp.dark .cbt-tp-section { color: #aaa !important; border-top-color: #58a6ff !important; border-bottom-color: #333 !important; background: #111 !important; }
+    .cbt-tp-row { display: table; width: 100%; border-bottom: 1px solid #f0f0f0; height: 30px; }
+    .cbt-tp-row-name { display: table-cell; width: 35%; font-size: 14px; font-weight: 700; color: #333; vertical-align: middle; padding: 3px 4px 3px 8px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .cbt-tp-row-name:hover { color: #0066cc !important; }
+    #cbt-tp.dark .cbt-tp-row-name { color: #e6edf3 !important; }
+    #cbt-tp.dark .cbt-tp-row-name:hover { color: #58a6ff !important; }
+    .cbt-tp-row-mid { display: table-cell; width: 40%; font-size: 12px; color: #888; text-align: center; vertical-align: middle; font-family: "Courier New", monospace; }
+    #cbt-tp.dark .cbt-tp-row-mid { color: #666 !important; }
+    .cbt-tp-row-rate { display: table-cell; width: 25%; font-size: 15px; font-weight: 700; text-align: right; vertical-align: middle; padding: 3px 8px 3px 4px; font-family: "Courier New", monospace; }
+    #cbt-tp-updated { text-align: right; color: #bbb; font-size: 11px; margin-top: 2px; padding: 0 6px 4px; }
+    #cbt-tp-hist-table, #cbt-tp-weekly-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+    #cbt-tp-hist-table th, #cbt-tp-weekly-table th {
+      font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+      padding: 4px 6px; text-align: center; background: #fff; border-bottom: 1px solid #ddd; color: #333;
+    }
+    #cbt-tp-hist-table th:first-child, #cbt-tp-weekly-table th:first-child { text-align: left; }
+    #cbt-tp.dark #cbt-tp-hist-table th, #cbt-tp.dark #cbt-tp-weekly-table th { background: #000 !important; color: #fff !important; border-bottom-color: #333 !important; }
+    #cbt-tp-hist-table td, #cbt-tp-weekly-table td {
+      padding: 4px 6px; border-bottom: 1px solid #f0f0f0;
+      vertical-align: middle; text-align: center; font-size: 14px; color: #333; white-space: nowrap;
+    }
+    #cbt-tp-hist-table td:first-child, #cbt-tp-weekly-table td:first-child { text-align: left; }
+    #cbt-tp.dark #cbt-tp-hist-table td, #cbt-tp.dark #cbt-tp-weekly-table td { color: #e6edf3 !important; border-bottom-color: #222 !important; }
+    #cbt-tp-hist-summary, #cbt-tp-weekly-summary {
+      display: flex; justify-content: space-around; padding: 5px 4px 6px; border-bottom: 1px solid #ddd;
+    }
+    #cbt-tp.dark #cbt-tp-hist-summary, #cbt-tp.dark #cbt-tp-weekly-summary { border-bottom-color: #333 !important; }
   `;
 
   /* ══════════════════════════════════════════
@@ -692,11 +791,21 @@
     if (document.getElementById('cbt-panel')) return;
     var utilEl = document.querySelector('utilization.dashboard-utilization');
     if (!utilEl) utilEl = document.querySelector('utilization');
-    if (!utilEl) return;
+
     if (!_panel2Ref) {
       _panel2Ref = buildPanel();
       attachPanelEvents(_panel2Ref);
     }
+
+    if (!utilEl) return;
+
+    // Dashboard page — reset styling
+    _panel2Ref.style.position = '';
+    _panel2Ref.style.top = '';
+    _panel2Ref.style.right = '';
+    _panel2Ref.style.width = '';
+    _panel2Ref.style.zIndex = '';
+
     try {
       var savedH = localStorage.getItem('cbt_body_h');
       var body0  = _panel2Ref.querySelector('#cbt-body');
@@ -1129,8 +1238,349 @@
     });
   }
 
+  /* ── Task Detail Panel ── */
+  var _tpRef = null, _tpActiveTab = 'live', _tpLiveSort = 'rate', _tpLiveSortAsc = false;
+  var _tpHistSort = 'avgRate', _tpHistSortAsc = false, _tpWeeklySort = 'avgRate', _tpWeeklySortAsc = false;
+  var _tpLiveTerm = '', _tpHistTerm = '', _tpWeeklyTerm = '';
+
+  function buildTaskPanel() {
+    var p = document.createElement('div');
+    p.id = 'cbt-tp';
+    var isDark = localStorage.getItem('cbt_dark') !== '0';
+    if (isDark) p.classList.add('dark');
+
+    p.innerHTML =
+      '<div id="cbt-tp-header">' +
+        '<span id="cbt-tp-title">⏱ Batcher Timers</span>' +
+        '<div id="cbt-tp-controls">' +
+          '<span id="cbt-tp-theme" title="Toggle Dark/Light" style="font-size:16px;cursor:pointer;">' + (isDark?'☀️':'🌙') + '</span>' +
+          '<span id="cbt-tp-collapse" title="Collapse" style="font-size:16px;cursor:pointer;">🔼</span>' +
+        '</div>' +
+      '</div>' +
+      '<div id="cbt-tp-stats">' +
+        '<span style="font-size:14px;font-weight:700;">🦺 Batchers: <b id="cbt-tp-ip" style="color:#0066cc;">—</b></span>' +
+        '<span style="font-size:14px;font-weight:700;">📊 Rec: <b id="cbt-tp-rec" style="color:#0066cc;">—</b><span id="cbt-tp-dot" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:gray;margin-left:5px;vertical-align:middle;"></span></span>' +
+        '<span style="font-size:14px;font-weight:700;">📦 Rem: <b id="cbt-tp-rem" style="color:#0066cc;">—</b></span>' +
+      '</div>' +
+      '<div id="cbt-tp-tabs">' +
+        '<div class="cbt-tp-tab active" data-tab="live">Live</div>' +
+        '<div class="cbt-tp-tab" data-tab="history">Today</div>' +
+        '<div class="cbt-tp-tab" data-tab="weekly">Weekly</div>' +
+      '</div>' +
+      '<div id="cbt-tp-body">' +
+        // Live view
+        '<div id="cbt-tp-live-view">' +
+          '<div id="cbt-tp-search-wrap"><input id="cbt-tp-search-input" type="text" placeholder="Search any associate..."/><button id="cbt-tp-search-clear" style="font-size:13px;border:none;background:none;cursor:pointer;color:#888;">✕</button></div>' +
+          '<table id="cbt-tp-table"><thead><tr>' +
+            '<th style="width:40%;">Associate</th>' +
+            '<th style="width:30%;">Elapsed</th>' +
+            '<th style="width:30%;">Bags/min ▼</th>' +
+          '</tr></thead><tbody id="cbt-tp-tbody"></tbody></table>' +
+          '<div id="cbt-tp-empty">No active batching tasks</div>' +
+          '<div id="cbt-tp-results"></div>' +
+          '<div id="cbt-tp-updated"></div>' +
+        '</div>' +
+        // Today view
+        '<div id="cbt-tp-hist-view" style="display:none;">' +
+          '<div id="cbt-tp-search-wrap-hist" style="padding:4px 6px 2px;display:flex;align-items:center;gap:4px;"><input id="cbt-tp-hist-input" type="text" placeholder="Search associate..."/><button id="cbt-tp-hist-clear" style="font-size:13px;border:none;background:none;cursor:pointer;color:#888;">✕</button></div>' +
+          '<div id="cbt-tp-hist-summary"></div>' +
+          '<table id="cbt-tp-hist-table"><thead><tr>' +
+            '<th style="width:40%;">Associate</th>' +
+            '<th style="width:15%;">Runs</th>' +
+            '<th style="width:20%;">Pkgs</th>' +
+            '<th style="width:25%;">Avg Rate ▼</th>' +
+          '</tr></thead><tbody id="cbt-tp-hist-tbody"></tbody></table>' +
+          '<div id="cbt-tp-hist-empty" style="display:none;text-align:center;color:#aaa;padding:12px;font-size:13px;font-style:italic;">No history yet today</div>' +
+          '<div id="cbt-tp-hist-cross"></div>' +
+        '</div>' +
+        // Weekly view
+        '<div id="cbt-tp-weekly-view" style="display:none;">' +
+          '<div id="cbt-tp-search-wrap-weekly" style="padding:4px 6px 2px;display:flex;align-items:center;gap:4px;"><input id="cbt-tp-weekly-input" type="text" placeholder="Search associate..."/><button id="cbt-tp-weekly-clear" style="font-size:13px;border:none;background:none;cursor:pointer;color:#888;">✕</button></div>' +
+          '<div id="cbt-tp-weekly-summary"></div>' +
+          '<table id="cbt-tp-weekly-table"><thead><tr>' +
+            '<th style="width:35%;">Associate</th>' +
+            '<th style="width:12%;">Days</th>' +
+            '<th style="width:13%;">Runs</th>' +
+            '<th style="width:15%;">Pkgs</th>' +
+            '<th style="width:25%;">Avg Rate ▼</th>' +
+          '</tr></thead><tbody id="cbt-tp-weekly-tbody"></tbody></table>' +
+          '<div id="cbt-tp-weekly-empty" style="display:none;text-align:center;color:#aaa;padding:12px;font-size:13px;font-style:italic;">No weekly data yet</div>' +
+          '<div id="cbt-tp-weekly-cross"></div>' +
+        '</div>' +
+      '</div>';
+
+    return p;
+  }
+
+  function tpRenderLive() {
+    var tbody = document.getElementById('cbt-tp-tbody');
+    var empty = document.getElementById('cbt-tp-empty');
+    var ipEl  = document.getElementById('cbt-tp-ip');
+    var recEl = document.getElementById('cbt-tp-rec');
+    var remEl = document.getElementById('cbt-tp-rem');
+    var upEl  = document.getElementById('cbt-tp-updated');
+    if (!tbody) return;
+
+    var rows = []; taskCache.forEach(function(d){ if(d.state==='BATCHING') rows.push(d); });
+    if (ipEl) ipEl.textContent = rows.length;
+    if (remEl) remEl.textContent = typeof remaining !== 'undefined' ? remaining : '—';
+    if (recEl) {
+      var rec = document.getElementById('cbt-stat-rec');
+      recEl.textContent = rec ? rec.textContent : '—';
+    }
+    if (upEl) upEl.textContent = 'updated ' + new Date().toLocaleTimeString();
+
+    // Filter by search
+    if (_tpLiveTerm) {
+      var t = _tpLiveTerm.toLowerCase();
+      rows = rows.filter(function(d){ return (d.associateId||d.associate||d.driverAssignment||d.shortClientRef||'').toLowerCase().indexOf(t) !== -1; });
+    }
+
+    if (rows.length === 0) { tbody.innerHTML = ''; empty.style.display = 'block'; tpRenderLiveSearch(_tpLiveTerm); return; }
+    empty.style.display = 'none';
+
+    rows.sort(function(a,b){ var ra=computeRow(a).scanRate||0, rb=computeRow(b).scanRate||0; return _tpLiveSortAsc?ra-rb:rb-ra; });
+    var html = '';
+    rows.forEach(function(d){
+      var r = computeRow(d);
+      var name = d.associateId||d.associate||d.driverAssignment||d.shortClientRef||'—';
+      var ref  = d.shortClientRef||'';
+      var rateCls = !r.scanRate?'color:#aaa':r.scanRate>=WARN_RATE?'color:#2a9d2a':r.scanRate>=ALERT_RATE?'color:#e6a817':'color:#cc0000';
+      var elCls   = (r.elapsedMin||0)>=ALERT_ELAPSED_MIN?'color:#cc2200':(r.elapsedMin||0)>=WARN_ELAPSED_MIN?'color:#cc8800':'color:#2a9d2a';
+      var slow = r.scanRate && r.scanRate < ALERT_RATE && (r.elapsedMin||0) > 2 ? '<span class="cbt-slow-alert">⚠ SLOW</span>' : '';
+      html += '<tr><td><span class="cbt-tp-assoc">' + name + slow + '</span><span class="cbt-tp-ref">' + ref + '</span></td>' +
+        '<td style="font-family:Courier New,monospace;font-size:14px;font-weight:700;' + elCls + ';">' + (r.elapsedStr||'—') + '</td>' +
+        '<td style="font-family:Courier New,monospace;font-size:14px;font-weight:700;' + rateCls + ';">' + (r.scanRate?r.scanRate.toFixed(1):'—') + '</td></tr>';
+    });
+    tbody.innerHTML = html;
+    tpRenderLiveSearch(_tpLiveTerm);
+  }
+
+  function tpRenderLiveSearch(term) {
+    var el = document.getElementById('cbt-tp-results'); if (!el) return;
+    if (!term) { el.innerHTML = ''; return; }
+    term = term.toLowerCase();
+    var html = '';
+    var hist = loadHistory(), hEntries = Object.values(hist).filter(function(e){ return e.assoc.toLowerCase().indexOf(term) !== -1; });
+    if (hEntries.length) {
+      html += '<div class="cbt-tp-section">📅 Today</div>';
+      hEntries.forEach(function(e){
+        var rc = e.avgRate>=WARN_RATE?'color:#2a9d2a':e.avgRate>=ALERT_RATE?'color:#e6a817':'color:#cc0000';
+        html += '<div class="cbt-tp-row"><span class="cbt-tp-row-name">' + e.assoc + '</span><span class="cbt-tp-row-mid">' + e.runs + ' runs | ' + e.totalPkgs + ' pkgs</span><span class="cbt-tp-row-rate" style="' + rc + ';">' + e.avgRate.toFixed(1) + '</span></div>';
+      });
+    }
+    var weekly = pruneWeeklyOlderThan(WEEKLY_DAYS), agg = {};
+    for (var dk of Object.keys(weekly)) {
+      for (var a of Object.keys(weekly[dk])) {
+        if (a.toLowerCase().indexOf(term) === -1) continue;
+        if (!agg[a]) agg[a] = {assoc:a,totalPkgs:0,totalSec:0,runs:0,daysSet:new Set()};
+        agg[a].totalPkgs += weekly[dk][a].totalPkgs; agg[a].totalSec += weekly[dk][a].totalSec;
+        agg[a].runs += weekly[dk][a].runs; agg[a].daysSet.add(dk);
+      }
+    }
+    var wEntries = Object.values(agg);
+    if (wEntries.length) {
+      html += '<div class="cbt-tp-section">📆 Weekly</div>';
+      wEntries.forEach(function(e){
+        var avg = e.totalPkgs/(e.totalSec/60);
+        var rc = avg>=WARN_RATE?'color:#2a9d2a':avg>=ALERT_RATE?'color:#e6a817':'color:#cc0000';
+        html += '<div class="cbt-tp-row"><span class="cbt-tp-row-name">' + e.assoc + '</span><span class="cbt-tp-row-mid">' + e.daysSet.size + ' days | ' + e.totalPkgs + ' pkgs</span><span class="cbt-tp-row-rate" style="' + rc + ';">' + avg.toFixed(1) + '</span></div>';
+      });
+    }
+    if (!html) html = '<div style="text-align:center;color:#aaa;padding:8px;font-size:12px;">No results for "' + term + '"</div>';
+    el.innerHTML = html;
+  }
+
+  function tpRenderHistory() {
+    var tbody = document.getElementById('cbt-tp-hist-tbody');
+    var empty = document.getElementById('cbt-tp-hist-empty');
+    var sumEl = document.getElementById('cbt-tp-hist-summary');
+    if (!tbody) return;
+    var hist = loadHistory(), entries = Object.values(hist);
+    if (entries.length === 0) { tbody.innerHTML = ''; empty.style.display = 'block'; if(sumEl)sumEl.innerHTML=''; tpRenderHistCross(_tpHistTerm); return; }
+    empty.style.display = 'none';
+    if (sumEl) {
+      var tS=entries.reduce(function(s,e){return s+e.totalSec;},0);
+      var oR=entries.reduce(function(s,e){return s+e.totalPkgs;},0)/(tS/60);
+      sumEl.innerHTML='<div style="text-align:center;"><span style="font-size:16px;font-weight:700;color:#333;">' + entries.length + '</span><br><span style="font-size:11px;color:#666;">BATCHERS</span></div>' +
+        '<div style="text-align:center;"><span style="font-size:16px;font-weight:700;color:#333;">' + oR.toFixed(1) + '</span><br><span style="font-size:11px;color:#666;">AVG RATE</span></div>';
+    }
+    var filtered = entries;
+    if (_tpHistTerm) { var tt=_tpHistTerm.toLowerCase(); filtered=entries.filter(function(e){return e.assoc.toLowerCase().indexOf(tt)!==-1;}); }
+    filtered.sort(function(a,b){ var va,vb;
+      if(_tpHistSort==='assoc'){return _tpHistSortAsc?a.assoc.localeCompare(b.assoc):b.assoc.localeCompare(a.assoc);}
+      else if(_tpHistSort==='runs'){va=a.runs;vb=b.runs;} else if(_tpHistSort==='pkgs'){va=a.totalPkgs;vb=b.totalPkgs;} else{va=a.avgRate;vb=b.avgRate;}
+      return _tpHistSortAsc?va-vb:vb-va;
+    });
+    var html=''; filtered.forEach(function(e,i){
+      var rc=e.avgRate>=WARN_RATE?'color:#2a9d2a':e.avgRate>=ALERT_RATE?'color:#e6a817':'color:#cc0000';
+      html+='<tr><td><span class="cbt-tp-assoc">' + e.assoc + '</span></td><td>' + e.runs + '</td><td>' + e.totalPkgs + '</td><td style="font-family:Courier New,monospace;font-size:14px;font-weight:700;' + rc + ';">' + e.avgRate.toFixed(1) + '</td></tr>';
+    });
+    tbody.innerHTML = html;
+    tpRenderHistCross(_tpHistTerm);
+  }
+
+  function tpRenderHistCross(term) {
+    var el = document.getElementById('cbt-tp-hist-cross'); if (!el) return;
+    if (!term) { el.innerHTML = ''; return; }
+    term = term.toLowerCase();
+    var weekly = pruneWeeklyOlderThan(WEEKLY_DAYS), agg = {};
+    for (var dk of Object.keys(weekly)) {
+      for (var a of Object.keys(weekly[dk])) {
+        if (a.toLowerCase().indexOf(term)===-1) continue;
+        if (!agg[a]) agg[a]={assoc:a,totalPkgs:0,totalSec:0,runs:0,daysSet:new Set()};
+        agg[a].totalPkgs+=weekly[dk][a].totalPkgs; agg[a].totalSec+=weekly[dk][a].totalSec;
+        agg[a].runs+=weekly[dk][a].runs; agg[a].daysSet.add(dk);
+      }
+    }
+    var entries = Object.values(agg); if (!entries.length) { el.innerHTML=''; return; }
+    var html='<div class="cbt-tp-section">📆 Also in Weekly</div>';
+    entries.forEach(function(e){
+      var avg=e.totalPkgs/(e.totalSec/60); var rc=avg>=WARN_RATE?'color:#2a9d2a':avg>=ALERT_RATE?'color:#e6a817':'color:#cc0000';
+      html+='<div class="cbt-tp-row"><span class="cbt-tp-row-name">'+e.assoc+'</span><span class="cbt-tp-row-mid">'+e.daysSet.size+' days | '+e.totalPkgs+' pkgs</span><span class="cbt-tp-row-rate" style="'+rc+';">'+avg.toFixed(1)+'</span></div>';
+    });
+    el.innerHTML = html;
+  }
+
+  function tpRenderWeekly() {
+    var tbody = document.getElementById('cbt-tp-weekly-tbody');
+    var empty = document.getElementById('cbt-tp-weekly-empty');
+    var sumEl = document.getElementById('cbt-tp-weekly-summary');
+    if (!tbody) return;
+    var weekly = pruneWeeklyOlderThan(WEEKLY_DAYS), agg = {};
+    for (var dk of Object.keys(weekly)) {
+      for (var a of Object.keys(weekly[dk])) {
+        if (!agg[a]) agg[a]={assoc:a,totalPkgs:0,totalSec:0,runs:0,daysSet:new Set()};
+        agg[a].totalPkgs+=weekly[dk][a].totalPkgs; agg[a].totalSec+=weekly[dk][a].totalSec;
+        agg[a].runs+=weekly[dk][a].runs; agg[a].daysSet.add(dk);
+      }
+    }
+    var entries = Object.values(agg);
+    if (!entries.length) { tbody.innerHTML=''; empty.style.display='block'; if(sumEl)sumEl.innerHTML=''; tpRenderWeeklyCross(_tpWeeklyTerm); return; }
+    empty.style.display = 'none';
+    if (sumEl) {
+      var tS=entries.reduce(function(s,e){return s+e.totalSec;},0);
+      var oR=entries.reduce(function(s,e){return s+e.totalPkgs;},0)/(tS/60);
+      sumEl.innerHTML='<div style="text-align:center;"><span style="font-size:16px;font-weight:700;color:#333;">'+entries.length+'</span><br><span style="font-size:11px;color:#666;">BATCHERS</span></div>'+
+        '<div style="text-align:center;"><span style="font-size:16px;font-weight:700;color:#333;">'+oR.toFixed(1)+'</span><br><span style="font-size:11px;color:#666;">AVG RATE</span></div>';
+    }
+    var filtered = entries;
+    if (_tpWeeklyTerm) { var tt=_tpWeeklyTerm.toLowerCase(); filtered=entries.filter(function(e){return e.assoc.toLowerCase().indexOf(tt)!==-1;}); }
+    filtered.sort(function(a,b){
+      var va=a.totalPkgs/(a.totalSec/60), vb=b.totalPkgs/(b.totalSec/60);
+      if(_tpWeeklySort==='assoc'){return _tpWeeklySortAsc?a.assoc.localeCompare(b.assoc):b.assoc.localeCompare(a.assoc);}
+      else if(_tpWeeklySort==='days'){va=a.daysSet.size;vb=b.daysSet.size;}
+      else if(_tpWeeklySort==='runs'){va=a.runs;vb=b.runs;}
+      else if(_tpWeeklySort==='pkgs'){va=a.totalPkgs;vb=b.totalPkgs;}
+      return _tpWeeklySortAsc?va-vb:vb-va;
+    });
+    var html=''; filtered.forEach(function(e){
+      var avg=e.totalPkgs/(e.totalSec/60);
+      var rc=avg>=WARN_RATE?'color:#2a9d2a':avg>=ALERT_RATE?'color:#e6a817':'color:#cc0000';
+      var hrs=Math.round(e.totalSec/60);
+      html+='<tr><td><span class="cbt-tp-assoc">'+e.assoc+'</span></td><td>'+e.daysSet.size+'</td><td>'+e.runs+'</td><td>'+e.totalPkgs+'</td><td style="font-family:Courier New,monospace;font-size:14px;font-weight:700;'+rc+';">'+avg.toFixed(1)+'</td></tr>';
+    });
+    tbody.innerHTML = html;
+    tpRenderWeeklyCross(_tpWeeklyTerm);
+  }
+
+  function tpRenderWeeklyCross(term) {
+    var el = document.getElementById('cbt-tp-weekly-cross'); if (!el) return;
+    if (!term) { el.innerHTML=''; return; }
+    term = term.toLowerCase();
+    var hist = loadHistory(), entries = Object.values(hist).filter(function(e){ return e.assoc.toLowerCase().indexOf(term)!==-1; });
+    if (!entries.length) { el.innerHTML=''; return; }
+    var html='<div class="cbt-tp-section">📅 Also in Today</div>';
+    entries.forEach(function(e){
+      var rc=e.avgRate>=WARN_RATE?'color:#2a9d2a':e.avgRate>=ALERT_RATE?'color:#e6a817':'color:#cc0000';
+      html+='<div class="cbt-tp-row"><span class="cbt-tp-row-name">'+e.assoc+'</span><span class="cbt-tp-row-mid">'+e.runs+' runs | '+e.totalPkgs+' pkgs</span><span class="cbt-tp-row-rate" style="'+rc+';">'+e.avgRate.toFixed(1)+'</span></div>';
+    });
+    el.innerHTML = html;
+  }
+
+  function tpAttachEvents(tp) {
+    // Dark mode toggle
+    var themeBtn = tp.querySelector('#cbt-tp-theme');
+    if (themeBtn) themeBtn.addEventListener('click', function(){
+      var isDark = tp.classList.toggle('dark');
+      localStorage.setItem('cbt_dark', isDark ? '1' : '0');
+      themeBtn.textContent = isDark ? '☀️' : '🌙';
+    });
+
+    // Collapse toggle
+    var colBtn = tp.querySelector('#cbt-tp-collapse');
+    var tpBody = tp.querySelector('#cbt-tp-body');
+    var tpTabs = tp.querySelector('#cbt-tp-tabs');
+    var tpStats = tp.querySelector('#cbt-tp-stats');
+    var collapsed = false;
+    if (colBtn) colBtn.addEventListener('click', function(){
+      collapsed = !collapsed;
+      if (tpBody) tpBody.style.display = collapsed ? 'none' : '';
+      if (tpTabs) tpTabs.style.display = collapsed ? 'none' : '';
+      colBtn.textContent = collapsed ? '🔽' : '🔼';
+    });
+
+    // Tab switching
+    tp.querySelectorAll('.cbt-tp-tab').forEach(function(tab){
+      tab.addEventListener('click', function(){
+        tp.querySelectorAll('.cbt-tp-tab').forEach(function(t){ t.classList.remove('active'); });
+        tab.classList.add('active');
+        _tpActiveTab = tab.dataset.tab;
+        // Clear search
+        var si = tp.querySelector('#cbt-tp-search-input'); if(si){si.value='';_tpLiveTerm='';}
+        var hi = tp.querySelector('#cbt-tp-hist-input'); if(hi){hi.value='';_tpHistTerm='';}
+        var wi = tp.querySelector('#cbt-tp-weekly-input'); if(wi){wi.value='';_tpWeeklyTerm='';}
+        var lr = tp.querySelector('#cbt-tp-results'); if(lr) lr.innerHTML='';
+        var hc = tp.querySelector('#cbt-tp-hist-cross'); if(hc) hc.innerHTML='';
+        var wc = tp.querySelector('#cbt-tp-weekly-cross'); if(wc) wc.innerHTML='';
+        tp.querySelector('#cbt-tp-live-view').style.display    = _tpActiveTab==='live'    ? '' : 'none';
+        tp.querySelector('#cbt-tp-hist-view').style.display    = _tpActiveTab==='history' ? '' : 'none';
+        tp.querySelector('#cbt-tp-weekly-view').style.display  = _tpActiveTab==='weekly'  ? '' : 'none';
+        if (_tpActiveTab==='history') tpRenderHistory();
+        if (_tpActiveTab==='weekly')  tpRenderWeekly();
+        if (_tpActiveTab==='live')    tpRenderLive();
+      });
+    });
+
+    // Search inputs
+    tp.addEventListener('input', function(e){
+      if (e.target.id==='cbt-tp-search-input')  { _tpLiveTerm=e.target.value; tpRenderLive(); }
+      if (e.target.id==='cbt-tp-hist-input')    { _tpHistTerm=e.target.value; tpRenderHistory(); }
+      if (e.target.id==='cbt-tp-weekly-input')  { _tpWeeklyTerm=e.target.value; tpRenderWeekly(); }
+    });
+
+    // Clear buttons
+    tp.addEventListener('click', function(e){
+      if (e.target.id==='cbt-tp-search-clear')  { var i=tp.querySelector('#cbt-tp-search-input');  if(i){i.value='';_tpLiveTerm='';tpRenderLive();} }
+      if (e.target.id==='cbt-tp-hist-clear')    { var i=tp.querySelector('#cbt-tp-hist-input');    if(i){i.value='';_tpHistTerm='';tpRenderHistory();} }
+      if (e.target.id==='cbt-tp-weekly-clear')  { var i=tp.querySelector('#cbt-tp-weekly-input');  if(i){i.value='';_tpWeeklyTerm='';tpRenderWeekly();} }
+      // Copy name on click
+      var nameEl = e.target.closest('.cbt-tp-assoc, .cbt-tp-row-name');
+      if (nameEl && tp.contains(nameEl)) {
+        var text = nameEl.textContent.replace(/⚠ SLOW/g,'').trim();
+        navigator.clipboard.writeText(text).then(function(){
+          var prev = nameEl.style.color; nameEl.style.color='#2a9d2a';
+          setTimeout(function(){ nameEl.style.color=prev; }, 600);
+        });
+      }
+    });
+  }
+
+  function injectTaskPanel() {
+    if (document.getElementById('cbt-tp')) return;
+    if (!document.querySelector('div.job-details')) return;
+    _tpRef = buildTaskPanel();
+    document.body.appendChild(_tpRef);
+    tpAttachEvents(_tpRef);
+    tpRenderLive(); tpRenderHistory(); tpRenderWeekly();
+    setInterval(function(){ if(_tpActiveTab==='live') tpRenderLive(); }, 1000);
+  }
+
   var panelWatcher = new MutationObserver(function() {
     if (!document.getElementById('cbt-panel')) injectPanel();
+    var isTaskPage = document.querySelector('div.job-details') !== null;
+    if (isTaskPage && !document.getElementById('cbt-tp')) injectTaskPanel();
+    if (!isTaskPage && document.getElementById('cbt-tp')) { document.getElementById('cbt-tp').remove(); _tpRef = null; }
   });
 
   function start() {
@@ -1142,6 +1592,7 @@
     fetchAndUpdate();
     panelWatcher.observe(document.documentElement, { childList: true, subtree: true });
     injectPanel();
+    injectTaskPanel();
     pollActiveTasks();
     setInterval(pollActiveTasks, POLL_MS);
     setInterval(tickLive, TICK_MS);
