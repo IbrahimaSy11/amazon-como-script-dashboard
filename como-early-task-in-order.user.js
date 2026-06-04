@@ -1055,8 +1055,8 @@
     });
     rows.sort(function(a,b){
       var ra=computeRow(a),rb=computeRow(b);
-      var slowA = ra.scanRate && ra.scanRate < ALERT_RATE && (ra.elapsedMin||0) > 2;
-      var slowB = rb.scanRate && rb.scanRate < ALERT_RATE && (rb.elapsedMin||0) > 2;
+      var slowA = ra.scanRate && ra.scanRate < ALERT_RATE && (ra.elapsedSec||0) > 120;
+      var slowB = rb.scanRate && rb.scanRate < ALERT_RATE && (rb.elapsedSec||0) > 120;
       // Slow batchers always go to top
       if (slowA && !slowB) return -1;
       if (!slowA && slowB) return 1;
