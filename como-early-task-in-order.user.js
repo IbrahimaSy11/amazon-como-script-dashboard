@@ -1054,7 +1054,16 @@
       }
     });
     rows.sort(function(a,b){
-      var ra=computeRow(a),rb=computeRow(b),va,vb;
+      var ra=computeRow(a),rb=computeRow(b);
+      var slowA = ra.scanRate && ra.scanRate < ALERT_RATE && (ra.elapsedMin||0) > 2;
+      var slowB = rb.scanRate && rb.scanRate < ALERT_RATE && (rb.elapsedMin||0) > 2;
+      // Slow batchers always go to top
+      if (slowA && !slowB) return -1;
+      if (!slowA && slowB) return 1;
+      // Among slow batchers: slowest first
+      if (slowA && slowB) return (ra.scanRate||0) - (rb.scanRate||0);
+      // Normal sort for non-slow batchers
+      var va, vb;
       if(liveSortKey==='assoc'){va=(a.associateId||a.associate||'').toLowerCase();vb=(b.associateId||b.associate||'').toLowerCase();return liveSortAsc?va.localeCompare(vb):vb.localeCompare(va);}
       else if(liveSortKey==='rate'){va=ra.scanRate||0;vb=rb.scanRate||0;}
       else{va=ra.elapsedSec||0;vb=rb.elapsedSec||0;}
