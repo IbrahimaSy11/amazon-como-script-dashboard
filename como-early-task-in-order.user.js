@@ -254,7 +254,8 @@
       padding: 5px 8px 3px; border-top: 2px solid #333; border-bottom: 1px solid #ddd;
       background: #f5f5f5; }
     #cbt-tp.dark .cbt-tp-section { color: #aaa !important; border-top-color: #58a6ff !important; border-bottom-color: #333 !important; background: #111 !important; }
-    .cbt-tp-row { display: table; width: 100%; border-bottom: 1px solid #f0f0f0; height: 30px; }
+    .cbt-tp-row { display: table; width: 100%; border-bottom: 1px solid #f0f0f0; height: 36px; margin: 0; box-sizing: border-box; }
+    #cbt-tp.dark .cbt-tp-row { border-bottom-color: #222 !important; }
     .cbt-tp-row-name { display: table-cell; width: 35%; font-size: 14px; font-weight: 700; color: #333; vertical-align: middle; padding: 3px 4px 3px 8px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .cbt-tp-row-name:hover { color: #0066cc !important; }
     #cbt-tp.dark .cbt-tp-row-name { color: #e6edf3 !important; }
