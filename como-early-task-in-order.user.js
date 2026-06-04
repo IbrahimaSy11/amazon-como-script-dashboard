@@ -185,7 +185,7 @@
 
     /* ── Task Detail Panel (tp) ── */
     #cbt-tp {
-      position: fixed; top: 90px; right: 10px; width: 500px; z-index: 9999;
+      position: fixed !important; top: 90px !important; right: 10px !important; width: 500px !important; z-index: 9999 !important;
       background: #fff; border: 1px solid #c8c8c8; border-radius: 4px;
       box-shadow: 0 4px 20px rgba(0,0,0,0.15);
       font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
@@ -1251,62 +1251,17 @@
 
     p.innerHTML =
       '<div id="cbt-tp-header">' +
-        '<span id="cbt-tp-title">⏱ Batcher Timers</span>' +
+        '<span id="cbt-tp-title">🔍 Search Associate</span>' +
         '<div id="cbt-tp-controls">' +
           '<span id="cbt-tp-theme" title="Toggle Dark/Light" style="font-size:16px;cursor:pointer;">' + (isDark?'☀️':'🌙') + '</span>' +
-          '<span id="cbt-tp-collapse" title="Collapse" style="font-size:16px;cursor:pointer;">🔼</span>' +
         '</div>' +
-      '</div>' +
-      '<div id="cbt-tp-stats">' +
-        '<span style="font-size:14px;font-weight:700;">🦺 Batchers: <b id="cbt-tp-ip" style="color:#0066cc;">—</b></span>' +
-        '<span style="font-size:14px;font-weight:700;">📊 Rec: <b id="cbt-tp-rec" style="color:#0066cc;">—</b><span id="cbt-tp-dot" style="display:inline-block;width:10px;height:10px;border-radius:50%;background:gray;margin-left:5px;vertical-align:middle;"></span></span>' +
-        '<span style="font-size:14px;font-weight:700;">📦 Rem: <b id="cbt-tp-rem" style="color:#0066cc;">—</b></span>' +
-      '</div>' +
-      '<div id="cbt-tp-tabs">' +
-        '<div class="cbt-tp-tab active" data-tab="live">Live</div>' +
-        '<div class="cbt-tp-tab" data-tab="history">Today</div>' +
-        '<div class="cbt-tp-tab" data-tab="weekly">Weekly</div>' +
       '</div>' +
       '<div id="cbt-tp-body">' +
-        // Live view
-        '<div id="cbt-tp-live-view">' +
-          '<div id="cbt-tp-search-wrap"><input id="cbt-tp-search-input" type="text" placeholder="Search any associate..."/><button id="cbt-tp-search-clear" style="font-size:13px;border:none;background:none;cursor:pointer;color:#888;">✕</button></div>' +
-          '<table id="cbt-tp-table"><thead><tr>' +
-            '<th style="width:40%;">Associate</th>' +
-            '<th style="width:30%;">Elapsed</th>' +
-            '<th style="width:30%;">Bags/min ▼</th>' +
-          '</tr></thead><tbody id="cbt-tp-tbody"></tbody></table>' +
-          '<div id="cbt-tp-empty">No active batching tasks</div>' +
-          '<div id="cbt-tp-results"></div>' +
-          '<div id="cbt-tp-updated"></div>' +
+        '<div style="padding:6px 8px;display:flex;align-items:center;gap:6px;">' +
+          '<input id="cbt-tp-search-input" type="text" placeholder="Search any associate..." style="flex:1;padding:6px 10px;border:1px solid #ccc;border-radius:6px;font-size:14px;outline:none;"/>' +
+          '<button id="cbt-tp-search-clear" style="font-size:14px;border:none;background:none;cursor:pointer;color:#888;padding:0 4px;">✕</button>' +
         '</div>' +
-        // Today view
-        '<div id="cbt-tp-hist-view" style="display:none;">' +
-          '<div id="cbt-tp-search-wrap-hist" style="padding:4px 6px 2px;display:flex;align-items:center;gap:4px;"><input id="cbt-tp-hist-input" type="text" placeholder="Search associate..."/><button id="cbt-tp-hist-clear" style="font-size:13px;border:none;background:none;cursor:pointer;color:#888;">✕</button></div>' +
-          '<div id="cbt-tp-hist-summary"></div>' +
-          '<table id="cbt-tp-hist-table"><thead><tr>' +
-            '<th style="width:40%;">Associate</th>' +
-            '<th style="width:15%;">Runs</th>' +
-            '<th style="width:20%;">Pkgs</th>' +
-            '<th style="width:25%;">Avg Rate ▼</th>' +
-          '</tr></thead><tbody id="cbt-tp-hist-tbody"></tbody></table>' +
-          '<div id="cbt-tp-hist-empty" style="display:none;text-align:center;color:#aaa;padding:12px;font-size:13px;font-style:italic;">No history yet today</div>' +
-          '<div id="cbt-tp-hist-cross"></div>' +
-        '</div>' +
-        // Weekly view
-        '<div id="cbt-tp-weekly-view" style="display:none;">' +
-          '<div id="cbt-tp-search-wrap-weekly" style="padding:4px 6px 2px;display:flex;align-items:center;gap:4px;"><input id="cbt-tp-weekly-input" type="text" placeholder="Search associate..."/><button id="cbt-tp-weekly-clear" style="font-size:13px;border:none;background:none;cursor:pointer;color:#888;">✕</button></div>' +
-          '<div id="cbt-tp-weekly-summary"></div>' +
-          '<table id="cbt-tp-weekly-table"><thead><tr>' +
-            '<th style="width:35%;">Associate</th>' +
-            '<th style="width:12%;">Days</th>' +
-            '<th style="width:13%;">Runs</th>' +
-            '<th style="width:15%;">Pkgs</th>' +
-            '<th style="width:25%;">Avg Rate ▼</th>' +
-          '</tr></thead><tbody id="cbt-tp-weekly-tbody"></tbody></table>' +
-          '<div id="cbt-tp-weekly-empty" style="display:none;text-align:center;color:#aaa;padding:12px;font-size:13px;font-style:italic;">No weekly data yet</div>' +
-          '<div id="cbt-tp-weekly-cross"></div>' +
-        '</div>' +
+        '<div id="cbt-tp-results" style="overflow-y:auto;max-height:150px;"></div>' +
       '</div>';
 
     return p;
@@ -1507,73 +1462,107 @@
       themeBtn.textContent = isDark ? '☀️' : '🌙';
     });
 
-    // Collapse toggle
-    var colBtn = tp.querySelector('#cbt-tp-collapse');
-    var tpBody = tp.querySelector('#cbt-tp-body');
-    var tpTabs = tp.querySelector('#cbt-tp-tabs');
-    var tpStats = tp.querySelector('#cbt-tp-stats');
-    var collapsed = false;
-    if (colBtn) colBtn.addEventListener('click', function(){
-      collapsed = !collapsed;
-      if (tpBody) tpBody.style.display = collapsed ? 'none' : '';
-      if (tpTabs) tpTabs.style.display = collapsed ? 'none' : '';
-      colBtn.textContent = collapsed ? '🔽' : '🔼';
-    });
-
-    // Tab switching
-    tp.querySelectorAll('.cbt-tp-tab').forEach(function(tab){
-      tab.addEventListener('click', function(){
-        tp.querySelectorAll('.cbt-tp-tab').forEach(function(t){ t.classList.remove('active'); });
-        tab.classList.add('active');
-        _tpActiveTab = tab.dataset.tab;
-        // Clear search
-        var si = tp.querySelector('#cbt-tp-search-input'); if(si){si.value='';_tpLiveTerm='';}
-        var hi = tp.querySelector('#cbt-tp-hist-input'); if(hi){hi.value='';_tpHistTerm='';}
-        var wi = tp.querySelector('#cbt-tp-weekly-input'); if(wi){wi.value='';_tpWeeklyTerm='';}
-        var lr = tp.querySelector('#cbt-tp-results'); if(lr) lr.innerHTML='';
-        var hc = tp.querySelector('#cbt-tp-hist-cross'); if(hc) hc.innerHTML='';
-        var wc = tp.querySelector('#cbt-tp-weekly-cross'); if(wc) wc.innerHTML='';
-        tp.querySelector('#cbt-tp-live-view').style.display    = _tpActiveTab==='live'    ? '' : 'none';
-        tp.querySelector('#cbt-tp-hist-view').style.display    = _tpActiveTab==='history' ? '' : 'none';
-        tp.querySelector('#cbt-tp-weekly-view').style.display  = _tpActiveTab==='weekly'  ? '' : 'none';
-        if (_tpActiveTab==='history') tpRenderHistory();
-        if (_tpActiveTab==='weekly')  tpRenderWeekly();
-        if (_tpActiveTab==='live')    tpRenderLive();
-      });
-    });
-
-    // Search inputs
+    // Search input
     tp.addEventListener('input', function(e){
-      if (e.target.id==='cbt-tp-search-input')  { _tpLiveTerm=e.target.value; tpRenderLive(); }
-      if (e.target.id==='cbt-tp-hist-input')    { _tpHistTerm=e.target.value; tpRenderHistory(); }
-      if (e.target.id==='cbt-tp-weekly-input')  { _tpWeeklyTerm=e.target.value; tpRenderWeekly(); }
+      if (e.target.id === 'cbt-tp-search-input') {
+        _tpLiveTerm = e.target.value;
+        tpRenderSearch(_tpLiveTerm);
+      }
     });
 
-    // Clear buttons
+    // Clear button
     tp.addEventListener('click', function(e){
-      if (e.target.id==='cbt-tp-search-clear')  { var i=tp.querySelector('#cbt-tp-search-input');  if(i){i.value='';_tpLiveTerm='';tpRenderLive();} }
-      if (e.target.id==='cbt-tp-hist-clear')    { var i=tp.querySelector('#cbt-tp-hist-input');    if(i){i.value='';_tpHistTerm='';tpRenderHistory();} }
-      if (e.target.id==='cbt-tp-weekly-clear')  { var i=tp.querySelector('#cbt-tp-weekly-input');  if(i){i.value='';_tpWeeklyTerm='';tpRenderWeekly();} }
+      if (e.target.id === 'cbt-tp-search-clear') {
+        var i = tp.querySelector('#cbt-tp-search-input');
+        if (i) { i.value = ''; _tpLiveTerm = ''; tpRenderSearch(''); }
+      }
       // Copy name on click
-      var nameEl = e.target.closest('.cbt-tp-assoc, .cbt-tp-row-name');
+      var nameEl = e.target.closest('.cbt-tp-row-name');
       if (nameEl && tp.contains(nameEl)) {
-        var text = nameEl.textContent.replace(/⚠ SLOW/g,'').trim();
+        var text = nameEl.textContent.trim();
         navigator.clipboard.writeText(text).then(function(){
-          var prev = nameEl.style.color; nameEl.style.color='#2a9d2a';
-          setTimeout(function(){ nameEl.style.color=prev; }, 600);
+          var prev = nameEl.style.color; nameEl.style.color = '#2a9d2a';
+          setTimeout(function(){ nameEl.style.color = prev; }, 600);
         });
       }
     });
   }
 
+  function tpRenderSearch(term) {
+    var el = document.getElementById('cbt-tp-results'); if (!el) return;
+    if (!term || !term.trim()) { el.innerHTML = ''; return; }
+    term = term.toLowerCase().trim();
+    var html = '';
+    var seen = new Set();
+
+    // Live batchers
+    taskCache.forEach(function(d){
+      if (d.state === 'BATCHING') {
+        var name = (d.associateId||d.associate||d.driverAssignment||d.shortClientRef||'').toLowerCase();
+        if (name.indexOf(term) !== -1 && !seen.has(name)) {
+          seen.add(name);
+          var r = computeRow(d);
+          var displayName = d.associateId||d.associate||d.driverAssignment||d.shortClientRef||'—';
+          var rc = !r.scanRate?'color:#aaa':r.scanRate>=WARN_RATE?'color:#2a9d2a':r.scanRate>=ALERT_RATE?'color:#e6a817':'color:#cc0000';
+          html += '<div class="cbt-tp-row"><span class="cbt-tp-row-name">' + displayName + '</span><span class="cbt-tp-row-mid"></span><span class="cbt-tp-row-rate" style="' + rc + ';">' + (r.scanRate?r.scanRate.toFixed(1):'—') + '</span></div>';
+        }
+      }
+    });
+
+    // Today
+    var hist = loadHistory();
+    Object.values(hist).forEach(function(e){
+      if (e.assoc.toLowerCase().indexOf(term) !== -1 && !seen.has(e.assoc.toLowerCase())) {
+        seen.add(e.assoc.toLowerCase());
+        var rc = e.avgRate>=WARN_RATE?'color:#2a9d2a':e.avgRate>=ALERT_RATE?'color:#e6a817':'color:#cc0000';
+        html += '<div class="cbt-tp-row"><span class="cbt-tp-row-name">' + e.assoc + '</span><span class="cbt-tp-row-mid"></span><span class="cbt-tp-row-rate" style="' + rc + ';">' + e.avgRate.toFixed(1) + '</span></div>';
+      }
+    });
+
+    // Weekly
+    var weekly = pruneWeeklyOlderThan(WEEKLY_DAYS), agg = {};
+    for (var dk of Object.keys(weekly)) {
+      for (var a of Object.keys(weekly[dk])) {
+        if (a.toLowerCase().indexOf(term) === -1) continue;
+        if (!agg[a]) agg[a] = {assoc:a,totalPkgs:0,totalSec:0};
+        agg[a].totalPkgs+=weekly[dk][a].totalPkgs; agg[a].totalSec+=weekly[dk][a].totalSec;
+      }
+    }
+    Object.values(agg).forEach(function(e){
+      if (!seen.has(e.assoc.toLowerCase())) {
+        seen.add(e.assoc.toLowerCase());
+        var avg = e.totalPkgs/(e.totalSec/60);
+        var rc = avg>=WARN_RATE?'color:#2a9d2a':avg>=ALERT_RATE?'color:#e6a817':'color:#cc0000';
+        html += '<div class="cbt-tp-row"><span class="cbt-tp-row-name">' + e.assoc + '</span><span class="cbt-tp-row-mid"></span><span class="cbt-tp-row-rate" style="' + rc + ';">' + avg.toFixed(1) + '</span></div>';
+      }
+    });
+
+    if (!html) html = '<div style="text-align:center;color:#aaa;padding:10px;font-size:13px;font-style:italic;">No results for "' + term + '"</div>';
+    el.innerHTML = html;
+  }
+
   function injectTaskPanel() {
     if (document.getElementById('cbt-tp')) return;
     if (!document.querySelector('div.job-details')) return;
+
+    // Fix overflow on all ancestors that break fixed positioning
+    var mainContent = document.querySelector('div.container.main-content') || document.querySelector('.container.main-content');
+    if (mainContent) mainContent.style.overflow = 'visible';
+    var body = document.querySelector('body');
+    if (body) body.style.overflow = 'visible';
+    var ngScope = document.querySelector('.ng-scope');
+    if (ngScope) ngScope.style.overflow = 'visible';
+    // Fix any element with overflow:hidden or overflow:auto that is an ancestor
+    var el = document.querySelector('div.job-details');
+    while (el && el !== document.body) {
+      var s = window.getComputedStyle(el).overflow;
+      if (s === 'hidden' || s === 'auto' || s === 'scroll') el.style.overflow = 'visible';
+      el = el.parentElement;
+    }
+
     _tpRef = buildTaskPanel();
     document.body.appendChild(_tpRef);
     tpAttachEvents(_tpRef);
-    tpRenderLive(); tpRenderHistory(); tpRenderWeekly();
-    setInterval(function(){ if(_tpActiveTab==='live') tpRenderLive(); }, 1000);
   }
 
   var panelWatcher = new MutationObserver(function() {
