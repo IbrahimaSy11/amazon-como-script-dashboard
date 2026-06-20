@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      21.5.0
+// @version      21.6.0
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/store/*/dash*
@@ -529,6 +529,91 @@
   var STORAGE_KEY = 'cbt_history', DATE_KEY = 'cbt_history_date';
   var WEEKLY_KEY = 'cbt_weekly_history', WEEKLY_DAYS = 7;
   var ALL_NAMES_KEY = 'cbt_all_names';
+  var DEVICE_ID_KEY  = 'cbt_device_id';
+
+  // Persistent device ID — generated once, lives in GM storage forever
+  function getDeviceId() {
+    var id = gmGet(DEVICE_ID_KEY, null);
+    if (!id) {
+      id = 'dev_' + Math.random().toString(36).slice(2, 10) + '_' + Date.now().toString(36);
+      gmSet(DEVICE_ID_KEY, id);
+    }
+    return id;
+  }
+  var MY_DEVICE_ID = null; // set in start()
+
+  // ── Merge helper: sum per-device slices into a flat { assoc -> record } map ──
+  // Basket format:  { devices: { devId: { assoc -> record }, ... }, legacy: { assoc -> record } }
+  // "legacy" holds flat data pushed by older script versions (backward-compat)
+  function mergeHistorySlices(basket) {
+    var out = {};
+    // Absorb legacy flat data first
+    var legacy = (basket && basket.legacy) || {};
+    for (var a in legacy) {
+      var r = legacy[a];
+      if (!out[a]) out[a] = { assoc: r.assoc||a, totalPkgs:0, totalSec:0, runs:0, totalMissing:0, totalExpected:0 };
+      out[a].totalPkgs    += r.totalPkgs    || 0;
+      out[a].totalSec     += r.totalSec     || 0;
+      out[a].runs         += r.runs         || 0;
+      out[a].totalMissing += r.totalMissing || 0;
+      out[a].totalExpected+= r.totalExpected|| 0;
+    }
+    // Sum each device slice on top
+    var devices = (basket && basket.devices) || {};
+    for (var devId in devices) {
+      var slice = devices[devId];
+      for (var a2 in slice) {
+        var r2 = slice[a2];
+        if (!out[a2]) out[a2] = { assoc: r2.assoc||a2, totalPkgs:0, totalSec:0, runs:0, totalMissing:0, totalExpected:0 };
+        out[a2].totalPkgs    += r2.totalPkgs    || 0;
+        out[a2].totalSec     += r2.totalSec     || 0;
+        out[a2].runs         += r2.runs         || 0;
+        out[a2].totalMissing += r2.totalMissing || 0;
+        out[a2].totalExpected+= r2.totalExpected|| 0;
+      }
+    }
+    // Recompute avgRate from merged totals
+    for (var a3 in out) {
+      var rec = out[a3];
+      rec.avgRate = rec.totalSec > 0 ? rec.totalPkgs / (rec.totalSec / 60) : 0;
+    }
+    return out;
+  }
+
+  function mergeWeeklySlices(basket) {
+    // basket: { devices: { devId: { dayKey: { assoc -> record } } }, legacy: { dayKey: { assoc -> record } } }
+    var out = {}; // dayKey -> { assoc -> record }
+    var legacy = (basket && basket.legacy) || {};
+    for (var dk in legacy) {
+      if (!out[dk]) out[dk] = {};
+      for (var a in legacy[dk]) {
+        var r = legacy[dk][a];
+        if (!out[dk][a]) out[dk][a] = { totalPkgs:0, totalSec:0, runs:0, totalMissing:0, totalExpected:0 };
+        out[dk][a].totalPkgs    += r.totalPkgs    || 0;
+        out[dk][a].totalSec     += r.totalSec     || 0;
+        out[dk][a].runs         += r.runs         || 0;
+        out[dk][a].totalMissing += r.totalMissing || 0;
+        out[dk][a].totalExpected+= r.totalExpected|| 0;
+      }
+    }
+    var devices = (basket && basket.devices) || {};
+    for (var devId in devices) {
+      var devData = devices[devId];
+      for (var dk2 in devData) {
+        if (!out[dk2]) out[dk2] = {};
+        for (var a2 in devData[dk2]) {
+          var r2 = devData[dk2][a2];
+          if (!out[dk2][a2]) out[dk2][a2] = { totalPkgs:0, totalSec:0, runs:0, totalMissing:0, totalExpected:0 };
+          out[dk2][a2].totalPkgs    += r2.totalPkgs    || 0;
+          out[dk2][a2].totalSec     += r2.totalSec     || 0;
+          out[dk2][a2].runs         += r2.runs         || 0;
+          out[dk2][a2].totalMissing += r2.totalMissing || 0;
+          out[dk2][a2].totalExpected+= r2.totalExpected|| 0;
+        }
+      }
+    }
+    return out;
+  }
 
   var SYNC_PANTRY_ID      = 'e568532d-0d42-4e03-a8a9-001c354eead5';
   var SYNC_BASKET         = 'como_names';
@@ -702,12 +787,46 @@
     _syncHistoryPushTimer = setTimeout(function(){
       _syncHistoryPushTimer = null;
       try {
-        var h = loadHistory();
-        var payload = JSON.stringify({ date: todayStr(), history: h });
+        var devId = MY_DEVICE_ID || getDeviceId();
+        var mySlice = loadHistory(); // this device's local flat history
+        // Pull current basket first so we don't wipe other devices' slices
         GM_xmlhttpRequest({
-          method: 'POST', url: syncHistoryUrl(),
-          headers: { 'Content-Type': 'application/json' },
-          data: payload, onload: function(){}, onerror: function(){}
+          method: 'GET', url: syncHistoryUrl(), headers: { 'Content-Type': 'application/json' },
+          onload: function(res) {
+            try {
+              var basket = {};
+              if (res.status >= 200 && res.status < 300 && res.responseText) {
+                basket = JSON.parse(res.responseText);
+              }
+              // Migrate legacy flat payload if present (from old script versions)
+              if (basket.history && !basket.devices) {
+                basket = { devices: {}, legacy: basket.history };
+              }
+              if (!basket.devices) basket.devices = {};
+              // Replace only this device's slice
+              basket.devices[devId] = mySlice;
+              basket.date = todayStr();
+              GM_xmlhttpRequest({
+                method: 'POST', url: syncHistoryUrl(),
+                headers: { 'Content-Type': 'application/json' },
+                data: JSON.stringify(basket),
+                onload: function(){}, onerror: function(){}
+              });
+            } catch(e) {}
+          },
+          onerror: function(){
+            // If basket doesn't exist yet, create it fresh
+            try {
+              var fresh = { devices: {}, date: todayStr() };
+              fresh.devices[MY_DEVICE_ID || getDeviceId()] = loadHistory();
+              GM_xmlhttpRequest({
+                method: 'POST', url: syncHistoryUrl(),
+                headers: { 'Content-Type': 'application/json' },
+                data: JSON.stringify(fresh),
+                onload: function(){}, onerror: function(){}
+              });
+            } catch(e2) {}
+          }
         });
       } catch(e) {}
     }, 2500);
@@ -721,18 +840,28 @@
           var changed = false;
           try {
             if (res.status >= 200 && res.status < 300 && res.responseText) {
-              var data = JSON.parse(res.responseText);
-              if (data && data.history) {
+              var basket = JSON.parse(res.responseText);
+              // Handle legacy flat format from old script versions
+              if (basket && basket.history && !basket.devices) {
+                basket = { devices: {}, legacy: basket.history };
+              }
+              if (basket && (basket.devices || basket.legacy)) {
+                // Sum all device slices into a merged flat map
+                var merged = mergeHistorySlices(basket);
+                // Only update local store if remote has more data than what we have
                 var local = loadHistory();
-                for (var a in data.history) {
-                  var remote = data.history[a];
-                  if (!local[a] || (remote.totalPkgs||0) > (local[a].totalPkgs||0)) {
-                    local[a] = remote; changed = true;
+                var totalRemote = 0, totalLocal = 0;
+                for (var a in merged) totalRemote += merged[a].totalPkgs || 0;
+                for (var a2 in local)  totalLocal  += local[a2].totalPkgs  || 0;
+                if (totalRemote > totalLocal || Object.keys(merged).length > Object.keys(local).length) {
+                  // Merge: for each associate, take whichever has more data (could be local-only runs)
+                  for (var a3 in local) {
+                    if (!merged[a3] || (local[a3].totalPkgs||0) > (merged[a3].totalPkgs||0)) {
+                      merged[a3] = local[a3];
+                    }
                   }
-                }
-                if (changed) {
-                  saveHistory(local, true);
-                  // Render whenever panel exists, regardless of active tab
+                  saveHistory(merged, true);
+                  changed = true;
                   setTimeout(function(){ if (document.getElementById('cbt-hist-tbody')) renderHistory(); }, 200);
                 }
               }
@@ -753,12 +882,42 @@
     _syncWeeklyPushTimer = setTimeout(function(){
       _syncWeeklyPushTimer = null;
       try {
-        var w = loadWeekly();
-        var payload = JSON.stringify({ weekly: w });
+        var devId = MY_DEVICE_ID || getDeviceId();
+        var mySlice = loadWeekly(); // this device's local weekly data
         GM_xmlhttpRequest({
-          method: 'POST', url: syncWeeklyUrl(),
-          headers: { 'Content-Type': 'application/json' },
-          data: payload, onload: function(){}, onerror: function(){}
+          method: 'GET', url: syncWeeklyUrl(), headers: { 'Content-Type': 'application/json' },
+          onload: function(res) {
+            try {
+              var basket = {};
+              if (res.status >= 200 && res.status < 300 && res.responseText) {
+                basket = JSON.parse(res.responseText);
+              }
+              // Migrate legacy flat payload
+              if (basket.weekly && !basket.devices) {
+                basket = { devices: {}, legacy: basket.weekly };
+              }
+              if (!basket.devices) basket.devices = {};
+              basket.devices[devId] = mySlice;
+              GM_xmlhttpRequest({
+                method: 'POST', url: syncWeeklyUrl(),
+                headers: { 'Content-Type': 'application/json' },
+                data: JSON.stringify(basket),
+                onload: function(){}, onerror: function(){}
+              });
+            } catch(e) {}
+          },
+          onerror: function(){
+            try {
+              var fresh = { devices: {} };
+              fresh.devices[MY_DEVICE_ID || getDeviceId()] = loadWeekly();
+              GM_xmlhttpRequest({
+                method: 'POST', url: syncWeeklyUrl(),
+                headers: { 'Content-Type': 'application/json' },
+                data: JSON.stringify(fresh),
+                onload: function(){}, onerror: function(){}
+              });
+            } catch(e2) {}
+          }
         });
       } catch(e) {}
     }, 2500);
@@ -772,20 +931,30 @@
           var changed = false;
           try {
             if (res.status >= 200 && res.status < 300 && res.responseText) {
-              var data = JSON.parse(res.responseText);
-              if (data && data.weekly) {
+              var basket = JSON.parse(res.responseText);
+              // Handle legacy flat format
+              if (basket && basket.weekly && !basket.devices) {
+                basket = { devices: {}, legacy: basket.weekly };
+              }
+              if (basket && (basket.devices || basket.legacy)) {
+                var merged = mergeWeeklySlices(basket);
+                // Count total packages across all days to compare
+                var totalRemote = 0, totalLocal = 0;
                 var local = loadWeekly();
-                for (var dk in data.weekly) {
-                  if (!local[dk]) local[dk] = {};
-                  for (var a in data.weekly[dk]) {
-                    var rem = data.weekly[dk][a];
-                    if (!local[dk][a] || (rem.totalPkgs||0) > (local[dk][a].totalPkgs||0)) {
-                      local[dk][a] = rem; changed = true;
+                for (var dk in merged)  for (var a  in merged[dk])  totalRemote += merged[dk][a].totalPkgs  || 0;
+                for (var dk2 in local)  for (var a2 in local[dk2])  totalLocal  += local[dk2][a2].totalPkgs || 0;
+                if (totalRemote > totalLocal || Object.keys(merged).length > Object.keys(local).length) {
+                  // Prefer local entries where local has more data (local-only runs)
+                  for (var dk3 in local) {
+                    if (!merged[dk3]) merged[dk3] = {};
+                    for (var a3 in local[dk3]) {
+                      if (!merged[dk3][a3] || (local[dk3][a3].totalPkgs||0) > (merged[dk3][a3].totalPkgs||0)) {
+                        merged[dk3][a3] = local[dk3][a3];
+                      }
                     }
                   }
-                }
-                if (changed) {
-                  saveWeekly(local, true);
+                  saveWeekly(merged, true);
+                  changed = true;
                   setTimeout(function(){ if (document.getElementById('cbt-weekly-tbody')) renderWeekly(); }, 200);
                 }
               }
@@ -1841,6 +2010,7 @@
   });
 
   function start() {
+    MY_DEVICE_ID = getDeviceId(); // initialize once at startup
     document.head.appendChild(style);
     timerWatcher.observe(document.documentElement, { childList: true, subtree: true });
     injectAllTimers();
