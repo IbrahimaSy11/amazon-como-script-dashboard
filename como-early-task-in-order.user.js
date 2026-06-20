@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      21.4.0
+// @version      21.5.0
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/store/*/dash*
@@ -570,11 +570,11 @@
     } catch(e) {}
     return result || {};
   }
-  function saveWeekly(w) {
+  function saveWeekly(w, skipPush) {
     var json = JSON.stringify(w);
     gmSet(WEEKLY_KEY, json);
     try { localStorage.setItem(WEEKLY_KEY, json); } catch(e) {}
-    syncWeeklyPush();
+    if (!skipPush) { setTimeout(function(){ if (typeof syncWeeklyPush === 'function') syncWeeklyPush(); }, 0); }
   }
 
   function gmGet(key, def) {
@@ -722,8 +722,7 @@
           try {
             if (res.status >= 200 && res.status < 300 && res.responseText) {
               var data = JSON.parse(res.responseText);
-              // Only apply if remote is from today
-              if (data && data.date === todayStr() && data.history) {
+              if (data && data.history) {
                 var local = loadHistory();
                 for (var a in data.history) {
                   var remote = data.history[a];
@@ -732,8 +731,9 @@
                   }
                 }
                 if (changed) {
-                  saveHistory(local);
-                  if (activeTab === 'history') renderHistory();
+                  saveHistory(local, true);
+                  // Render whenever panel exists, regardless of active tab
+                  setTimeout(function(){ if (document.getElementById('cbt-hist-tbody')) renderHistory(); }, 200);
                 }
               }
             }
@@ -785,8 +785,8 @@
                   }
                 }
                 if (changed) {
-                  saveWeekly(local);
-                  if (activeTab === 'weekly') renderWeekly();
+                  saveWeekly(local, true);
+                  setTimeout(function(){ if (document.getElementById('cbt-weekly-tbody')) renderWeekly(); }, 200);
                 }
               }
             }
@@ -938,11 +938,11 @@
     } catch(e) { return {}; }
   }
 
-  function saveHistory(h) {
+  function saveHistory(h, skipPush) {
     var json = JSON.stringify(h);
     localStorage.setItem(STORAGE_KEY, json); localStorage.setItem(DATE_KEY, todayStr());
     gmSet(STORAGE_KEY, json); gmSet(DATE_KEY, todayStr());
-    syncHistoryPush();
+    if (!skipPush) { setTimeout(function(){ if (typeof syncHistoryPush === 'function') syncHistoryPush(); }, 0); }
   }
 
   function computeRow(data) {
