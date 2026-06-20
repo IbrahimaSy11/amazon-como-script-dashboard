@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      21.3.0
+// @version      21.4.0
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/store/*/dash*
@@ -530,10 +530,14 @@
   var WEEKLY_KEY = 'cbt_weekly_history', WEEKLY_DAYS = 7;
   var ALL_NAMES_KEY = 'cbt_all_names';
 
-  var SYNC_PANTRY_ID = 'e568532d-0d42-4e03-a8a9-001c354eead5';
-  var SYNC_BASKET    = 'como_names';
+  var SYNC_PANTRY_ID      = 'e568532d-0d42-4e03-a8a9-001c354eead5';
+  var SYNC_BASKET         = 'como_names';
+  var SYNC_BASKET_HISTORY = 'como_history';
+  var SYNC_BASKET_WEEKLY  = 'como_weekly';
   function syncEnabled() { return SYNC_PANTRY_ID && SYNC_PANTRY_ID.indexOf('PASTE_YOUR') !== 0; }
-  function syncUrl() { return 'https://getpantry.cloud/apiv1/pantry/' + SYNC_PANTRY_ID + '/basket/' + SYNC_BASKET; }
+  function syncUrl()        { return 'https://getpantry.cloud/apiv1/pantry/' + SYNC_PANTRY_ID + '/basket/' + SYNC_BASKET; }
+  function syncHistoryUrl() { return 'https://getpantry.cloud/apiv1/pantry/' + SYNC_PANTRY_ID + '/basket/' + SYNC_BASKET_HISTORY; }
+  function syncWeeklyUrl()  { return 'https://getpantry.cloud/apiv1/pantry/' + SYNC_PANTRY_ID + '/basket/' + SYNC_BASKET_WEEKLY; }
 
   var taskCache = new Map();
   var activeTab = 'live';
@@ -554,8 +558,24 @@
     return h >= 1 ? h.toFixed(1) + 'h' : Math.round(s / 60) + 'm';
   }
 
-  function loadWeekly() { try { return JSON.parse(localStorage.getItem(WEEKLY_KEY) || '{}'); } catch(e) { return {}; } }
-  function saveWeekly(w) { try { localStorage.setItem(WEEKLY_KEY, JSON.stringify(w)); } catch(e) {} }
+  function loadWeekly() {
+    var result = {};
+    try { var gm = gmGet(WEEKLY_KEY, null); if (gm) result = (typeof gm === 'string') ? JSON.parse(gm) : gm; } catch(e) {}
+    try {
+      var ls = JSON.parse(localStorage.getItem(WEEKLY_KEY) || '{}');
+      for (var dk in ls) {
+        if (!result[dk]) result[dk] = {};
+        for (var a in ls[dk]) { if (!result[dk][a]) result[dk][a] = ls[dk][a]; }
+      }
+    } catch(e) {}
+    return result || {};
+  }
+  function saveWeekly(w) {
+    var json = JSON.stringify(w);
+    gmSet(WEEKLY_KEY, json);
+    try { localStorage.setItem(WEEKLY_KEY, json); } catch(e) {}
+    syncWeeklyPush();
+  }
 
   function gmGet(key, def) {
     try { if (typeof GM_getValue === 'function') { var v = GM_getValue(key); return (v===undefined||v===null) ? def : v; } } catch(e) {}
@@ -672,6 +692,110 @@
         });
       } catch(e) {}
     }, 2500);
+  }
+
+  // ── History sync (push/pull) ──
+  var _syncHistoryPushTimer = null;
+  function syncHistoryPush() {
+    if (!syncEnabled()) return;
+    if (_syncHistoryPushTimer) return;
+    _syncHistoryPushTimer = setTimeout(function(){
+      _syncHistoryPushTimer = null;
+      try {
+        var h = loadHistory();
+        var payload = JSON.stringify({ date: todayStr(), history: h });
+        GM_xmlhttpRequest({
+          method: 'POST', url: syncHistoryUrl(),
+          headers: { 'Content-Type': 'application/json' },
+          data: payload, onload: function(){}, onerror: function(){}
+        });
+      } catch(e) {}
+    }, 2500);
+  }
+  function syncHistoryPull(cb) {
+    if (!syncEnabled()) { if (cb) cb(false); return; }
+    try {
+      GM_xmlhttpRequest({
+        method: 'GET', url: syncHistoryUrl(), headers: { 'Content-Type': 'application/json' },
+        onload: function(res){
+          var changed = false;
+          try {
+            if (res.status >= 200 && res.status < 300 && res.responseText) {
+              var data = JSON.parse(res.responseText);
+              // Only apply if remote is from today
+              if (data && data.date === todayStr() && data.history) {
+                var local = loadHistory();
+                for (var a in data.history) {
+                  var remote = data.history[a];
+                  if (!local[a] || (remote.totalPkgs||0) > (local[a].totalPkgs||0)) {
+                    local[a] = remote; changed = true;
+                  }
+                }
+                if (changed) {
+                  saveHistory(local);
+                  if (activeTab === 'history') renderHistory();
+                }
+              }
+            }
+          } catch(e) {}
+          if (cb) cb(changed);
+        },
+        onerror: function(){ if (cb) cb(false); }
+      });
+    } catch(e) { if (cb) cb(false); }
+  }
+
+  // ── Weekly sync (push/pull) ──
+  var _syncWeeklyPushTimer = null;
+  function syncWeeklyPush() {
+    if (!syncEnabled()) return;
+    if (_syncWeeklyPushTimer) return;
+    _syncWeeklyPushTimer = setTimeout(function(){
+      _syncWeeklyPushTimer = null;
+      try {
+        var w = loadWeekly();
+        var payload = JSON.stringify({ weekly: w });
+        GM_xmlhttpRequest({
+          method: 'POST', url: syncWeeklyUrl(),
+          headers: { 'Content-Type': 'application/json' },
+          data: payload, onload: function(){}, onerror: function(){}
+        });
+      } catch(e) {}
+    }, 2500);
+  }
+  function syncWeeklyPull(cb) {
+    if (!syncEnabled()) { if (cb) cb(false); return; }
+    try {
+      GM_xmlhttpRequest({
+        method: 'GET', url: syncWeeklyUrl(), headers: { 'Content-Type': 'application/json' },
+        onload: function(res){
+          var changed = false;
+          try {
+            if (res.status >= 200 && res.status < 300 && res.responseText) {
+              var data = JSON.parse(res.responseText);
+              if (data && data.weekly) {
+                var local = loadWeekly();
+                for (var dk in data.weekly) {
+                  if (!local[dk]) local[dk] = {};
+                  for (var a in data.weekly[dk]) {
+                    var rem = data.weekly[dk][a];
+                    if (!local[dk][a] || (rem.totalPkgs||0) > (local[dk][a].totalPkgs||0)) {
+                      local[dk][a] = rem; changed = true;
+                    }
+                  }
+                }
+                if (changed) {
+                  saveWeekly(local);
+                  if (activeTab === 'weekly') renderWeekly();
+                }
+              }
+            }
+          } catch(e) {}
+          if (cb) cb(changed);
+        },
+        onerror: function(){ if (cb) cb(false); }
+      });
+    } catch(e) { if (cb) cb(false); }
   }
 
   function captureName(item) {
@@ -793,13 +917,33 @@
 
   function loadHistory() {
     try {
-      var sd = localStorage.getItem(DATE_KEY);
-      if (sd !== todayStr()) { rollDailyIntoWeekly(); localStorage.removeItem(STORAGE_KEY); localStorage.setItem(DATE_KEY, todayStr()); return {}; }
-      return JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+      var sd = localStorage.getItem(DATE_KEY) || gmGet(DATE_KEY, null);
+      if (sd !== todayStr()) {
+        rollDailyIntoWeekly();
+        localStorage.removeItem(STORAGE_KEY); gmSet(STORAGE_KEY, '{}');
+        localStorage.setItem(DATE_KEY, todayStr()); gmSet(DATE_KEY, todayStr());
+        return {};
+      }
+      // Merge GM storage + localStorage so neither source beats the other
+      var result = {};
+      try { var gm = gmGet(STORAGE_KEY, null); if (gm) result = (typeof gm === 'string') ? JSON.parse(gm) : gm; } catch(e) {}
+      try {
+        var ls = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+        for (var a in ls) {
+          if (!result[a]) result[a] = ls[a];
+          else if ((ls[a].totalPkgs||0) > (result[a].totalPkgs||0)) result[a] = ls[a];
+        }
+      } catch(e) {}
+      return result;
     } catch(e) { return {}; }
   }
 
-  function saveHistory(h) { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(h)); localStorage.setItem(DATE_KEY, todayStr()); } catch(e) {} }
+  function saveHistory(h) {
+    var json = JSON.stringify(h);
+    localStorage.setItem(STORAGE_KEY, json); localStorage.setItem(DATE_KEY, todayStr());
+    gmSet(STORAGE_KEY, json); gmSet(DATE_KEY, todayStr());
+    syncHistoryPush();
+  }
 
   function computeRow(data) {
     var op = (data.operationDetails||[]).find(function(o){return o.name==='BATCHING';});
@@ -1716,7 +1860,11 @@
       if (syncNamesFromAllTabs() && activeTab === 'names') renderNames();
     }, 5000);
     syncPull(function(){ syncPush(); });
+    syncHistoryPull(function(){ syncHistoryPush(); });
+    syncWeeklyPull(function(){ syncWeeklyPush(); });
     setInterval(function(){ syncPull(); }, 60000);
+    setInterval(function(){ syncHistoryPull(); }, 60000);
+    setInterval(function(){ syncWeeklyPull(); }, 60000);
     try {
       GM_xmlhttpRequest({
         method: 'GET', url: DRIVE_URL + '&_=' + Date.now(), responseType: 'json',
