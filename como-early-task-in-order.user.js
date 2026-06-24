@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      21.7.6
+// @version      21.8.0
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/store/*/dash*
@@ -1207,21 +1207,20 @@
                 basket = { devices: {}, legacy: basket.history };
               }
               if (basket && (basket.devices || basket.legacy)) {
-                // Sum all device slices into a merged flat map
                 var merged = mergeHistorySlices(basket);
-                // Only update local store if remote has more data than what we have
+                merged = sanitizeHistory(merged);
                 var local = loadHistory();
-                var totalRemote = 0, totalLocal = 0;
-                for (var a in merged) totalRemote += merged[a].totalPkgs || 0;
-                for (var a2 in local)  totalLocal  += local[a2].totalPkgs  || 0;
-                if (totalRemote > totalLocal || Object.keys(merged).length > Object.keys(local).length) {
-                  // Merge: for each associate, take whichever has more data (could be local-only runs)
-                  for (var a3 in local) {
-                    if (!merged[a3] || (local[a3].totalPkgs||0) > (merged[a3].totalPkgs||0)) {
-                      merged[a3] = local[a3];
-                    }
+                // Always merge — union of remote and local
+                var finalH = {};
+                for (var a in merged) finalH[a] = merged[a];
+                // Local wins where it has more data
+                for (var a2 in local) {
+                  if (!finalH[a2] || (local[a2].totalPkgs||0) > (finalH[a2].totalPkgs||0)) {
+                    finalH[a2] = local[a2];
                   }
-                  saveHistory(merged, true);
+                }
+                if (Object.keys(finalH).length > 0) {
+                  saveHistory(finalH, true);
                   changed = true;
                   setTimeout(function(){ if (document.getElementById('cbt-hist-tbody')) renderHistory(); }, 200);
                 }
@@ -1301,22 +1300,29 @@
               }
               if (basket && (basket.devices || basket.legacy)) {
                 var merged = mergeWeeklySlices(basket);
-                // Count total packages across all days to compare
-                var totalRemote = 0, totalLocal = 0;
+                merged = sanitizeWeekly(merged);
                 var local = loadWeekly();
-                for (var dk in merged)  for (var a  in merged[dk])  totalRemote += merged[dk][a].totalPkgs  || 0;
-                for (var dk2 in local)  for (var a2 in local[dk2])  totalLocal  += local[dk2][a2].totalPkgs || 0;
-                if (totalRemote > totalLocal || Object.keys(merged).length > Object.keys(local).length) {
-                  // Prefer local entries where local has more data (local-only runs)
-                  for (var dk3 in local) {
-                    if (!merged[dk3]) merged[dk3] = {};
-                    for (var a3 in local[dk3]) {
-                      if (!merged[dk3][a3] || (local[dk3][a3].totalPkgs||0) > (merged[dk3][a3].totalPkgs||0)) {
-                        merged[dk3][a3] = local[dk3][a3];
-                      }
+                // Always merge — union of remote and local, local wins ties
+                var finalW = {};
+                // Start with remote merged data
+                for (var dk in merged) {
+                  finalW[dk] = {};
+                  for (var a in merged[dk]) finalW[dk][a] = merged[dk][a];
+                }
+                // Layer local on top: keep local if it has more pkgs (local-only runs not in remote)
+                for (var dk2 in local) {
+                  if (!finalW[dk2]) finalW[dk2] = {};
+                  for (var a2 in local[dk2]) {
+                    if (!finalW[dk2][a2] || (local[dk2][a2].totalPkgs||0) > (finalW[dk2][a2].totalPkgs||0)) {
+                      finalW[dk2][a2] = local[dk2][a2];
                     }
                   }
-                  saveWeekly(merged, true);
+                }
+                // Check if anything actually changed before saving
+                var remoteKeys = Object.keys(merged).length;
+                var localKeys  = Object.keys(local).length;
+                if (remoteKeys > 0 || localKeys > 0) {
+                  saveWeekly(finalW, true);
                   changed = true;
                   setTimeout(function(){ if (document.getElementById('cbt-weekly-tbody')) renderWeekly(); }, 200);
                 }
@@ -1443,31 +1449,42 @@
 
   function rollDailyIntoWeekly() {
     try {
-      var sd = localStorage.getItem(DATE_KEY); if (!sd) return;
-      var daily = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+      // Read date from GM storage first (survives localStorage clears)
+      var sd = gmGet(DATE_KEY, null) || localStorage.getItem(DATE_KEY);
+      if (!sd) return;
+      // Read history from GM storage first, fall back to localStorage
+      var daily = {};
+      try { var gmH = gmGet(STORAGE_KEY, null); if (gmH) daily = (typeof gmH === 'string') ? JSON.parse(gmH) : gmH; } catch(e) {}
+      if (!Object.keys(daily).length) {
+        try { daily = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch(e) {}
+      }
+      if (!Object.keys(daily).length) return;
+      daily = sanitizeHistory(daily);
       if (!Object.keys(daily).length) return;
       var w = loadWeekly(); if (!w[sd]) w[sd] = {};
       for (var a of Object.keys(daily)) {
         var d2 = daily[a];
-        w[sd][a] = { totalPkgs: d2.totalPkgs, totalSec: d2.totalSec, runs: d2.runs,
-          avgRate: d2.avgRate, totalMissing: d2.totalMissing||0, totalExpected: d2.totalExpected||0 };
+        // Merge: take max totalPkgs so we never downgrade an existing entry
+        if (!w[sd][a] || (d2.totalPkgs||0) > (w[sd][a].totalPkgs||0)) {
+          w[sd][a] = { totalPkgs: d2.totalPkgs, totalSec: d2.totalSec, runs: d2.runs,
+            avgRate: d2.avgRate, totalMissing: d2.totalMissing||0, totalExpected: d2.totalExpected||0 };
+        }
       }
       saveWeekly(w);
     } catch(e) {}
   }
 
   function sanitizeHistory(h) {
-    // Remove any entry with clearly corrupted values (overflow from old double-count bug)
     var clean = {};
     for (var a in h) {
       var e = h[a];
       var pkgs = e.totalPkgs || 0;
       var runs = e.runs || 0;
       var sec  = e.totalSec || 0;
-      // Real-world limits: max ~500 pkgs/run, ~100 runs/day, ~12h batching/day
-      if (pkgs > 50000 || runs > 200 || sec > 12 * 3600) continue;
-      // Also skip if avgRate is impossibly high (>20 bags/min)
-      if (sec > 0 && (pkgs / (sec / 60)) > 20) continue;
+      // Only reject clearly overflowed values — keep realistic ones
+      if (pkgs > 50000 || runs > 300) continue;
+      // Reject impossible rate (>20 bags/min) but only if we have meaningful time
+      if (sec > 60 && (pkgs / (sec / 60)) > 20) continue;
       clean[a] = e;
     }
     return clean;
@@ -2101,8 +2118,9 @@
       clean[dk] = {};
       for (var a in w[dk]) {
         var e = w[dk][a];
-        if ((e.totalPkgs||0) > 50000 || (e.runs||0) > 200) continue;
-        if ((e.totalSec||0) > 0 && (e.totalPkgs||0)/(((e.totalSec||1))/60) > 20) continue;
+        if ((e.totalPkgs||0) > 50000 || (e.runs||0) > 300) continue;
+        var sec = e.totalSec || 0;
+        if (sec > 60 && (e.totalPkgs||0) / (sec / 60) > 20) continue;
         clean[dk][a] = e;
       }
       if (!Object.keys(clean[dk]).length) delete clean[dk];
