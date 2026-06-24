@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      21.7.4
+// @version      21.7.6
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/store/*/dash*
@@ -927,12 +927,16 @@
         out[a2].totalExpected+= r2.totalExpected|| 0;
       }
     }
-    // Recompute avgRate from merged totals
+    // Recompute avgRate from merged totals, cap corrupt values
+    var cleanOut = {};
     for (var a3 in out) {
       var rec = out[a3];
+      if ((rec.totalPkgs||0) > 50000 || (rec.runs||0) > 200) continue; // skip corrupted
       rec.avgRate = rec.totalSec > 0 ? rec.totalPkgs / (rec.totalSec / 60) : 0;
+      if (rec.avgRate > 20) continue; // impossibly fast — corrupted
+      cleanOut[a3] = rec;
     }
-    return out;
+    return cleanOut;
   }
 
   function mergeWeeklySlices(basket) {
@@ -1161,6 +1165,8 @@
               // Replace only this device's slice
               basket.devices[devId] = mySlice;
               basket.date = todayStr();
+              // Once this device has its own slice, legacy is redundant — wipe to prevent double-count
+              delete basket.legacy;
               GM_xmlhttpRequest({
                 method: 'POST', url: syncHistoryUrl(),
                 headers: { 'Content-Type': 'application/json' },
@@ -1253,6 +1259,8 @@
               }
               if (!basket.devices) basket.devices = {};
               basket.devices[devId] = mySlice;
+              // Once this device has its own slice, legacy is redundant — wipe to prevent double-count
+              delete basket.legacy;
               GM_xmlhttpRequest({
                 method: 'POST', url: syncWeeklyUrl(),
                 headers: { 'Content-Type': 'application/json' },
@@ -1419,9 +1427,18 @@
     var w = loadWeekly();
     var cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days); cutoff.setHours(0,0,0,0);
     var changed = false;
-    for (var dk of Object.keys(w)) { if (new Date(dk) < cutoff) { delete w[dk]; changed = true; } }
-    if (changed) saveWeekly(w);
-    return w;
+    for (var dk of Object.keys(w)) {
+      if (new Date(dk) < cutoff) { delete w[dk]; changed = true; continue; }
+      // Detect and wipe corrupted entries (scientific notation overflow)
+      for (var a in w[dk]) {
+        if ((w[dk][a].totalPkgs||0) > 100000 || (w[dk][a].runs||0) > 500) {
+          delete w[dk][a]; changed = true;
+        }
+      }
+      if (Object.keys(w[dk]).length === 0) { delete w[dk]; changed = true; }
+    }
+    if (changed) saveWeekly(w, true); // skipPush so we don't re-upload corrupt data
+    return sanitizeWeekly(w);
   }
 
   function rollDailyIntoWeekly() {
@@ -1437,6 +1454,23 @@
       }
       saveWeekly(w);
     } catch(e) {}
+  }
+
+  function sanitizeHistory(h) {
+    // Remove any entry with clearly corrupted values (overflow from old double-count bug)
+    var clean = {};
+    for (var a in h) {
+      var e = h[a];
+      var pkgs = e.totalPkgs || 0;
+      var runs = e.runs || 0;
+      var sec  = e.totalSec || 0;
+      // Real-world limits: max ~500 pkgs/run, ~100 runs/day, ~12h batching/day
+      if (pkgs > 50000 || runs > 200 || sec > 12 * 3600) continue;
+      // Also skip if avgRate is impossibly high (>20 bags/min)
+      if (sec > 0 && (pkgs / (sec / 60)) > 20) continue;
+      clean[a] = e;
+    }
+    return clean;
   }
 
   function loadHistory() {
@@ -1458,7 +1492,8 @@
           else if ((ls[a].totalPkgs||0) > (result[a].totalPkgs||0)) result[a] = ls[a];
         }
       } catch(e) {}
-      return result;
+      // Scrub any entries corrupted by old double-count bug
+      return sanitizeHistory(result);
     } catch(e) { return {}; }
   }
 
@@ -1982,7 +2017,7 @@
   function renderHistory() {
     var tbody=document.querySelector('#cbt-hist-tbody'),empty=document.querySelector('#cbt-hist-empty'),summary=document.querySelector('#cbt-hist-summary');
     if(!tbody||!empty) return;
-    var history=loadHistory(),entries=Object.values(history);
+    var history=sanitizeHistory(loadHistory()),entries=Object.values(history);
     if(entries.length===0){tbody.innerHTML='';empty.style.display='block';if(summary)summary.innerHTML='';
       if(historySearchTerm) renderHistoryCrossSearch(historySearchTerm);
       return;}
@@ -2060,10 +2095,25 @@
     crossEl.innerHTML=html;
   }
 
+  function sanitizeWeekly(w) {
+    var clean = {};
+    for (var dk in w) {
+      clean[dk] = {};
+      for (var a in w[dk]) {
+        var e = w[dk][a];
+        if ((e.totalPkgs||0) > 50000 || (e.runs||0) > 200) continue;
+        if ((e.totalSec||0) > 0 && (e.totalPkgs||0)/(((e.totalSec||1))/60) > 20) continue;
+        clean[dk][a] = e;
+      }
+      if (!Object.keys(clean[dk]).length) delete clean[dk];
+    }
+    return clean;
+  }
+
   function renderWeekly() {
     var tbody=document.querySelector('#cbt-weekly-tbody'),empty=document.querySelector('#cbt-weekly-empty'),summary=document.querySelector('#cbt-weekly-summary');
     if(!tbody||!empty) return;
-    var weekly=pruneWeeklyOlderThan(WEEKLY_DAYS),agg={};
+    var weekly=sanitizeWeekly(pruneWeeklyOlderThan(WEEKLY_DAYS)),agg={};
     for(var dayKey of Object.keys(weekly)){
       for(var assoc of Object.keys(weekly[dayKey])){
         var d3=weekly[dayKey][assoc];
@@ -2072,7 +2122,13 @@
         agg[assoc].totalMissing+=(d3.totalMissing||0);agg[assoc].totalExpected+=(d3.totalExpected||0);agg[assoc].daysSet.add(dayKey);
       }
     }
-    var all=Object.values(agg).map(function(a){return{assoc:a.assoc,totalPkgs:a.totalPkgs,totalSec:a.totalSec,runs:a.runs,days:a.daysSet.size,avgRate:a.totalPkgs/(a.totalSec/60),hrs:a.totalSec,missPct:a.totalExpected>0?(a.totalMissing/a.totalExpected*100):0};});
+    var all=Object.values(agg).map(function(a){
+      // Sanity cap: real-world max ~2000 pkgs/run, ~500 runs/week, ~100000 pkgs total
+      var pkgs = Math.min(a.totalPkgs, 100000);
+      var sec  = Math.min(a.totalSec,  500*3600);
+      var runs = Math.min(a.runs, 500);
+      return{assoc:a.assoc,totalPkgs:pkgs,totalSec:sec,runs:runs,days:a.daysSet.size,avgRate:sec>0?pkgs/(sec/60):0,hrs:sec,missPct:a.totalExpected>0?(a.totalMissing/a.totalExpected*100):0};
+    });
     if(all.length===0){tbody.innerHTML='';empty.style.display='block';if(summary)summary.innerHTML='';
       if(weeklySearchTerm) renderWeeklyCrossSearch(weeklySearchTerm);
       return;}
