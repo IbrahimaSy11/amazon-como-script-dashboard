@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      21.8.0
+// @version      21.9.1
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/store/*/dash*
@@ -983,6 +983,14 @@
   function syncHistoryUrl() { return 'https://getpantry.cloud/apiv1/pantry/' + SYNC_PANTRY_ID + '/basket/' + SYNC_BASKET_HISTORY; }
   function syncWeeklyUrl()  { return 'https://getpantry.cloud/apiv1/pantry/' + SYNC_PANTRY_ID + '/basket/' + SYNC_BASKET_WEEKLY; }
 
+  // ── Own vs Remote cache keys ──
+  // OWN = only this device's recorded batches (pushed to Pantry)
+  // REMOTE_CACHE = sum of all OTHER devices' slices (rebuilt on pull, never pushed)
+  var OWN_HISTORY_KEY      = 'cbt_own_history';
+  var OWN_WEEKLY_KEY       = 'cbt_own_weekly';
+  var REMOTE_HISTORY_KEY   = 'cbt_remote_history_cache';
+  var REMOTE_WEEKLY_KEY    = 'cbt_remote_weekly_cache';
+
   var taskCache = new Map();
   var activeTab = 'live';
   var weeklySortKey = 'avgRate', weeklySortAsc = false, weeklySearchTerm = '';
@@ -1002,11 +1010,12 @@
     return h >= 1 ? h.toFixed(1) + 'h' : Math.round(s / 60) + 'm';
   }
 
+  // loadWeekly / saveWeekly — OWN batches only. Never stores remote data.
   function loadWeekly() {
     var result = {};
-    try { var gm = gmGet(WEEKLY_KEY, null); if (gm) result = (typeof gm === 'string') ? JSON.parse(gm) : gm; } catch(e) {}
+    try { var gm = gmGet(OWN_WEEKLY_KEY, null) || gmGet(WEEKLY_KEY, null); if (gm) result = (typeof gm === 'string') ? JSON.parse(gm) : gm; } catch(e) {}
     try {
-      var ls = JSON.parse(localStorage.getItem(WEEKLY_KEY) || '{}');
+      var ls = JSON.parse(localStorage.getItem(OWN_WEEKLY_KEY) || localStorage.getItem(WEEKLY_KEY) || '{}');
       for (var dk in ls) {
         if (!result[dk]) result[dk] = {};
         for (var a in ls[dk]) { if (!result[dk][a]) result[dk][a] = ls[dk][a]; }
@@ -1016,9 +1025,47 @@
   }
   function saveWeekly(w, skipPush) {
     var json = JSON.stringify(w);
-    gmSet(WEEKLY_KEY, json);
-    try { localStorage.setItem(WEEKLY_KEY, json); } catch(e) {}
+    gmSet(OWN_WEEKLY_KEY, json);
+    try { localStorage.setItem(OWN_WEEKLY_KEY, json); } catch(e) {}
     if (!skipPush) { setTimeout(function(){ if (typeof syncWeeklyPush === 'function') syncWeeklyPush(); }, 0); }
+  }
+  // Remote weekly cache — other devices' data summed on pull, NEVER pushed
+  function loadRemoteWeekly() {
+    try { var gm = gmGet(REMOTE_WEEKLY_KEY, null); if (gm) return (typeof gm === 'string') ? JSON.parse(gm) : gm; } catch(e) {}
+    try { return JSON.parse(localStorage.getItem(REMOTE_WEEKLY_KEY) || '{}'); } catch(e) { return {}; }
+  }
+  function saveRemoteWeekly(w) {
+    var json = JSON.stringify(w);
+    gmSet(REMOTE_WEEKLY_KEY, json);
+    try { localStorage.setItem(REMOTE_WEEKLY_KEY, json); } catch(e) {}
+    // Never push — this is display-only aggregated data
+  }
+  // Merge own + remote for display only
+  function getDisplayWeekly() {
+    var own    = sanitizeWeekly(loadWeekly());
+    var remote = sanitizeWeekly(loadRemoteWeekly());
+    var out = {};
+    function addSlice(slice) {
+      for (var dk in slice) {
+        if (!out[dk]) out[dk] = {};
+        for (var a in slice[dk]) {
+          var r = slice[dk][a];
+          if (!out[dk][a]) {
+            out[dk][a] = { totalPkgs: r.totalPkgs||0, totalSec: r.totalSec||0, runs: r.runs||0,
+              totalMissing: r.totalMissing||0, totalExpected: r.totalExpected||0 };
+          } else {
+            out[dk][a].totalPkgs    += r.totalPkgs    || 0;
+            out[dk][a].totalSec     += r.totalSec     || 0;
+            out[dk][a].runs         += r.runs         || 0;
+            out[dk][a].totalMissing += r.totalMissing || 0;
+            out[dk][a].totalExpected+= r.totalExpected|| 0;
+          }
+        }
+      }
+    }
+    addSlice(own);
+    addSlice(remote);
+    return out;
   }
 
   function gmGet(key, def) {
@@ -1147,8 +1194,8 @@
       _syncHistoryPushTimer = null;
       try {
         var devId = MY_DEVICE_ID || getDeviceId();
-        var mySlice = loadHistory(); // this device's local flat history
-        // Pull current basket first so we don't wipe other devices' slices
+        // Push OWN store only — never the display-merged or remote cache
+        var mySlice = sanitizeHistory(loadHistory());
         GM_xmlhttpRequest({
           method: 'GET', url: syncHistoryUrl(), headers: { 'Content-Type': 'application/json' },
           onload: function(res) {
@@ -1157,16 +1204,11 @@
               if (res.status >= 200 && res.status < 300 && res.responseText) {
                 basket = JSON.parse(res.responseText);
               }
-              // Migrate legacy flat payload if present (from old script versions)
-              if (basket.history && !basket.devices) {
-                basket = { devices: {}, legacy: basket.history };
-              }
               if (!basket.devices) basket.devices = {};
-              // Replace only this device's slice
+              // Replace ONLY this device's own slice
               basket.devices[devId] = mySlice;
               basket.date = todayStr();
-              // Once this device has its own slice, legacy is redundant — wipe to prevent double-count
-              delete basket.legacy;
+              delete basket.legacy; // wipe legacy to prevent old-format double-count
               GM_xmlhttpRequest({
                 method: 'POST', url: syncHistoryUrl(),
                 headers: { 'Content-Type': 'application/json' },
@@ -1176,10 +1218,9 @@
             } catch(e) {}
           },
           onerror: function(){
-            // If basket doesn't exist yet, create it fresh
             try {
               var fresh = { devices: {}, date: todayStr() };
-              fresh.devices[MY_DEVICE_ID || getDeviceId()] = loadHistory();
+              fresh.devices[devId] = sanitizeHistory(loadHistory());
               GM_xmlhttpRequest({
                 method: 'POST', url: syncHistoryUrl(),
                 headers: { 'Content-Type': 'application/json' },
@@ -1202,29 +1243,37 @@
           try {
             if (res.status >= 200 && res.status < 300 && res.responseText) {
               var basket = JSON.parse(res.responseText);
-              // Handle legacy flat format from old script versions
-              if (basket && basket.history && !basket.devices) {
-                basket = { devices: {}, legacy: basket.history };
-              }
-              if (basket && (basket.devices || basket.legacy)) {
-                var merged = mergeHistorySlices(basket);
-                merged = sanitizeHistory(merged);
-                var local = loadHistory();
-                // Always merge — union of remote and local
-                var finalH = {};
-                for (var a in merged) finalH[a] = merged[a];
-                // Local wins where it has more data
-                for (var a2 in local) {
-                  if (!finalH[a2] || (local[a2].totalPkgs||0) > (finalH[a2].totalPkgs||0)) {
-                    finalH[a2] = local[a2];
+              if (!basket || typeof basket !== 'object') return;
+              var devId = MY_DEVICE_ID || getDeviceId();
+              var devices = basket.devices || {};
+              // Build remote cache = sum of ALL OTHER devices' slices, excluding own
+              var remoteCache = {};
+              for (var d in devices) {
+                if (d === devId) continue; // skip own slice
+                var slice = sanitizeHistory(devices[d]);
+                for (var a in slice) {
+                  var r = slice[a];
+                  if (!remoteCache[a]) {
+                    remoteCache[a] = { assoc: r.assoc||a, totalPkgs: r.totalPkgs||0,
+                      totalSec: r.totalSec||0, runs: r.runs||0,
+                      totalMissing: r.totalMissing||0, totalExpected: r.totalExpected||0 };
+                  } else {
+                    remoteCache[a].totalPkgs    += r.totalPkgs    || 0;
+                    remoteCache[a].totalSec     += r.totalSec     || 0;
+                    remoteCache[a].runs         += r.runs         || 0;
+                    remoteCache[a].totalMissing += r.totalMissing || 0;
+                    remoteCache[a].totalExpected+= r.totalExpected|| 0;
                   }
                 }
-                if (Object.keys(finalH).length > 0) {
-                  saveHistory(finalH, true);
-                  changed = true;
-                  setTimeout(function(){ if (document.getElementById('cbt-hist-tbody')) renderHistory(); }, 200);
-                }
               }
+              // Recompute avgRate on remote cache
+              for (var a2 in remoteCache) {
+                remoteCache[a2].avgRate = remoteCache[a2].totalSec > 0
+                  ? remoteCache[a2].totalPkgs / (remoteCache[a2].totalSec / 60) : 0;
+              }
+              saveRemoteHistory(remoteCache);
+              changed = true;
+              setTimeout(function(){ if (document.getElementById('cbt-hist-tbody')) renderHistory(); }, 200);
             }
           } catch(e) {}
           if (cb) cb(changed);
@@ -1243,7 +1292,8 @@
       _syncWeeklyPushTimer = null;
       try {
         var devId = MY_DEVICE_ID || getDeviceId();
-        var mySlice = loadWeekly(); // this device's local weekly data
+        // Push OWN weekly store only — never the display-merged data
+        var mySlice = sanitizeWeekly(loadWeekly());
         GM_xmlhttpRequest({
           method: 'GET', url: syncWeeklyUrl(), headers: { 'Content-Type': 'application/json' },
           onload: function(res) {
@@ -1252,13 +1302,9 @@
               if (res.status >= 200 && res.status < 300 && res.responseText) {
                 basket = JSON.parse(res.responseText);
               }
-              // Migrate legacy flat payload
-              if (basket.weekly && !basket.devices) {
-                basket = { devices: {}, legacy: basket.weekly };
-              }
               if (!basket.devices) basket.devices = {};
+              // Replace ONLY this device's own slice
               basket.devices[devId] = mySlice;
-              // Once this device has its own slice, legacy is redundant — wipe to prevent double-count
               delete basket.legacy;
               GM_xmlhttpRequest({
                 method: 'POST', url: syncWeeklyUrl(),
@@ -1271,7 +1317,7 @@
           onerror: function(){
             try {
               var fresh = { devices: {} };
-              fresh.devices[MY_DEVICE_ID || getDeviceId()] = loadWeekly();
+              fresh.devices[devId] = sanitizeWeekly(loadWeekly());
               GM_xmlhttpRequest({
                 method: 'POST', url: syncWeeklyUrl(),
                 headers: { 'Content-Type': 'application/json' },
@@ -1294,39 +1340,34 @@
           try {
             if (res.status >= 200 && res.status < 300 && res.responseText) {
               var basket = JSON.parse(res.responseText);
-              // Handle legacy flat format
-              if (basket && basket.weekly && !basket.devices) {
-                basket = { devices: {}, legacy: basket.weekly };
-              }
-              if (basket && (basket.devices || basket.legacy)) {
-                var merged = mergeWeeklySlices(basket);
-                merged = sanitizeWeekly(merged);
-                var local = loadWeekly();
-                // Always merge — union of remote and local, local wins ties
-                var finalW = {};
-                // Start with remote merged data
-                for (var dk in merged) {
-                  finalW[dk] = {};
-                  for (var a in merged[dk]) finalW[dk][a] = merged[dk][a];
-                }
-                // Layer local on top: keep local if it has more pkgs (local-only runs not in remote)
-                for (var dk2 in local) {
-                  if (!finalW[dk2]) finalW[dk2] = {};
-                  for (var a2 in local[dk2]) {
-                    if (!finalW[dk2][a2] || (local[dk2][a2].totalPkgs||0) > (finalW[dk2][a2].totalPkgs||0)) {
-                      finalW[dk2][a2] = local[dk2][a2];
+              if (!basket || typeof basket !== 'object') return;
+              var devId = MY_DEVICE_ID || getDeviceId();
+              var devices = basket.devices || {};
+              // Build remote cache = sum of ALL OTHER devices' weekly slices, excluding own
+              var remoteCache = {};
+              for (var d in devices) {
+                if (d === devId) continue; // skip own slice
+                var slice = sanitizeWeekly(devices[d]);
+                for (var dk in slice) {
+                  if (!remoteCache[dk]) remoteCache[dk] = {};
+                  for (var a in slice[dk]) {
+                    var r = slice[dk][a];
+                    if (!remoteCache[dk][a]) {
+                      remoteCache[dk][a] = { totalPkgs: r.totalPkgs||0, totalSec: r.totalSec||0,
+                        runs: r.runs||0, totalMissing: r.totalMissing||0, totalExpected: r.totalExpected||0 };
+                    } else {
+                      remoteCache[dk][a].totalPkgs    += r.totalPkgs    || 0;
+                      remoteCache[dk][a].totalSec     += r.totalSec     || 0;
+                      remoteCache[dk][a].runs         += r.runs         || 0;
+                      remoteCache[dk][a].totalMissing += r.totalMissing || 0;
+                      remoteCache[dk][a].totalExpected+= r.totalExpected|| 0;
                     }
                   }
                 }
-                // Check if anything actually changed before saving
-                var remoteKeys = Object.keys(merged).length;
-                var localKeys  = Object.keys(local).length;
-                if (remoteKeys > 0 || localKeys > 0) {
-                  saveWeekly(finalW, true);
-                  changed = true;
-                  setTimeout(function(){ if (document.getElementById('cbt-weekly-tbody')) renderWeekly(); }, 200);
-                }
               }
+              saveRemoteWeekly(remoteCache);
+              changed = true;
+              setTimeout(function(){ if (document.getElementById('cbt-weekly-tbody')) renderWeekly(); }, 200);
             }
           } catch(e) {}
           if (cb) cb(changed);
@@ -1430,21 +1471,21 @@
   }
 
   function pruneWeeklyOlderThan(days) {
-    var w = loadWeekly();
     var cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days); cutoff.setHours(0,0,0,0);
+    // Prune own store
+    var w = loadWeekly();
     var changed = false;
     for (var dk of Object.keys(w)) {
-      if (new Date(dk) < cutoff) { delete w[dk]; changed = true; continue; }
-      // Detect and wipe corrupted entries (scientific notation overflow)
-      for (var a in w[dk]) {
-        if ((w[dk][a].totalPkgs||0) > 100000 || (w[dk][a].runs||0) > 500) {
-          delete w[dk][a]; changed = true;
-        }
-      }
-      if (Object.keys(w[dk]).length === 0) { delete w[dk]; changed = true; }
+      if (new Date(dk) < cutoff) { delete w[dk]; changed = true; }
     }
-    if (changed) saveWeekly(w, true); // skipPush so we don't re-upload corrupt data
-    return sanitizeWeekly(w);
+    if (changed) saveWeekly(w, true);
+    // Prune remote cache
+    var rc = loadRemoteWeekly();
+    var rcChanged = false;
+    for (var dk2 of Object.keys(rc)) {
+      if (new Date(dk2) < cutoff) { delete rc[dk2]; rcChanged = true; }
+    }
+    if (rcChanged) saveRemoteWeekly(rc);
   }
 
   function rollDailyIntoWeekly() {
@@ -1515,10 +1556,50 @@
   }
 
   function saveHistory(h, skipPush) {
+    // saveHistory only ever saves THIS device's own recorded batches
     var json = JSON.stringify(h);
     localStorage.setItem(STORAGE_KEY, json); localStorage.setItem(DATE_KEY, todayStr());
     gmSet(STORAGE_KEY, json); gmSet(DATE_KEY, todayStr());
     if (!skipPush) { setTimeout(function(){ if (typeof syncHistoryPush === 'function') syncHistoryPush(); }, 0); }
+  }
+  // Remote history cache — other devices' data summed on pull, NEVER pushed
+  function loadRemoteHistory() {
+    try { var gm = gmGet(REMOTE_HISTORY_KEY, null); if (gm) return (typeof gm === 'string') ? JSON.parse(gm) : gm; } catch(e) {}
+    try { return JSON.parse(localStorage.getItem(REMOTE_HISTORY_KEY) || '{}'); } catch(e) { return {}; }
+  }
+  function saveRemoteHistory(h) {
+    var json = JSON.stringify(h);
+    gmSet(REMOTE_HISTORY_KEY, json);
+    try { localStorage.setItem(REMOTE_HISTORY_KEY, json); } catch(e) {}
+    // Never push — display-only
+  }
+  // Merge own + remote for display only
+  function getDisplayHistory() {
+    var own    = sanitizeHistory(loadHistory());
+    var remote = sanitizeHistory(loadRemoteHistory());
+    var out = {};
+    function addSlice(slice) {
+      for (var a in slice) {
+        var r = slice[a];
+        if (!out[a]) {
+          out[a] = { assoc: r.assoc||a, totalPkgs: r.totalPkgs||0, totalSec: r.totalSec||0,
+            runs: r.runs||0, totalMissing: r.totalMissing||0, totalExpected: r.totalExpected||0 };
+        } else {
+          out[a].totalPkgs    += r.totalPkgs    || 0;
+          out[a].totalSec     += r.totalSec     || 0;
+          out[a].runs         += r.runs         || 0;
+          out[a].totalMissing += r.totalMissing || 0;
+          out[a].totalExpected+= r.totalExpected|| 0;
+        }
+      }
+    }
+    addSlice(own);
+    addSlice(remote);
+    // Recompute avgRate
+    for (var a2 in out) {
+      out[a2].avgRate = out[a2].totalSec > 0 ? out[a2].totalPkgs / (out[a2].totalSec / 60) : 0;
+    }
+    return out;
   }
 
   function computeRow(data) {
@@ -1942,7 +2023,7 @@
     var html = '';
     var shown = new Set();
 
-    var history = loadHistory(), histEntries = Object.values(history).filter(function(e){ return e.assoc.toLowerCase().indexOf(term) !== -1; });
+    var history = getDisplayHistory(), histEntries = Object.values(history).filter(function(e){ return e.assoc && e.assoc.toLowerCase().indexOf(term) !== -1; });
     if (histEntries.length > 0) {
       html += '<div class="cbt-search-result-section">📅 Today</div>';
       histEntries.forEach(function(e) {
@@ -1954,7 +2035,7 @@
       });
     }
 
-    var weekly = pruneWeeklyOlderThan(WEEKLY_DAYS), agg = {};
+    var weekly = sanitizeWeekly(getDisplayWeekly()), agg = {};
     for (var dk of Object.keys(weekly)) {
       for (var a of Object.keys(weekly[dk])) {
         if (a.toLowerCase().indexOf(term) === -1) continue;
@@ -2034,7 +2115,7 @@
   function renderHistory() {
     var tbody=document.querySelector('#cbt-hist-tbody'),empty=document.querySelector('#cbt-hist-empty'),summary=document.querySelector('#cbt-hist-summary');
     if(!tbody||!empty) return;
-    var history=sanitizeHistory(loadHistory()),entries=Object.values(history);
+    var history=getDisplayHistory(),entries=Object.values(history);
     if(entries.length===0){tbody.innerHTML='';empty.style.display='block';if(summary)summary.innerHTML='';
       if(historySearchTerm) renderHistoryCrossSearch(historySearchTerm);
       return;}
@@ -2081,7 +2162,7 @@
     if(!crossEl) return;
     if(!term){ crossEl.innerHTML=''; return; }
     term = term.toLowerCase();
-    var weekly = pruneWeeklyOlderThan(WEEKLY_DAYS), agg = {};
+    var weekly = sanitizeWeekly(getDisplayWeekly()), agg = {};
     for(var dk of Object.keys(weekly)){
       for(var a of Object.keys(weekly[dk])){
         if(a.toLowerCase().indexOf(term)===-1) continue;
@@ -2094,7 +2175,7 @@
     }
     var entries = Object.values(agg);
     var shown = new Set();
-    var todayHist = loadHistory();
+    var todayHist = getDisplayHistory();
     Object.values(todayHist).forEach(function(e){ if(e.assoc.toLowerCase().indexOf(term)!==-1) shown.add(e.assoc.toLowerCase()); });
     var html='';
     if(entries.length>0){
@@ -2131,7 +2212,7 @@
   function renderWeekly() {
     var tbody=document.querySelector('#cbt-weekly-tbody'),empty=document.querySelector('#cbt-weekly-empty'),summary=document.querySelector('#cbt-weekly-summary');
     if(!tbody||!empty) return;
-    var weekly=sanitizeWeekly(pruneWeeklyOlderThan(WEEKLY_DAYS)),agg={};
+    var weekly=sanitizeWeekly(getDisplayWeekly()),agg={};
     for(var dayKey of Object.keys(weekly)){
       for(var assoc of Object.keys(weekly[dayKey])){
         var d3=weekly[dayKey][assoc];
@@ -2340,7 +2421,7 @@
       }
     });
 
-    var weekly = pruneWeeklyOlderThan(WEEKLY_DAYS), agg = {};
+    var weekly = sanitizeWeekly(getDisplayWeekly()), agg = {};
     for (var dk of Object.keys(weekly)) {
       for (var a of Object.keys(weekly[dk])) {
         if (a.toLowerCase().indexOf(term) === -1) continue;
@@ -2447,6 +2528,44 @@
 
   function start() {
     MY_DEVICE_ID = getDeviceId(); // initialize once at startup
+
+    // ── One-time migration to v21.9 own/remote split ──
+    var CLEAN_KEY = 'cbt_cleaned_v21_9';
+    if (!gmGet(CLEAN_KEY, null)) {
+      // Migrate existing weekly data into OWN store before wiping old key
+      try {
+        var oldWeekly = null;
+        try { var gv = gmGet(WEEKLY_KEY, null); if (gv) oldWeekly = (typeof gv === 'string') ? JSON.parse(gv) : gv; } catch(e) {}
+        if (!oldWeekly) { try { oldWeekly = JSON.parse(localStorage.getItem(WEEKLY_KEY) || '{}'); } catch(e) {} }
+        if (oldWeekly && Object.keys(oldWeekly).length > 0) {
+          var cleanedOld = sanitizeWeekly(oldWeekly);
+          if (Object.keys(cleanedOld).length > 0) {
+            var json = JSON.stringify(cleanedOld);
+            gmSet(OWN_WEEKLY_KEY, json);
+            try { localStorage.setItem(OWN_WEEKLY_KEY, json); } catch(e) {}
+          }
+        }
+      } catch(e) {}
+      // Migrate existing today history into OWN store
+      try {
+        var oldHistory = null;
+        try { var ghv = gmGet(STORAGE_KEY, null); if (ghv) oldHistory = (typeof ghv === 'string') ? JSON.parse(ghv) : ghv; } catch(e) {}
+        if (!oldHistory) { try { oldHistory = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch(e) {} }
+        if (oldHistory && Object.keys(oldHistory).length > 0) {
+          var cleanedHist = sanitizeHistory(oldHistory);
+          if (Object.keys(cleanedHist).length > 0) {
+            var hjson = JSON.stringify(cleanedHist);
+            gmSet(STORAGE_KEY, hjson);
+            try { localStorage.setItem(STORAGE_KEY, hjson); } catch(e) {}
+          }
+        }
+      } catch(e) {}
+      // Wipe remote caches — will be rebuilt correctly on first pull
+      saveRemoteHistory({});
+      saveRemoteWeekly({});
+      gmSet(CLEAN_KEY, '1');
+    }
+
     document.head.appendChild(style);
     timerWatcher.observe(document.documentElement, { childList: true, subtree: true });
     injectAllTimers();
