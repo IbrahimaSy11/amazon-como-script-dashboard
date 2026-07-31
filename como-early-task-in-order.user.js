@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      21.9.1
+// @version      21.12.0
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/store/*/dash*
@@ -253,6 +253,7 @@
       font-size: 9px; font-weight: 800; padding: 2px 6px;
       border-radius: 6px; margin-left: 6px; vertical-align: middle;
       letter-spacing: 0.06em; text-transform: uppercase;
+      box-shadow: 0 0 8px rgba(255,61,61,0.45);
       animation: cbt-slow-pulse 1.2s infinite;
     }
     @keyframes cbt-slow-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
@@ -281,20 +282,28 @@
       display: flex; align-items: center; gap: 6px;
     }
     #cbt-search-input, #cbt-hist-search-input, #cbt-live-search-input {
-      flex: 1; padding: 6px 12px; background: var(--cb-surface);
-      border: 1.5px solid var(--cb-border); border-radius: 6px;
+      flex: 1; padding: 7px 12px 7px 32px; background-color: var(--cb-surface);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238896a8' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: 11px center;
+      border: 1.5px solid var(--cb-border); border-radius: 8px;
       color: var(--cb-text); font-size: 13px; outline: none;
-      font-family: var(--cb-sans); transition: border-color 0.15s;
+      font-family: var(--cb-sans);
+      transition: border-color 0.15s, box-shadow 0.15s;
     }
     #cbt-search-input:focus, #cbt-hist-search-input:focus,
-    #cbt-live-search-input:focus { border-color: var(--cb-blue); }
+    #cbt-live-search-input:focus {
+      border-color: var(--cb-blue);
+      box-shadow: 0 0 0 3px rgba(41,121,255,0.14);
+    }
     #cbt-live-search-clear, #cbt-hist-search-clear, #cbt-weekly-search-clear {
       font-size: 13px; border: none; background: none;
-      cursor: pointer; color: var(--cb-text3); padding: 0 4px;
-      transition: color 0.15s;
+      cursor: pointer; color: var(--cb-text3);
+      width: 24px; height: 24px; padding: 0; border-radius: 50%;
+      display: inline-flex; align-items: center; justify-content: center;
+      transition: color 0.15s, background 0.15s;
     }
     #cbt-live-search-clear:hover, #cbt-hist-search-clear:hover,
-    #cbt-weekly-search-clear:hover { color: var(--cb-red); }
+    #cbt-weekly-search-clear:hover { color: var(--cb-red); background: rgba(255,61,61,0.1); }
 
     #cbt-live-results { margin-top: 0; }
     #cbt-names-search {
@@ -303,17 +312,26 @@
       display: flex; align-items: center; gap: 6px;
     }
     #cbt-names-search-input {
-      flex: 1; padding: 6px 12px; background: var(--cb-surface);
-      border: 1.5px solid var(--cb-border); border-radius: 6px;
+      flex: 1; padding: 7px 12px 7px 32px; background-color: var(--cb-surface);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238896a8' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: 11px center;
+      border: 1.5px solid var(--cb-border); border-radius: 8px;
       color: var(--cb-text); font-size: 13px; outline: none;
-      font-family: var(--cb-sans); transition: border-color 0.15s;
+      font-family: var(--cb-sans);
+      transition: border-color 0.15s, box-shadow 0.15s;
     }
-    #cbt-names-search-input:focus { border-color: var(--cb-blue); }
+    #cbt-names-search-input:focus {
+      border-color: var(--cb-blue);
+      box-shadow: 0 0 0 3px rgba(41,121,255,0.14);
+    }
     #cbt-names-search-clear {
       font-size: 13px; border: none; background: none;
-      cursor: pointer; color: var(--cb-text3); padding: 0 4px;
+      cursor: pointer; color: var(--cb-text3);
+      width: 24px; height: 24px; padding: 0; border-radius: 50%;
+      display: inline-flex; align-items: center; justify-content: center;
+      transition: color 0.15s, background 0.15s;
     }
-    #cbt-names-search-clear:hover { color: var(--cb-red); }
+    #cbt-names-search-clear:hover { color: var(--cb-red); background: rgba(255,61,61,0.1); }
 
     /* ── Search result sections ── */
     .cbt-search-result-section {
@@ -365,12 +383,14 @@
 
     /* ── Resize handle ── */
     #cbt-drag-bottom {
-      width: 100%; height: 6px;
-      background: linear-gradient(180deg, var(--cb-border), #c8d4e0);
+      width: 100%; height: 9px;
+      background-color: #e6ecf3;
+      background-image: radial-gradient(circle, #9fb2c6 1.1px, transparent 1.3px);
+      background-size: 9px 9px; background-position: center; background-repeat: repeat-x;
       cursor: ns-resize; border-radius: 0 0 var(--cb-radius) var(--cb-radius);
-      transition: background 0.2s; user-select: none;
+      transition: background-color 0.2s; user-select: none;
     }
-    #cbt-drag-bottom:hover { background: var(--cb-blue); }
+    #cbt-drag-bottom:hover { background-color: var(--cb-blue); }
 
     /* ── Font size controls ── */
     #cbt-font-dec, #cbt-font-inc { font-size: 12px !important; }
@@ -441,7 +461,13 @@
     }
     #cbt-panel.dark #cbt-search-input, #cbt-panel.dark #cbt-hist-search-input,
     #cbt-panel.dark #cbt-live-search-input, #cbt-panel.dark #cbt-names-search-input {
-      background: #0d1117 !important; border-color: #21262d !important; color: #c9d1d9 !important;
+      background-color: #0d1117 !important; border-color: #21262d !important; color: #c9d1d9 !important;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%236e7b8d' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E") !important;
+    }
+    #cbt-panel.dark #cbt-search-input:focus, #cbt-panel.dark #cbt-hist-search-input:focus,
+    #cbt-panel.dark #cbt-live-search-input:focus, #cbt-panel.dark #cbt-names-search-input:focus {
+      border-color: #58a6ff !important;
+      box-shadow: 0 0 0 3px rgba(88,166,255,0.14) !important;
     }
     #cbt-panel.dark .cbt-search-result-section {
       background: linear-gradient(180deg,#1a2233,#161b22) !important;
@@ -453,8 +479,8 @@
     #cbt-panel.dark .cbt-search-row-name:hover { color: #58a6ff !important; }
     #cbt-panel.dark .cbt-search-row-mid { color: #7a8fa3 !important; }
     #cbt-panel.dark #cbt-updated { color: #3a4456 !important; }
-    #cbt-panel.dark #cbt-drag-bottom { background: #21262d !important; }
-    #cbt-panel.dark #cbt-drag-bottom:hover { background: #58a6ff !important; }
+    #cbt-panel.dark #cbt-drag-bottom { background-color: #21262d !important; }
+    #cbt-panel.dark #cbt-drag-bottom:hover { background-color: #58a6ff !important; }
 
     /* ══════════════════════════════════════
        ASSOCIATE SEARCH PANEL (task page)
@@ -513,17 +539,26 @@
       display: flex; align-items: center; gap: 6px;
     }
     #cbt-tp-search-input {
-      flex: 1; padding: 6px 12px; background: var(--cb-surface);
-      border: 1.5px solid var(--cb-border); border-radius: 6px;
+      flex: 1; padding: 7px 12px 7px 32px; background-color: var(--cb-surface);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238896a8' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: 11px center;
+      border: 1.5px solid var(--cb-border); border-radius: 8px;
       color: var(--cb-text); font-size: 13px; outline: none;
-      font-family: var(--cb-sans); transition: border-color 0.15s;
+      font-family: var(--cb-sans);
+      transition: border-color 0.15s, box-shadow 0.15s;
     }
-    #cbt-tp-search-input:focus { border-color: var(--cb-blue); }
+    #cbt-tp-search-input:focus {
+      border-color: var(--cb-blue);
+      box-shadow: 0 0 0 3px rgba(41,121,255,0.14);
+    }
     #cbt-tp-search-clear {
       font-size: 13px; border: none; background: none;
-      cursor: pointer; color: var(--cb-text3); padding: 0 4px; transition: color 0.15s;
+      cursor: pointer; color: var(--cb-text3);
+      width: 24px; height: 24px; padding: 0; border-radius: 50%;
+      display: inline-flex; align-items: center; justify-content: center;
+      transition: color 0.15s, background 0.15s;
     }
-    #cbt-tp-search-clear:hover { color: var(--cb-red); }
+    #cbt-tp-search-clear:hover { color: var(--cb-red); background: rgba(255,61,61,0.1); }
 
     #cbt-tp-results { }
     .cbt-tp-row {
@@ -577,7 +612,12 @@
       background: #161b22 !important; border-bottom-color: #21262d !important;
     }
     #cbt-tp.dark #cbt-tp-search-input {
-      background: #0d1117 !important; border-color: #21262d !important; color: #c9d1d9 !important;
+      background-color: #0d1117 !important; border-color: #21262d !important; color: #c9d1d9 !important;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%236e7b8d' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E") !important;
+    }
+    #cbt-tp.dark #cbt-tp-search-input:focus {
+      border-color: #58a6ff !important;
+      box-shadow: 0 0 0 3px rgba(88,166,255,0.14) !important;
     }
     #cbt-tp.dark .cbt-tp-row { border-bottom-color: #21262d !important; }
     #cbt-tp.dark .cbt-tp-row:hover { background: #1c2333 !important; }
@@ -596,6 +636,72 @@
     #cbt-tp.dark .cbt-hist-rate.good  { color: #3fb950 !important; background: rgba(0,200,83,0.07) !important; }
     #cbt-tp.dark .cbt-hist-rate.warn  { color: #e3b341 !important; background: rgba(255,171,0,0.07) !important; }
     #cbt-tp.dark .cbt-hist-rate.alert { color: #f85149 !important; background: rgba(255,61,61,0.07) !important; }
+
+    /* ── UI polish (v21.10) ── */
+    @keyframes cbtFadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+    #cbt-panel, #cbt-tp { animation: cbtFadeIn 0.28s ease-out; }
+
+    /* row hover: left accent bar, no layout shift */
+    #cbt-table tbody tr:hover td:first-child, #cbt-hist-table tbody tr:hover td:first-child,
+    #cbt-weekly-table tbody tr:hover td:first-child, #cbt-names-table tbody tr:hover td:first-child {
+      box-shadow: inset 3px 0 0 var(--cb-blue);
+    }
+    #cbt-panel.dark #cbt-table tbody tr:hover td:first-child, #cbt-panel.dark #cbt-hist-table tbody tr:hover td:first-child,
+    #cbt-panel.dark #cbt-weekly-table tbody tr:hover td:first-child, #cbt-panel.dark #cbt-names-table tbody tr:hover td:first-child {
+      box-shadow: inset 3px 0 0 #58a6ff;
+    }
+    .cbt-search-row:hover .cbt-search-row-name, .cbt-tp-row:hover .cbt-tp-row-name {
+      box-shadow: inset 3px 0 0 var(--cb-blue);
+    }
+    #cbt-panel.dark .cbt-search-row:hover .cbt-search-row-name,
+    #cbt-tp.dark .cbt-search-row:hover .cbt-search-row-name,
+    #cbt-tp.dark .cbt-tp-row:hover .cbt-tp-row-name {
+      box-shadow: inset 3px 0 0 #58a6ff;
+    }
+
+    /* stat card hover tint */
+    .cbt-stat-card { transition: background 0.15s; }
+    .cbt-stat-card:hover { background: rgba(41,121,255,0.06); }
+    #cbt-panel.dark .cbt-stat-card:hover { background: rgba(88,166,255,0.07) !important; }
+
+    /* friendlier empty states */
+    #cbt-empty::before, #cbt-hist-empty::before, #cbt-weekly-empty::before, #cbt-names-empty::before {
+      content: '📭'; display: block; font-size: 24px; margin-bottom: 6px;
+      opacity: 0.55; font-style: normal;
+    }
+
+    /* live pulse next to the updated timestamp */
+    #cbt-updated::before {
+      content: ''; display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+      background: var(--cb-green); margin-right: 5px; vertical-align: middle;
+      animation: cbt-live-blink 2s infinite;
+    }
+    @keyframes cbt-live-blink { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+    /* ── Copy confirmation ── */
+    #cbt-copy-toast {
+      position: fixed; z-index: 2147483647; pointer-events: none;
+      background: linear-gradient(135deg,#00c853,#00a344); color: #fff;
+      font: 800 13px/1 var(--cb-sans); letter-spacing: .02em;
+      padding: 8px 13px; border-radius: 7px; white-space: nowrap;
+      box-shadow: 0 5px 18px rgba(0,200,83,.45);
+      opacity: 0; transform: translate(-50%, -4px);
+      transition: opacity .16s ease-out, transform .16s ease-out;
+    }
+    #cbt-copy-toast.show { opacity: 1; transform: translate(-50%, -26px); }
+    #cbt-copy-toast .cbt-ct-val {
+      font-weight: 600; opacity: .85; margin-left: 6px;
+      font-family: var(--cb-mono); font-size: 12px;
+    }
+    @keyframes cbt-copy-flash {
+      0%   { background: rgba(0,200,83,.55); }
+      60%  { background: rgba(0,200,83,.28); }
+      100% { background: transparent; }
+    }
+    .cbt-copied-flash {
+      animation: cbt-copy-flash .7s ease-out;
+      border-radius: 4px; box-shadow: 0 0 0 2px rgba(0,200,83,.4);
+    }
 
     /* ── misc ── */
     .cbt-miss-dot { margin-left: 4px; font-size: 14px; vertical-align: middle; }
@@ -1024,6 +1130,7 @@
     return result || {};
   }
   function saveWeekly(w, skipPush) {
+    _dispWeekCache = null;
     var json = JSON.stringify(w);
     gmSet(OWN_WEEKLY_KEY, json);
     try { localStorage.setItem(OWN_WEEKLY_KEY, json); } catch(e) {}
@@ -1035,13 +1142,21 @@
     try { return JSON.parse(localStorage.getItem(REMOTE_WEEKLY_KEY) || '{}'); } catch(e) { return {}; }
   }
   function saveRemoteWeekly(w) {
+    _dispWeekCache = null;
     var json = JSON.stringify(w);
     gmSet(REMOTE_WEEKLY_KEY, json);
     try { localStorage.setItem(REMOTE_WEEKLY_KEY, json); } catch(e) {}
     // Never push — this is display-only aggregated data
   }
+  // Display caches — avoid re-parsing JSON from storage on every keystroke/render.
+  // Short TTL keeps date-rollover working; saves invalidate immediately.
+  var _dispWeekCache = null, _dispWeekTime = 0;
+  var _dispHistCache = null, _dispHistTime = 0;
+
   // Merge own + remote for display only
   function getDisplayWeekly() {
+    var _now = Date.now();
+    if (_dispWeekCache && (_now - _dispWeekTime) < 1500) return _dispWeekCache;
     var own    = sanitizeWeekly(loadWeekly());
     var remote = sanitizeWeekly(loadRemoteWeekly());
     var out = {};
@@ -1065,6 +1180,7 @@
     }
     addSlice(own);
     addSlice(remote);
+    _dispWeekCache = out; _dispWeekTime = _now;
     return out;
   }
 
@@ -1557,6 +1673,7 @@
 
   function saveHistory(h, skipPush) {
     // saveHistory only ever saves THIS device's own recorded batches
+    _dispHistCache = null;
     var json = JSON.stringify(h);
     localStorage.setItem(STORAGE_KEY, json); localStorage.setItem(DATE_KEY, todayStr());
     gmSet(STORAGE_KEY, json); gmSet(DATE_KEY, todayStr());
@@ -1568,6 +1685,7 @@
     try { return JSON.parse(localStorage.getItem(REMOTE_HISTORY_KEY) || '{}'); } catch(e) { return {}; }
   }
   function saveRemoteHistory(h) {
+    _dispHistCache = null;
     var json = JSON.stringify(h);
     gmSet(REMOTE_HISTORY_KEY, json);
     try { localStorage.setItem(REMOTE_HISTORY_KEY, json); } catch(e) {}
@@ -1575,6 +1693,8 @@
   }
   // Merge own + remote for display only
   function getDisplayHistory() {
+    var _now = Date.now();
+    if (_dispHistCache && (_now - _dispHistTime) < 1500) return _dispHistCache;
     var own    = sanitizeHistory(loadHistory());
     var remote = sanitizeHistory(loadRemoteHistory());
     var out = {};
@@ -1599,7 +1719,82 @@
     for (var a2 in out) {
       out[a2].avgRate = out[a2].totalSec > 0 ? out[a2].totalPkgs / (out[a2].totalSec / 60) : 0;
     }
+    _dispHistCache = out; _dispHistTime = _now;
     return out;
+  }
+
+  /* ══════════════════════════════════════
+     COPY TO CLIPBOARD + VISUAL CONFIRMATION
+  ══════════════════════════════════════ */
+  var _ctEl = null, _ctTimer = null;
+
+  function showCopyToast(x, y, label) {
+    if (!_ctEl) {
+      _ctEl = document.createElement('div');
+      _ctEl.id = 'cbt-copy-toast';
+      document.body.appendChild(_ctEl);
+    }
+    var shown = label.length > 24 ? label.slice(0, 22) + '\u2026' : label;
+    _ctEl.innerHTML = '\u2713 Copied<span class="cbt-ct-val">' + shown + '</span>';
+    /* keep the toast on-screen near the click */
+    var px = Math.max(70, Math.min(window.innerWidth - 70, x));
+    var py = Math.max(30, y);
+    _ctEl.style.left = px + 'px';
+    _ctEl.style.top  = py + 'px';
+    _ctEl.classList.remove('show');
+    void _ctEl.offsetWidth;               /* restart the transition */
+    _ctEl.classList.add('show');
+    clearTimeout(_ctTimer);
+    _ctTimer = setTimeout(function(){ if (_ctEl) _ctEl.classList.remove('show'); }, 1150);
+  }
+
+  /* execCommand fallback — navigator.clipboard needs a secure context and
+     can reject, in which case the copy would silently do nothing. */
+  function legacyCopy(text) {
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;';
+      document.body.appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0, ta.value.length);
+      var done = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return done;
+    } catch(e) { return false; }
+  }
+
+  function copyWithFeedback(el, text, ev) {
+    if (!text) return;
+    function confirmed() {
+      if (el) {
+        el.classList.remove('cbt-copied-flash');
+        void el.offsetWidth;
+        el.classList.add('cbt-copied-flash');
+        setTimeout(function(){ if (el) el.classList.remove('cbt-copied-flash'); }, 750);
+      }
+      var x, y;
+      if (ev && ev.clientX) { x = ev.clientX; y = ev.clientY; }
+      else if (el) { var r = el.getBoundingClientRect(); x = r.left + r.width / 2; y = r.top; }
+      else { x = window.innerWidth / 2; y = 80; }
+      showCopyToast(x, y, text);
+    }
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(confirmed, function(){
+          if (legacyCopy(text)) confirmed();
+        });
+      } else if (legacyCopy(text)) confirmed();
+    } catch(e) {
+      if (legacyCopy(text)) confirmed();
+    }
+  }
+
+  // Skip innerHTML assignment when markup is unchanged — avoids DOM thrash on
+  // the 2s poll cycle and preserves user text selection mid-read.
+  function setHTML(el, html) {
+    if (el && el._cbtLastHTML !== html) { el._cbtLastHTML = html; el.innerHTML = html; }
   }
 
   function computeRow(data) {
@@ -1784,17 +1979,70 @@
 
   var _panel2Ref = null;
 
+  /* ══════════════════════════════════════
+     PANEL MOUNTING + SELF-HEAL
+
+     The panel normally anchors to the <utilization> element. If that
+     never renders (layout change, slow load, Angular re-render) the
+     panel would silently never appear — so after a few failed tries
+     we fall back to other stable anchors rather than giving up.
+  ══════════════════════════════════════ */
+  var PANEL_HEALTH_MS = 2000;
+  var _mountFails = 0;
+
+  /* A cart/task detail page. Only the Associate Search panel belongs here —
+     the Batcher Timers board is for the dashboard view. */
+  function isTaskDetailPage() {
+    return !!document.querySelector('div.job-details');
+  }
+
+  /* Detach the Batcher Timers board but KEEP the cached node, so its state
+     and event listeners survive and it re-mounts instantly on the dashboard. */
+  function detachMainPanel() {
+    var p = document.getElementById('cbt-panel');
+    if (p) p.remove();
+  }
+
+  function findMountPoint() {
+    if (isTaskDetailPage()) return null;   /* never mount here */
+
+    var el = document.querySelector('utilization.dashboard-utilization') ||
+             document.querySelector('utilization');
+    if (el && el.parentNode) return { el: el, mode: 'before' };
+
+    /* Only reach for fallbacks once the normal anchor has clearly failed,
+       so we don't mount somewhere odd during a normal slow page load. */
+    if (_mountFails >= 3) {
+      el = document.querySelector('div.container-fluid.job-cards');
+      if (el && el.parentNode) return { el: el, mode: 'before' };
+
+      el = document.querySelector("h1[data-dtk-test-id='job-grid-title']");
+      if (el && el.parentNode) return { el: el, mode: 'before' };
+
+      el = document.querySelector('div.container.main-content') ||
+           document.querySelector('.container.main-content');
+      if (el) return { el: el, mode: 'prepend' };
+
+      el = document.querySelector('.ng-scope');
+      if (el) return { el: el, mode: 'prepend' };
+    }
+    return null;
+  }
+
   function injectPanel() {
-    if (document.getElementById('cbt-panel')) return;
-    var utilEl = document.querySelector('utilization.dashboard-utilization');
-    if (!utilEl) utilEl = document.querySelector('utilization');
+    /* Cart/task detail page shows ONLY the Associate Search panel. */
+    if (isTaskDetailPage()) { detachMainPanel(); return; }
+
+    var existing = document.getElementById('cbt-panel');
+    if (existing && existing.isConnected) return;
 
     if (!_panel2Ref) {
       _panel2Ref = buildPanel();
       attachPanelEvents(_panel2Ref);
     }
 
-    if (!utilEl) return;
+    var mount = findMountPoint();
+    if (!mount) return;
 
     _panel2Ref.style.position = '';
     _panel2Ref.style.top = '';
@@ -1813,11 +2061,46 @@
         if (tabs0) tabs0.style.display = h0 === 0 ? 'none' : '';
       }
     } catch(ex) {}
-    utilEl.parentNode.insertBefore(_panel2Ref, utilEl);
+
+    if (mount.mode === 'prepend') mount.el.insertBefore(_panel2Ref, mount.el.firstChild);
+    else                          mount.el.parentNode.insertBefore(_panel2Ref, mount.el);
+
+    _mountFails = 0;              /* mounted successfully */
     renderLive();
     renderHistory();
     renderWeekly();
     renderNames();
+  }
+
+  /* Runs on an interval: if the panel is gone or was detached by an
+     Angular re-render, rebuild and re-mount it automatically. */
+  function panelHealthCheck() {
+    /* On a detail page the board must stay hidden — don't re-inject it. */
+    if (isTaskDetailPage()) { detachMainPanel(); _mountFails = 0; return; }
+
+    var p = document.getElementById('cbt-panel');
+    if (p && p.isConnected) { _mountFails = 0; return; }
+
+    injectPanel();
+
+    if (!document.getElementById('cbt-panel')) {
+      _mountFails++;
+      /* After many failures, drop the cached node in case it got into a
+         bad state, so the next tick rebuilds it from scratch. */
+      if (_mountFails === 8) _panel2Ref = null;
+      if (_mountFails > 40) _mountFails = 4;   /* keep retrying, don't overflow */
+    }
+  }
+
+  /* Same idea for the Associate Search panel on task detail pages. */
+  function taskPanelHealthCheck() {
+    var onTaskPage = !!document.querySelector('div.job-details');
+    var tp = document.getElementById('cbt-tp');
+    if (onTaskPage) {
+      if (!tp || !tp.isConnected) { _tpRef = null; injectTaskPanel(); }
+    } else if (tp) {
+      tp.remove(); _tpRef = null;
+    }
   }
 
   function attachPanelEvents(panel2) {
@@ -1940,22 +2223,14 @@
       var el = e.target.closest('.cbt-assoc');
       if (!el || !panel2.contains(el)) return;
       var text = el.textContent.replace(/^\d+\s*/, '').replace(/[●•]/g, '').trim();
-      navigator.clipboard.writeText(text).then(function() {
-        var prev = el.style.color;
-        el.style.color = '#2a9d2a';
-        setTimeout(function() { el.style.color = prev; }, 600);
-      });
+      copyWithFeedback(el, text, e);
     });
 
     document.addEventListener('click', function(e) {
       var el = e.target.closest('.cbt-search-row-name');
       if (!el || !panel2.contains(el)) return;
       var text = el.textContent.trim();
-      navigator.clipboard.writeText(text).then(function() {
-        var prev = el.style.color;
-        el.style.color = '#2a9d2a';
-        setTimeout(function() { el.style.color = prev; }, 600);
-      });
+      copyWithFeedback(el, text, e);
     });
 
     document.addEventListener('click', function(e) {
@@ -1978,10 +2253,7 @@
       var nameCell = e.target.closest('.cbt-name-cell');
       if (nameCell) {
         var nm = nameCell.textContent.trim();
-        navigator.clipboard.writeText(nm).then(function(){
-          var prev = nameCell.style.color; nameCell.style.color = '#2a9d2a';
-          setTimeout(function(){ nameCell.style.color = prev; }, 600);
-        });
+        copyWithFeedback(nameCell, nm, e);
       }
     });
 
@@ -2062,21 +2334,26 @@
     html += savedNamesSearchHTML(term, shown);
 
     if (html === '') html = '<div style="text-align:center;color:#aaa;padding:10px;font-style:italic;font-size:14px;">No results found for "' + term + '"</div>';
-    resultsEl.innerHTML = html;
+    setHTML(resultsEl, html);
   }
 
   function renderLive() {
     var tbody=document.querySelector('#cbt-tbody'), empty=document.querySelector('#cbt-empty');
     if (!tbody||!empty) return;
+    var lowerTerm = liveSearchTerm ? liveSearchTerm.toLowerCase() : '';
+    // Compute each row's stats once — previously computeRow ran inside the sort
+    // comparator (O(n log n) calls) and again in the render loop.
     var rows=[]; taskCache.forEach(function(d){
       if(d.state==='BATCHING') {
-        if (!liveSearchTerm) { rows.push(d); return; }
-        var name = (d.associateId||d.associate||d.driverAssignment||d.shortClientRef||'').toLowerCase();
-        if (name.indexOf(liveSearchTerm.toLowerCase()) !== -1) rows.push(d);
+        if (lowerTerm) {
+          var name = (d.associateId||d.associate||d.driverAssignment||d.shortClientRef||'').toLowerCase();
+          if (name.indexOf(lowerTerm) === -1) return;
+        }
+        rows.push({ d: d, r: computeRow(d) });
       }
     });
-    rows.sort(function(a,b){
-      var ra=computeRow(a),rb=computeRow(b);
+    rows.sort(function(A,B){
+      var a=A.d, b=B.d, ra=A.r, rb=B.r;
       var slowA = ra.scanRate && ra.scanRate < ALERT_RATE && (ra.elapsedSec||0) > 120;
       var slowB = rb.scanRate && rb.scanRate < ALERT_RATE && (rb.elapsedSec||0) > 120;
       if (slowA && !slowB) return -1;
@@ -2088,7 +2365,7 @@
       else{va=ra.elapsedSec||0;vb=rb.elapsedSec||0;}
       return liveSortAsc?va-vb:vb-va;
     });
-    if(rows.length===0){tbody.innerHTML='';empty.style.display='block';
+    if(rows.length===0){setHTML(tbody,'');empty.style.display='block';
       var body2=document.querySelector('#cbt-body');
       if(body2&&!body2.style.height){body2.style.height='350px';body2.style.maxHeight='350px';}
       return;}
@@ -2096,7 +2373,7 @@
     empty.style.display='none';
     var html='';
     for(var i=0;i<rows.length;i++){
-      var data=rows[i],assoc=data.associateId||data.associate||data.driverAssignment||data.shortClientRef,shortRef=data.shortClientRef,r=computeRow(data);
+      var data=rows[i].d,assoc=data.associateId||data.associate||data.driverAssignment||data.shortClientRef,shortRef=data.shortClientRef,r=rows[i].r;
       var elMin=r.elapsedSec!=null?r.elapsedSec/60:0;
       var elCls=r.elapsedSec!=null?(elMin>=ALERT_ELAPSED_MIN?'alert':elMin>=WARN_ELAPSED_MIN?'warn':''):'';
       var elTxt=r.elapsedSec!=null?fmt(r.elapsedSec):'--:--';
@@ -2107,7 +2384,7 @@
       html+='<td><span class="cbt-elapsed '+elCls+'" data-start="'+(r.startMs||'')+'" data-live="'+(r.inProgress?'1':'0')+'">'+elTxt+'</span></td>';
       html+='<td><span class="cbt-rate '+rateCls+'">'+rateTxt+'</span></td></tr>';
     }
-    tbody.innerHTML=html;
+    setHTML(tbody, html);
     var upd=document.querySelector('#cbt-updated');
     if(upd) upd.textContent='updated '+new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
   }
@@ -2116,7 +2393,7 @@
     var tbody=document.querySelector('#cbt-hist-tbody'),empty=document.querySelector('#cbt-hist-empty'),summary=document.querySelector('#cbt-hist-summary');
     if(!tbody||!empty) return;
     var history=getDisplayHistory(),entries=Object.values(history);
-    if(entries.length===0){tbody.innerHTML='';empty.style.display='block';if(summary)summary.innerHTML='';
+    if(entries.length===0){setHTML(tbody,'');empty.style.display='block';if(summary)summary.innerHTML='';
       if(historySearchTerm) renderHistoryCrossSearch(historySearchTerm);
       return;}
     empty.style.display='none';
@@ -2148,7 +2425,7 @@
       html+='<td><span class="cbt-hist-meta">'+e.runs+'</span></td><td><span class="cbt-hist-meta">'+e.totalPkgs+'</span></td>';
       html+='<td><span class="cbt-hist-rate '+rateCls+'">'+e.avgRate.toFixed(1)+'</span></td></tr>';
     }
-    tbody.innerHTML=html;
+    setHTML(tbody, html);
 
     if(historySearchTerm) renderHistoryCrossSearch(historySearchTerm);
     else {
@@ -2190,7 +2467,7 @@
       });
     }
     html += savedNamesSearchHTML(term, shown);
-    crossEl.innerHTML=html;
+    setHTML(crossEl, html);
   }
 
   function sanitizeWeekly(w) {
@@ -2228,7 +2505,7 @@
       var runs = Math.min(a.runs, 500);
       return{assoc:a.assoc,totalPkgs:pkgs,totalSec:sec,runs:runs,days:a.daysSet.size,avgRate:sec>0?pkgs/(sec/60):0,hrs:sec,missPct:a.totalExpected>0?(a.totalMissing/a.totalExpected*100):0};
     });
-    if(all.length===0){tbody.innerHTML='';empty.style.display='block';if(summary)summary.innerHTML='';
+    if(all.length===0){setHTML(tbody,'');empty.style.display='block';if(summary)summary.innerHTML='';
       if(weeklySearchTerm) renderWeeklyCrossSearch(weeklySearchTerm);
       return;}
     empty.style.display='none';
@@ -2259,7 +2536,7 @@
       html+='<td><span class="cbt-hist-meta">'+e.totalPkgs+'</span></td><td><span class="cbt-hist-rate '+rateCls+'">'+e.avgRate.toFixed(1)+'</span></td>';
       html+='<td><span class="cbt-hist-meta">'+fmtHours(e.totalSec)+'</span></td></tr>';
     }
-    tbody.innerHTML=html;
+    setHTML(tbody, html);
 
     if(weeklySearchTerm) renderWeeklyCrossSearch(weeklySearchTerm);
     else {
@@ -2288,11 +2565,19 @@
     return html;
   }
 
+  var _namesScanLast = 0;
   function renderNames() {
     var tbody = document.getElementById('cbt-names-tbody');
     if (!tbody) return;
-    scanLocalStorageForNames();
-    syncNamesFromAllTabs();
+    // Throttle the full localStorage scan — it parses every stored JSON blob,
+    // which is wasteful on each search keystroke. Capture still happens via
+    // API hooks and the 5s background interval.
+    var _nowN = Date.now();
+    if (_nowN - _namesScanLast > 5000) {
+      _namesScanLast = _nowN;
+      scanLocalStorageForNames();
+      syncNamesFromAllTabs();
+    }
     var all = loadAllNames();
     var totalCount = Object.keys(all).length;
     var names = Object.keys(all).map(function(k){ return all[k]; });
@@ -2311,7 +2596,7 @@
 
     var emptyEl = document.getElementById('cbt-names-empty');
     if (!names.length) {
-      tbody.innerHTML = '';
+      setHTML(tbody, '');
       if (emptyEl) { emptyEl.style.display = 'block'; emptyEl.textContent = term ? 'No names match "' + namesSearchTerm + '"' : 'No names saved yet'; }
       return;
     }
@@ -2321,7 +2606,7 @@
     names.forEach(function(n){
       html += '<tr><td style="text-align:left;"><span class="cbt-name-cell">' + n + '</span></td></tr>';
     });
-    tbody.innerHTML = html;
+    setHTML(tbody, html);
   }
 
   function renderWeeklyCrossSearch(term) {
@@ -2350,7 +2635,7 @@
       });
     }
     html += savedNamesSearchHTML(term, shown);
-    crossEl.innerHTML=html;
+    setHTML(crossEl, html);
   }
 
   function tickLive() {
@@ -2443,7 +2728,7 @@
     if (savedHtml) html += savedHtml;
 
     if (!html) html = '<div style="text-align:center;color:#aaa;padding:10px;font-size:13px;font-style:italic;">No results for "' + term + '"</div>';
-    el.innerHTML = html;
+    setHTML(el, html);
   }
 
   function tpAttachEvents(tp) {
@@ -2489,16 +2774,14 @@
       var nameEl = e.target.closest('.cbt-tp-row-name');
       if (nameEl && tp.contains(nameEl)) {
         var text = nameEl.textContent.trim();
-        navigator.clipboard.writeText(text).then(function(){
-          var prev = nameEl.style.color; nameEl.style.color = '#2a9d2a';
-          setTimeout(function(){ nameEl.style.color = prev; }, 600);
-        });
+        copyWithFeedback(nameEl, text, e);
       }
     });
   }
 
   function injectTaskPanel() {
-    if (document.getElementById('cbt-tp')) return;
+    var existingTp = document.getElementById('cbt-tp');
+    if (existingTp && existingTp.isConnected) return;
     if (!document.querySelector('div.job-details')) return;
 
     var mainContent = document.querySelector('div.container.main-content') || document.querySelector('.container.main-content');
@@ -2519,11 +2802,20 @@
     tpAttachEvents(_tpRef);
   }
 
+  /* Exactly one panel per page type:
+       cart/task detail page -> Associate Search only
+       dashboard view        -> Batcher Timers only                */
   var panelWatcher = new MutationObserver(function() {
-    if (!document.getElementById('cbt-panel')) injectPanel();
-    var isTaskPage = document.querySelector('div.job-details') !== null;
-    if (isTaskPage && !document.getElementById('cbt-tp')) injectTaskPanel();
-    if (!isTaskPage && document.getElementById('cbt-tp')) { document.getElementById('cbt-tp').remove(); _tpRef = null; }
+    if (isTaskDetailPage()) {
+      detachMainPanel();
+      var tp = document.getElementById('cbt-tp');
+      if (!tp || !tp.isConnected) injectTaskPanel();
+    } else {
+      var tpOff = document.getElementById('cbt-tp');
+      if (tpOff) { tpOff.remove(); _tpRef = null; }
+      var mp = document.getElementById('cbt-panel');
+      if (!mp || !mp.isConnected) injectPanel();
+    }
   });
 
   function start() {
@@ -2569,12 +2861,14 @@
     document.head.appendChild(style);
     timerWatcher.observe(document.documentElement, { childList: true, subtree: true });
     injectAllTimers();
-    setInterval(tickTimers, 1000);
-    setInterval(injectAllTimers, 1000);
+    setInterval(function(){ tickTimers(); injectAllTimers(); }, 1000);
     fetchAndUpdate();
     panelWatcher.observe(document.documentElement, { childList: true, subtree: true });
-    injectPanel();
+    if (!isTaskDetailPage()) injectPanel();
     injectTaskPanel();
+    /* Self-heal: re-mount either panel automatically if it disappears. */
+    setInterval(panelHealthCheck, PANEL_HEALTH_MS);
+    setInterval(taskPanelHealthCheck, PANEL_HEALTH_MS);
     pollActiveTasks();
     setInterval(pollActiveTasks, POLL_MS);
     setInterval(tickLive, TICK_MS);
