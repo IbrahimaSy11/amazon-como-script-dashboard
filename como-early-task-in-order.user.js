@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      21.15.1
+// @version      21.16.1
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/store/*/dash*
@@ -1227,6 +1227,103 @@
     if (body) body.style.zoom = scale;
   }
 
+  /* ══════════════════════════════════════
+     BUILT-IN NAME ROSTER
+
+     Baked into the script so a brand new install shows the full
+     names list immediately, without waiting on a Pantry pull (and
+     even if Pantry is down). Merged additively in loadAllNames:
+     it only ever ADDS names, never removes captured ones. Also
+     feeds the union push, so installing this script anywhere
+     re-seeds the shared basket automatically.
+  ══════════════════════════════════════ */
+  var SEED_NAMES = [
+    'aamarinp','abahmam','abbececi','abcam','abdldiop','abdouhdi','abdrayae','aboiguiw',
+    'abrekenn','absoumao','adamjkev','adarpinc','aeltayea','afriksad','ajeffang','ajfofana',
+    'alapasov','alayalst','alcisseo','alcmayor','aliceaed','alisonko','alphasoh','alpoliak',
+    'alwnicho','alybalbe','amadoufb','amambald','amifmbow','aminpsan','amyreyei','andhjaim',
+    'andijime','andricba','andruang','angecjos','angegerr','angelvif','angicohe','anrosalg',
+    'anthrort','antwileo','antzeigl','anzaisma','aouantho','arafaabo','aramadia','aranerwi',
+    'arlingma','arnolzie','ashbcruz','ashchhab','aspcompa','auberete','axevgali','baabdouy',
+    'bagagnaz','baldemaq','bamamads','bamelony','barsoulj','basilsid','basnsyll','baspndao',
+    'batomadi','bbarioua','bcissali','bdavtiff','bdawperr','bdialmam','bedhamed','bellocr',
+    'benelomo','bengoce','benjxall','binsains','blasanay','bmadial','boikovik','bolivchr',
+    'boubamba','boydgsad','boytanix','brandguk','briandih','bsamanca','bueqferm','burgwjay',
+    'bushrbus','bvalleaa','cadamirt','camarmu','camuouma','candesem','cantesek','caquialv',
+    'cardbjar','carllaca','carmfall','carrdiey','catmayor','cdiaousm','cespjohn','chaaceve',
+    'chaplumm','charjff','chavjala','cheilcor','cheinkeb','cheisecd','chungsik','chxwashi',
+    'chynnshu','cisibraa','cissuman','cixromer','cjolatee','clarzave','clauraym','clemenew',
+    'clemityl','coasekou','coefiu','cofabias','conairol','condeib','conyyzza','cooppetc',
+    'craipsta','cruanthr','cruengol','cuencjus','daantoia','dadoucou','dafodema','daireval',
+    'dalomotn','daniupag','danniven','danuniql','danvallu','daquemur','davkrod','davoplea',
+    'delbnash','dembasnd','denmit','dffries','dgmarie','dgodfrda','diadamad','diagnepa',
+    'diahouss','dialamal','dialdaol','diallamq','diallokc','dialmaa','dialsism','dianmamo',
+    'diaruism','dicaurm','diejocel','diithier','dinilvia','diokhaai','diomalto','diopras',
+    'disouleg','divhario','djfbarry','djimrbas','dnadgill','dnivasq','dobsoshu','dozieni',
+    'dracheim','dramgatt','dsofgino','dsukhcsi','dumamad','dvibrahi','eanrahma','ebrahbar',
+    'ebrdeand','ecafriyi','edaodafa','ehhichez','ejwte','elaloada','elguerie','elhacezy',
+    'elijmate','elmokhtr','eperlonj','erneqtor','espilorn','estjiord','evanjenr','evelagye',
+    'famizama','faninima','fatalidu','fatimtoc','fatsanka','fbrissac','fcissmar','fcryvarg',
+    'fezmerce','fgatlich','figuojef','fistoure','fmavanes','fmbirane','fortugre','freddzun',
+    'galeangu','ganthoc','garcicaj','garcidmy','garyeria','gaskimch','gbalelha','gbeezoro',
+    'gcomlanw','gcoredga','gdaiacal','genterre','gerrlale','gerushaw','ghoshhri','gilfoter',
+    'gmakhou','gomeande','gomjoelh','gonzasle','goodmf','gosankan','grewmaha','grgojam',
+    'gsteveje','guaringu','guendabd','guerxamy','guthjalm','guzanahi','haleemib','hannacob',
+    'hatoumam','hcandici','helejon','henwsuar','heqxavie','herfalex','herrjonp','hhuekenn',
+    'hibradia','hilliawj','hjoshuth','hkasal','hmamabar','holtdarn','hoytashl','hshawsmi',
+    'hylyedim','hymjeavo','ibkamaga','ibrahdim','ibrahly','ibrahsyw','ibrahydr','ibrahyuf',
+    'ibrsibdi','igargeov','iigordo','ijeudbea','iliacomp','imejerik','imjawara','imohtrao',
+    'inrosann','iousanga','irvramio','isgconde','isialexs','isolkath','istaflor','jadcruzl',
+    'jadrorti','jahbagol','jahkgres','jaitehmr','jamadeor','jambentw','jamelhic','jamzeron',
+    'jasmoliu','javomccr','jaydelae','jaysatte','jcojorda','jddieppa','jeanjamd','jefhargr',
+    'jehronhi','jelssycu','jenkantj','jeramirf','jersenlo','jezduran','jireespi','jjaquian',
+    'jjoshun','jmicadol','joekamar','johlramo','johnbrim','jonattpe','josearab','joseekpo',
+    'josupenc','juqxl','juscintr','justyjhe','juvalwda','kabaidre','kabmamay','kadiabag',
+    'kadizbah','kaneybab','kaseebiw','kbaibrah','kdanvers','kecortew','kefimkab','keiraabo',
+    'kellevyo','kemodouk','kensohen','kevicobo','kforjudi','khariop','kizilugu','knelskay',
+    'krubf','ksebarom','kvictpen','lajacksa','lakjarea','lanctour','landioma','lansanca',
+    'lantonit','laujdors','lazelled','lderobin','lebracks','lecheikh','leivdomi','lenmartj',
+    'lesakati','levyaman','lismarro','litxmigu','lmadiall','lmajoh','lmedoune','lopmfran',
+    'lpsm','lrosemal','lsiemitc','lthiedia','lucinago','luelizau','luihesca','luisdagu',
+    'maantl','mabdelkz','mackmtra','madecast','mahamafp','mahpmoh','mamabab','mamabhau',
+    'mamaksac','mambahi','mambaldn','marferny','marrgess','martikke','martimop','martnnlu',
+    'martrabe','marudial','matalavg','mayxstev','mbeaubru','mbenguaq','mendujua','mendvicc',
+    'merceaav','mesorana','meverth','michakpi','micheolo','micnathr','milvelez','minjesie',
+    'mitjavan','mkaderab','mkevinri','mkkamag','mkmaimou','mlennalm','mmahsoum','mmentobu',
+    'modysarr','mohabonk','mohamhor','mohhorma','molagran','montaldj','montjosl','moorleec',
+    'morgewai','morrijup','morydiaw','motbab','mtejadda','muhaadno','mullingk','muscheqm',
+    'mustahap','mveleant','naaskitc','naclearm','naquasr','natanthz','natvargv','nayabsan',
+    'nazcruz','nelsisaa','netolent','nfjustin','nfrancie','ngibtale','nishabel','nisvkama',
+    'njordawa','nkburgos','nkeid','nlonceni','nmousmoh','nolpjeme','nsecisse','nuhubila',
+    'nundaisb','occeafre','ogaldeja','ogunkasz','ojamjade','olanaugu','olayatoh','omamaroa',
+    'oraynaro','osarkaba','ouldmall','oumcherh','oumocomp','owilaniy','owusdkof','ozamoraa',
+    'pablflox','pahmkabe','patrwdow','pceesarj','pearsoit','pemakond','penaroby','perejill',
+    'persamil','perzpred','petteaur','pexjayde','pindatra','pmamfall','powequen','prakhyag',
+    'prasiddg','pringmah','prjenish','qchamord','qcmayfie','qfeif','qgajohn','qostimot',
+    'quameela','qugarciy','quilcarg','rabayube','rafrosab','raineyci','ralfpauw','ramorash',
+    'ramstout','raymjonw','raymukta','rbfrandy','rdukomar','redominq','ridrisdi','rmamabal',
+    'rmarlalm','robelijg','rodoetha','rodrzyes','rokurtis','romaryll','romasea','rooinnoc',
+    'roscahli','rosjar','roventuq','royontho','rthokell','rudegou','rujoshux','ryohsant',
+    'sackmamq','saidobay','sajnashg','salcpasc','samarmo','sambemag','sanolmou','sanyefru',
+    'sappmalb','saseedia','savaneut','sawnain','sbrkaysh','scamaraa','scolliju','sdiallom',
+    'sekofcam','sekouaxk','serralal','seymodqx','seynabgu','shadiebe','shamzabd','sharqalh',
+    'shawnqch','shervini','sidibadd','sidqibra','silvelud','sirng','smihchr','smittril',
+    'snfelici','soabdol','solinemm','solinoan','sotbilal','sozjohan','sramanw','stachone',
+    'stesancn','stevmper','stnabreu','sybakart','syllmas','syzuriel','talondah','tamarmsm',
+    'tamidmaj','tanguiju','taveaman','tazbtanz','tbowdent','tdialabo','tedariel','terelmun',
+    'terrcgre','thcolliu','thiernes','thifdial','thsalter','thwamata','timotjco','tjohanze',
+    'tkemoham','tmadial','topsebas','torcstac','toriilia','torluisv','touxmoha','traosaid',
+    'tribthov','tsalybar','tsanchor','tvdiallo','tyasmi','ualtoure','ucalixte','uchambil',
+    'uheamill','ulauretu','urearlyj','urenabee','ureroben','urgrisel','usaymahf','valdzand',
+    'valnjes','varjesup','vcamajol','velezisn','verasjer','vicaira','viciisan','victoepe',
+    'vincspai','vmamadb','vshanire','wabdiall','waldlyri','whlondyn','wilennsa','wiljosx',
+    'willyalm','wilsalyk','wirashaj','wirpierr','wmamadd','wmamsidi','woodtame','woohblai',
+    'wrigdiav','wsoashle','xalherna','xavieari','xcepanth','xdfrance','xfahadmu','xharlake',
+    'xjaviere','yadieari','yanezsai','ybangour','ycasluis','yedelaro','yinetmor','ylopdavi',
+    'youlahma','yousiahv','yzeidial','zbarrabd','zdialmam','zeloabig','zjeralyn','zjesluis',
+    'zmahmodi'
+  ];
+
   function loadAllNames() {
     if (_allNamesCache) return _allNamesCache;
     try {
@@ -1240,6 +1337,19 @@
       for (var lk in legacy) { if (!_allNamesCache[lk]) { _allNamesCache[lk] = legacy[lk]; merged = true; } }
       if (merged) gmSet(ALL_NAMES_KEY, JSON.stringify(_allNamesCache));
     } catch(e) {}
+    // Fold in the built-in roster. Additive only: a name already stored
+    // keeps its captured spelling, and nothing is ever removed.
+    var seeded = false;
+    for (var si = 0; si < SEED_NAMES.length; si++) {
+      var sname = SEED_NAMES[si];
+      var skey = sname.toLowerCase();
+      if (!_allNamesCache[skey]) { _allNamesCache[skey] = sname; seeded = true; }
+    }
+    if (seeded) {
+      var sjson = JSON.stringify(_allNamesCache);
+      gmSet(ALL_NAMES_KEY, sjson);
+      try { localStorage.setItem(ALL_NAMES_KEY, sjson); } catch(e) {}
+    }
     return _allNamesCache;
   }
   var _namesSaveTimer = null;
@@ -1371,9 +1481,22 @@
   }
 
   // ── History sync (push/pull) ──
+  // Same readiness pattern as the names sync: pushes wait for the first
+  // pull, failed pushes requeue instead of blind-posting, and the first
+  // pull retries every 5s until Pantry answers. A blind POST on a failed
+  // read used to replace the shared basket with ONLY this device's slice,
+  // erasing every other device's data — that is what made each computer's
+  // dashboard drift apart.
+  var _histPulled = false;
+  var _histPushQueued = false;
+  var _histFirstPullRetry = null;
+  var _weeklyPulled = false;
+  var _weeklyPushQueued = false;
+  var _weeklyFirstPullRetry = null;
   var _syncHistoryPushTimer = null;
   function syncHistoryPush() {
     if (!syncEnabled()) return;
+    if (!_histPulled) { _histPushQueued = true; return; } // no push before first pull completes
     if (_syncHistoryPushTimer) return;
     _syncHistoryPushTimer = setTimeout(function(){
       _syncHistoryPushTimer = null;
@@ -1403,16 +1526,11 @@
             } catch(e) {}
           },
           onerror: function(){
-            try {
-              var fresh = { devices: {}, date: todayStr() };
-              fresh.devices[devId] = sanitizeHistory(loadHistory());
-              GM_xmlhttpRequest({
-                method: 'POST', url: syncHistoryUrl(),
-                headers: { 'Content-Type': 'application/json' },
-                data: JSON.stringify(fresh),
-                onload: function(){}, onerror: function(){}
-              });
-            } catch(e2) {}
+            // Basket unreachable — requeue; the next successful pull (60s
+            // interval, or the 5s first-pull retry) flushes it. Never POST
+            // a fresh basket here: that wiped every other device's slice
+            // and desynced the dashboards.
+            _histPushQueued = true;
           }
         });
       } catch(e) {}
@@ -1425,6 +1543,10 @@
         method: 'GET', url: syncHistoryUrl(), headers: { 'Content-Type': 'application/json' },
         onload: function(res){
           var changed = false;
+          // Server answered — the first pull is complete. Unblock pushes
+          // and flush anything that queued while we waited.
+          _histPulled = true;
+          if (_histPushQueued) { _histPushQueued = false; syncHistoryPush(); }
           try {
             if (res.status >= 200 && res.status < 300 && res.responseText) {
               var basket = JSON.parse(res.responseText);
@@ -1463,15 +1585,26 @@
           } catch(e) {}
           if (cb) cb(changed);
         },
-        onerror: function(){ if (cb) cb(false); }
+        onerror: function(){
+          if (!_histPulled && !_histFirstPullRetry) {
+            _histFirstPullRetry = setTimeout(function(){ _histFirstPullRetry = null; syncHistoryPull(); }, 5000);
+          }
+          if (cb) cb(false);
+        }
       });
-    } catch(e) { if (cb) cb(false); }
+    } catch(e) {
+      if (!_histPulled && !_histFirstPullRetry) {
+        _histFirstPullRetry = setTimeout(function(){ _histFirstPullRetry = null; syncHistoryPull(); }, 5000);
+      }
+      if (cb) cb(false);
+    }
   }
 
   // ── Weekly sync (push/pull) ──
   var _syncWeeklyPushTimer = null;
   function syncWeeklyPush() {
     if (!syncEnabled()) return;
+    if (!_weeklyPulled) { _weeklyPushQueued = true; return; } // no push before first pull completes
     if (_syncWeeklyPushTimer) return;
     _syncWeeklyPushTimer = setTimeout(function(){
       _syncWeeklyPushTimer = null;
@@ -1500,16 +1633,9 @@
             } catch(e) {}
           },
           onerror: function(){
-            try {
-              var fresh = { devices: {} };
-              fresh.devices[devId] = sanitizeWeekly(loadWeekly());
-              GM_xmlhttpRequest({
-                method: 'POST', url: syncWeeklyUrl(),
-                headers: { 'Content-Type': 'application/json' },
-                data: JSON.stringify(fresh),
-                onload: function(){}, onerror: function(){}
-              });
-            } catch(e2) {}
+            // Basket unreachable — requeue instead of posting a fresh
+            // basket that would erase other devices' weekly slices.
+            _weeklyPushQueued = true;
           }
         });
       } catch(e) {}
@@ -1522,6 +1648,10 @@
         method: 'GET', url: syncWeeklyUrl(), headers: { 'Content-Type': 'application/json' },
         onload: function(res){
           var changed = false;
+          // Server answered — the first pull is complete. Unblock pushes
+          // and flush anything that queued while we waited.
+          _weeklyPulled = true;
+          if (_weeklyPushQueued) { _weeklyPushQueued = false; syncWeeklyPush(); }
           try {
             if (res.status >= 200 && res.status < 300 && res.responseText) {
               var basket = JSON.parse(res.responseText);
@@ -1557,9 +1687,19 @@
           } catch(e) {}
           if (cb) cb(changed);
         },
-        onerror: function(){ if (cb) cb(false); }
+        onerror: function(){
+          if (!_weeklyPulled && !_weeklyFirstPullRetry) {
+            _weeklyFirstPullRetry = setTimeout(function(){ _weeklyFirstPullRetry = null; syncWeeklyPull(); }, 5000);
+          }
+          if (cb) cb(false);
+        }
       });
-    } catch(e) { if (cb) cb(false); }
+    } catch(e) {
+      if (!_weeklyPulled && !_weeklyFirstPullRetry) {
+        _weeklyFirstPullRetry = setTimeout(function(){ _weeklyFirstPullRetry = null; syncWeeklyPull(); }, 5000);
+      }
+      if (cb) cb(false);
+    }
   }
 
   function captureName(item) {
