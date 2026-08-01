@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      21.14.1
+// @version      21.15.0
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/store/*/dash*
@@ -1091,6 +1091,17 @@
   var REMOTE_HISTORY_KEY   = 'cbt_remote_history_cache';
   var REMOTE_WEEKLY_KEY    = 'cbt_remote_weekly_cache';
 
+  /* ── Push safety ──────────────────────────────────────────────
+     Pantry's POST REPLACES a basket rather than merging it. A push that
+     runs before this device has pulled would therefore overwrite the
+     shared data with whatever little this device happens to know.
+
+     Two protections:
+       1. No push may run until that basket's first pull has succeeded.
+       2. Pushes are read-merge-write, so they can only ever ADD.
+  ────────────────────────────────────────────────────────────── */
+  var _pulled = { names: false, history: false, weekly: false };
+
   var taskCache = new Map();
   var activeTab = 'live';
   var weeklySortKey = 'avgRate', weeklySortAsc = false, weeklySearchTerm = '';
@@ -1260,6 +1271,7 @@
         method: 'GET', url: syncUrl(), headers: { 'Content-Type': 'application/json' },
         onload: function(res){
           var added = false;
+          _pulled.names = true;   /* Pantry answered -> pushing is now safe */
           try {
             if (res.status >= 200 && res.status < 300 && res.responseText) {
               var data = JSON.parse(res.responseText);
@@ -1280,16 +1292,46 @@
   var _syncPushTimer = null;
   function syncPush() {
     if (!syncEnabled()) return;
+    if (!_pulled.names) return;         /* never clobber before we've read */
     if (_syncPushTimer) return;
     _syncPushTimer = setTimeout(function(){
       _syncPushTimer = null;
       try {
-        var payload = JSON.stringify({ names: loadAllNames() });
+        /* Re-read the basket and upload the UNION, so a device with a
+           partial list can only ever add names, never remove them. */
         GM_xmlhttpRequest({
-          method: 'POST', url: syncUrl(),
-          headers: { 'Content-Type': 'application/json' },
-          data: payload,
-          onload: function(){}, onerror: function(){}
+          method: 'GET', url: syncUrl(), headers: { 'Content-Type': 'application/json' },
+          onload: function(res){
+            var remote = {};
+            try {
+              if (res.status >= 200 && res.status < 300 && res.responseText) {
+                var d = JSON.parse(res.responseText);
+                remote = (d && d.names) ? d.names : {};
+              }
+            } catch(e) {}
+
+            var local = loadAllNames();
+            var union = {}, k;
+            for (k in remote) if (typeof remote[k] === 'string') union[k] = remote[k];
+            for (k in local)  if (!union[k]) union[k] = local[k];
+
+            /* fold anything new from remote into our local list too */
+            var added = false;
+            for (k in remote) {
+              if (!local[k] && typeof remote[k] === 'string') { local[k] = remote[k]; added = true; }
+            }
+            if (added) { persistAllNames(); if (activeTab === 'names') renderNames(); }
+
+            try {
+              GM_xmlhttpRequest({
+                method: 'POST', url: syncUrl(),
+                headers: { 'Content-Type': 'application/json' },
+                data: JSON.stringify({ names: union }),
+                onload: function(){}, onerror: function(){}
+              });
+            } catch(e2) {}
+          },
+          onerror: function(){}   /* couldn't read -> don't write */
         });
       } catch(e) {}
     }, 2500);
@@ -1299,6 +1341,7 @@
   var _syncHistoryPushTimer = null;
   function syncHistoryPush() {
     if (!syncEnabled()) return;
+    if (!_pulled.history) return;       /* never clobber before we've read */
     if (_syncHistoryPushTimer) return;
     _syncHistoryPushTimer = setTimeout(function(){
       _syncHistoryPushTimer = null;
@@ -1350,6 +1393,7 @@
         method: 'GET', url: syncHistoryUrl(), headers: { 'Content-Type': 'application/json' },
         onload: function(res){
           var changed = false;
+          _pulled.history = true;   /* Pantry answered -> pushing is now safe */
           try {
             if (res.status >= 200 && res.status < 300 && res.responseText) {
               var basket = JSON.parse(res.responseText);
@@ -1397,6 +1441,7 @@
   var _syncWeeklyPushTimer = null;
   function syncWeeklyPush() {
     if (!syncEnabled()) return;
+    if (!_pulled.weekly) return;        /* never clobber before we've read */
     if (_syncWeeklyPushTimer) return;
     _syncWeeklyPushTimer = setTimeout(function(){
       _syncWeeklyPushTimer = null;
@@ -1447,6 +1492,7 @@
         method: 'GET', url: syncWeeklyUrl(), headers: { 'Content-Type': 'application/json' },
         onload: function(res){
           var changed = false;
+          _pulled.weekly = true;   /* Pantry answered -> pushing is now safe */
           try {
             if (res.status >= 200 && res.status < 300 && res.responseText) {
               var basket = JSON.parse(res.responseText);
