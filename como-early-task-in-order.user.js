@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      21.12.0
+// @version      21.14.0
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/store/*/dash*
@@ -1996,6 +1996,23 @@
     return !!document.querySelector('div.job-details');
   }
 
+  /* Routes the board must never appear on. This app does client-side routing,
+     so the script stays loaded when you click Packages / Orders / Labor /
+     Layout — without this check the board follows you onto those pages. */
+  var NON_DASHBOARD_RE = /\/(packages|orders|labor|layout|associates?)(\b|\/|\?|#|$)/i;
+
+  function isDashboardView() {
+    if (isTaskDetailPage()) return false;
+    if (NON_DASHBOARD_RE.test(location.pathname)) return false;
+    if (NON_DASHBOARD_RE.test(location.hash)) return false;
+    return true;
+  }
+
+  /* True when the board is showing somewhere it shouldn't be. */
+  function boardIsMisplaced() {
+    return !isDashboardView() && !!document.getElementById('cbt-panel');
+  }
+
   /* Detach the Batcher Timers board but KEEP the cached node, so its state
      and event listeners survive and it re-mounts instantly on the dashboard. */
   function detachMainPanel() {
@@ -2003,35 +2020,25 @@
     if (p) p.remove();
   }
 
-  function findMountPoint() {
-    if (isTaskDetailPage()) return null;   /* never mount here */
+  /* The board has exactly ONE valid home: immediately before the
+     <utilization> block in the dashboard's right-hand column.
 
+     Earlier versions guessed at fallback anchors (.ng-scope, main-content)
+     when <utilization> was missing — that is what caused the board to
+     appear on cart detail pages. If the real anchor isn't present we now
+     simply don't mount: better absent than in the wrong place. */
+  function findMountPoint() {
+    if (!isDashboardView()) return null;
     var el = document.querySelector('utilization.dashboard-utilization') ||
              document.querySelector('utilization');
     if (el && el.parentNode) return { el: el, mode: 'before' };
-
-    /* Only reach for fallbacks once the normal anchor has clearly failed,
-       so we don't mount somewhere odd during a normal slow page load. */
-    if (_mountFails >= 3) {
-      el = document.querySelector('div.container-fluid.job-cards');
-      if (el && el.parentNode) return { el: el, mode: 'before' };
-
-      el = document.querySelector("h1[data-dtk-test-id='job-grid-title']");
-      if (el && el.parentNode) return { el: el, mode: 'before' };
-
-      el = document.querySelector('div.container.main-content') ||
-           document.querySelector('.container.main-content');
-      if (el) return { el: el, mode: 'prepend' };
-
-      el = document.querySelector('.ng-scope');
-      if (el) return { el: el, mode: 'prepend' };
-    }
     return null;
   }
 
   function injectPanel() {
-    /* Cart/task detail page shows ONLY the Associate Search panel. */
-    if (isTaskDetailPage()) { detachMainPanel(); return; }
+    /* Only the dashboard view gets the board — not cart details,
+       not Packages / Orders / Labor / Layout. */
+    if (!isDashboardView()) { detachMainPanel(); return; }
 
     var existing = document.getElementById('cbt-panel');
     if (existing && existing.isConnected) return;
@@ -2062,8 +2069,7 @@
       }
     } catch(ex) {}
 
-    if (mount.mode === 'prepend') mount.el.insertBefore(_panel2Ref, mount.el.firstChild);
-    else                          mount.el.parentNode.insertBefore(_panel2Ref, mount.el);
+    mount.el.parentNode.insertBefore(_panel2Ref, mount.el);
 
     _mountFails = 0;              /* mounted successfully */
     renderLive();
@@ -2075,8 +2081,8 @@
   /* Runs on an interval: if the panel is gone or was detached by an
      Angular re-render, rebuild and re-mount it automatically. */
   function panelHealthCheck() {
-    /* On a detail page the board must stay hidden — don't re-inject it. */
-    if (isTaskDetailPage()) { detachMainPanel(); _mountFails = 0; return; }
+    /* Anywhere but the dashboard view, the board stays hidden. */
+    if (!isDashboardView()) { detachMainPanel(); _mountFails = 0; return; }
 
     var p = document.getElementById('cbt-panel');
     if (p && p.isConnected) { _mountFails = 0; return; }
@@ -2084,11 +2090,9 @@
     injectPanel();
 
     if (!document.getElementById('cbt-panel')) {
-      _mountFails++;
-      /* After many failures, drop the cached node in case it got into a
-         bad state, so the next tick rebuilds it from scratch. */
-      if (_mountFails === 8) _panel2Ref = null;
-      if (_mountFails > 40) _mountFails = 4;   /* keep retrying, don't overflow */
+      /* Anchor not on screen yet (or not a dashboard view) — just wait.
+         Rebuilding the node wouldn't help and would lose panel state. */
+      if (_mountFails < 1000) _mountFails++;
     }
   }
 
@@ -2807,15 +2811,20 @@
        dashboard view        -> Batcher Timers only                */
   var panelWatcher = new MutationObserver(function() {
     if (isTaskDetailPage()) {
+      /* cart/task detail -> Associate Search only */
       detachMainPanel();
       var tp = document.getElementById('cbt-tp');
       if (!tp || !tp.isConnected) injectTaskPanel();
-    } else {
-      var tpOff = document.getElementById('cbt-tp');
-      if (tpOff) { tpOff.remove(); _tpRef = null; }
-      var mp = document.getElementById('cbt-panel');
-      if (!mp || !mp.isConnected) injectPanel();
+      return;
     }
+    /* not a detail page -> Associate Search never belongs */
+    var tpOff = document.getElementById('cbt-tp');
+    if (tpOff) { tpOff.remove(); _tpRef = null; }
+
+    if (!isDashboardView()) { detachMainPanel(); return; }  /* Packages/Orders/etc */
+
+    var mp = document.getElementById('cbt-panel');
+    if (!mp || !mp.isConnected) injectPanel();
   });
 
   function start() {
@@ -2864,11 +2873,41 @@
     setInterval(function(){ tickTimers(); injectAllTimers(); }, 1000);
     fetchAndUpdate();
     panelWatcher.observe(document.documentElement, { childList: true, subtree: true });
-    if (!isTaskDetailPage()) injectPanel();
+    if (isDashboardView()) injectPanel();
     injectTaskPanel();
     /* Self-heal: re-mount either panel automatically if it disappears. */
     setInterval(panelHealthCheck, PANEL_HEALTH_MS);
     setInterval(taskPanelHealthCheck, PANEL_HEALTH_MS);
+
+    /* React the moment the route changes instead of waiting for the next
+       health tick — otherwise the board lingers for up to 2s on Packages.
+       Angular routes via pushState, which does not fire popstate. */
+    (function () {
+      function onRoute() {
+        if (!isDashboardView()) detachMainPanel();
+        panelHealthCheck();
+        taskPanelHealthCheck();
+      }
+      var _push = history.pushState, _repl = history.replaceState;
+      history.pushState = function () {
+        var r = _push.apply(this, arguments); onRoute(); return r;
+      };
+      history.replaceState = function () {
+        var r = _repl.apply(this, arguments); onRoute(); return r;
+      };
+      window.addEventListener('popstate', onRoute);
+      window.addEventListener('hashchange', onRoute);
+
+      /* Safety net for route changes the patch above misses. */
+      var lastPath = location.pathname + location.hash;
+      setInterval(function () {
+        var now = location.pathname + location.hash;
+        if (now !== lastPath) { lastPath = now; onRoute(); }
+      }, 150);
+
+      /* Immediate correction if the board is ever found out of place. */
+      setInterval(function () { if (boardIsMisplaced()) detachMainPanel(); }, 400);
+    })();
     pollActiveTasks();
     setInterval(pollActiveTasks, POLL_MS);
     setInterval(tickLive, TICK_MS);
