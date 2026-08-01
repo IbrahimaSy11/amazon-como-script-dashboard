@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      21.14.0
+// @version      21.14.1
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/store/*/dash*
@@ -377,7 +377,7 @@
     /* ── Empty / updated states ── */
     #cbt-empty, #cbt-hist-empty, #cbt-weekly-empty {
       display: none; text-align: center; color: var(--cb-text3);
-      padding: 24px 0; font-style: italic; font-size: 13px;
+      padding: 9px 0; font-style: italic; font-size: 13px; line-height: 1.2;
     }
     #cbt-updated { text-align: right; color: var(--cb-text3); font-size: 10px; padding: 4px 10px 6px; }
 
@@ -663,12 +663,6 @@
     .cbt-stat-card { transition: background 0.15s; }
     .cbt-stat-card:hover { background: rgba(41,121,255,0.06); }
     #cbt-panel.dark .cbt-stat-card:hover { background: rgba(88,166,255,0.07) !important; }
-
-    /* friendlier empty states */
-    #cbt-empty::before, #cbt-hist-empty::before, #cbt-weekly-empty::before, #cbt-names-empty::before {
-      content: '📭'; display: block; font-size: 24px; margin-bottom: 6px;
-      opacity: 0.55; font-style: normal;
-    }
 
     /* live pulse next to the updated timestamp */
     #cbt-updated::before {
@@ -1970,7 +1964,7 @@
           '<table id="cbt-names-table"><thead><tr>' +
             '<th style="text-align:left;">Associate (saved permanently)</th>' +
           '</tr></thead><tbody id="cbt-names-tbody"></tbody></table>' +
-          '<div id="cbt-names-empty" style="display:none;text-align:center;color:#aaa;padding:12px;font-size:13px;font-style:italic;">No names saved yet</div>' +
+          '<div id="cbt-names-empty" style="display:none;text-align:center;color:#aaa;padding:9px 0;font-size:13px;font-style:italic;line-height:1.2;">No names saved yet</div>' +
         '</div>' +
       '</div>' +
       '<div id="cbt-drag-bottom" title="Drag to resize"></div>';
