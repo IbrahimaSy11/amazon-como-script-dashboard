@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      21.15.0
+// @version      21.15.1
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/store/*/dash*
@@ -1260,6 +1260,7 @@
   // are queued and flushed right after the first pull finishes.
   var _namesPulled = false;
   var _namesPushQueued = false;
+  var _namesFirstPullRetry = null; // 5s retry loop until the first pull succeeds
 
   // Additive merge: absorb remote names into the local list. Never removes.
   function mergeRemoteNamesIntoLocal(remote) {
@@ -1307,9 +1308,19 @@
           }
           if (cb) cb(added);
         },
-        onerror: function(){ if (cb) cb(false); }
+        onerror: function(){
+          if (!_namesPulled && !_namesFirstPullRetry) {
+            _namesFirstPullRetry = setTimeout(function(){ _namesFirstPullRetry = null; syncPull(); }, 5000);
+          }
+          if (cb) cb(false);
+        }
       });
-    } catch(e) { if (cb) cb(false); }
+    } catch(e) {
+      if (!_namesPulled && !_namesFirstPullRetry) {
+        _namesFirstPullRetry = setTimeout(function(){ _namesFirstPullRetry = null; syncPull(); }, 5000);
+      }
+      if (cb) cb(false);
+    }
   }
   var _syncPushTimer = null;
   function syncPush() {
@@ -2888,6 +2899,13 @@
   function start() {
     MY_DEVICE_ID = getDeviceId(); // initialize once at startup
 
+    // Pull the shared names basket FIRST, before any scans, panel work,
+    // or push can happen, so a fresh install starts from the full list.
+    // The gate in syncPush keeps every push queued until this completes,
+    // and the union push in the callback then re-seeds the basket with
+    // anything this computer has that the basket is missing.
+    syncPull(function(){ syncPush(); });
+
     // ── One-time migration to v21.9 own/remote split ──
     var CLEAN_KEY = 'cbt_cleaned_v21_9';
     if (!gmGet(CLEAN_KEY, null)) {
@@ -2975,7 +2993,6 @@
     setInterval(function(){
       if (syncNamesFromAllTabs() && activeTab === 'names') renderNames();
     }, 5000);
-    syncPull(function(){ syncPush(); });
     syncHistoryPull(function(){ syncHistoryPush(); });
     syncWeeklyPull(function(){ syncWeeklyPush(); });
     setInterval(function(){ syncPull(); }, 60000);
