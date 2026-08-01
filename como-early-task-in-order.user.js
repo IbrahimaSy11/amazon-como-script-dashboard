@@ -1091,17 +1091,6 @@
   var REMOTE_HISTORY_KEY   = 'cbt_remote_history_cache';
   var REMOTE_WEEKLY_KEY    = 'cbt_remote_weekly_cache';
 
-  /* ── Push safety ──────────────────────────────────────────────
-     Pantry's POST REPLACES a basket rather than merging it. A push that
-     runs before this device has pulled would therefore overwrite the
-     shared data with whatever little this device happens to know.
-
-     Two protections:
-       1. No push may run until that basket's first pull has succeeded.
-       2. Pushes are read-merge-write, so they can only ever ADD.
-  ────────────────────────────────────────────────────────────── */
-  var _pulled = { names: false, history: false, weekly: false };
-
   var taskCache = new Map();
   var activeTab = 'live';
   var weeklySortKey = 'avgRate', weeklySortAsc = false, weeklySearchTerm = '';
@@ -1264,25 +1253,58 @@
     }, 100);
   }
 
+  // ── Names sync readiness gate ──
+  // A push may not fire until the FIRST pull has completed (the Pantry
+  // server answered), so a fresh install with an empty local list can
+  // never clobber the shared basket. Pushes requested before that moment
+  // are queued and flushed right after the first pull finishes.
+  var _namesPulled = false;
+  var _namesPushQueued = false;
+
+  // Additive merge: absorb remote names into the local list. Never removes.
+  function mergeRemoteNamesIntoLocal(remote) {
+    var all = loadAllNames();
+    var added = false;
+    for (var k in remote) {
+      if (!all[k] && typeof remote[k] === 'string') { all[k] = remote[k]; added = true; }
+    }
+    if (added) { persistAllNames(); if (activeTab === 'names') renderNames(); }
+    return added;
+  }
+
+  // True when the local list holds names the basket does not — i.e. the
+  // basket is behind (first-ever install, or basket data loss) and a
+  // re-seeding push is needed to bring it back to the full union.
+  function localNamesMissingFromRemote(remote) {
+    var all = loadAllNames();
+    for (var k in all) { if (!remote[k]) return true; }
+    return false;
+  }
+
   function syncPull(cb) {
     if (!syncEnabled()) { if (cb) cb(false); return; }
     try {
       GM_xmlhttpRequest({
         method: 'GET', url: syncUrl(), headers: { 'Content-Type': 'application/json' },
         onload: function(res){
-          var added = false;
-          _pulled.names = true;   /* Pantry answered -> pushing is now safe */
+          var added = false, localExtra = false;
           try {
+            var remote = {};
             if (res.status >= 200 && res.status < 300 && res.responseText) {
               var data = JSON.parse(res.responseText);
-              var remote = (data && data.names) ? data.names : {};
-              var all = loadAllNames();
-              for (var k in remote) {
-                if (!all[k] && typeof remote[k] === 'string') { all[k] = remote[k]; added = true; }
-              }
-              if (added) { persistAllNames(); if (activeTab === 'names') renderNames(); }
+              remote = (data && data.names) ? data.names : {};
             }
+            added = mergeRemoteNamesIntoLocal(remote);
+            localExtra = localNamesMissingFromRemote(remote);
           } catch(e) {}
+          // The first pull is now complete — pushes are unblocked.
+          _namesPulled = true;
+          // Flush any push queued before the gate opened, and re-seed the
+          // basket whenever local has names the basket is missing.
+          if (_namesPushQueued || localExtra) {
+            _namesPushQueued = false;
+            syncPush();
+          }
           if (cb) cb(added);
         },
         onerror: function(){ if (cb) cb(false); }
@@ -1292,46 +1314,46 @@
   var _syncPushTimer = null;
   function syncPush() {
     if (!syncEnabled()) return;
-    if (!_pulled.names) return;         /* never clobber before we've read */
+    if (!_namesPulled) { _namesPushQueued = true; return; } // gate: no push before first pull completes
     if (_syncPushTimer) return;
     _syncPushTimer = setTimeout(function(){
       _syncPushTimer = null;
       try {
-        /* Re-read the basket and upload the UNION, so a device with a
-           partial list can only ever add names, never remove them. */
+        // Read-merge-write: GET the basket, union it with the local list,
+        // POST the union back. Pantry's POST replaces the whole basket, so
+        // pushing the union means a push can only ever ADD names — it can
+        // never overwrite or remove names contributed by another computer.
         GM_xmlhttpRequest({
           method: 'GET', url: syncUrl(), headers: { 'Content-Type': 'application/json' },
-          onload: function(res){
-            var remote = {};
+          onload: function(res) {
             try {
+              var remote = {};
               if (res.status >= 200 && res.status < 300 && res.responseText) {
-                var d = JSON.parse(res.responseText);
-                remote = (d && d.names) ? d.names : {};
+                var data = JSON.parse(res.responseText);
+                remote = (data && data.names) ? data.names : {};
               }
-            } catch(e) {}
-
-            var local = loadAllNames();
-            var union = {}, k;
-            for (k in remote) if (typeof remote[k] === 'string') union[k] = remote[k];
-            for (k in local)  if (!union[k]) union[k] = local[k];
-
-            /* fold anything new from remote into our local list too */
-            var added = false;
-            for (k in remote) {
-              if (!local[k] && typeof remote[k] === 'string') { local[k] = remote[k]; added = true; }
-            }
-            if (added) { persistAllNames(); if (activeTab === 'names') renderNames(); }
-
-            try {
+              // Absorb anything new first — every push doubles as a pull.
+              mergeRemoteNamesIntoLocal(remote);
+              // Union: start from remote, layer local on top. Keys are the
+              // lowercased names and values the display spelling, so equal
+              // keys carry equal values — layering loses nothing.
+              var merged = {};
+              for (var rk in remote) { if (typeof remote[rk] === 'string') merged[rk] = remote[rk]; }
+              var all = loadAllNames();
+              for (var lk in all) { if (typeof all[lk] === 'string') merged[lk] = all[lk]; }
               GM_xmlhttpRequest({
                 method: 'POST', url: syncUrl(),
                 headers: { 'Content-Type': 'application/json' },
-                data: JSON.stringify({ names: union }),
+                data: JSON.stringify({ names: merged }),
                 onload: function(){}, onerror: function(){}
               });
-            } catch(e2) {}
+            } catch(e) {}
           },
-          onerror: function(){}   /* couldn't read -> don't write */
+          onerror: function(){
+            // Basket unreachable — requeue; the next successful pull (60s
+            // interval) flushes it. Never blind-POST local-only state.
+            _namesPushQueued = true;
+          }
         });
       } catch(e) {}
     }, 2500);
@@ -1341,7 +1363,6 @@
   var _syncHistoryPushTimer = null;
   function syncHistoryPush() {
     if (!syncEnabled()) return;
-    if (!_pulled.history) return;       /* never clobber before we've read */
     if (_syncHistoryPushTimer) return;
     _syncHistoryPushTimer = setTimeout(function(){
       _syncHistoryPushTimer = null;
@@ -1393,7 +1414,6 @@
         method: 'GET', url: syncHistoryUrl(), headers: { 'Content-Type': 'application/json' },
         onload: function(res){
           var changed = false;
-          _pulled.history = true;   /* Pantry answered -> pushing is now safe */
           try {
             if (res.status >= 200 && res.status < 300 && res.responseText) {
               var basket = JSON.parse(res.responseText);
@@ -1441,7 +1461,6 @@
   var _syncWeeklyPushTimer = null;
   function syncWeeklyPush() {
     if (!syncEnabled()) return;
-    if (!_pulled.weekly) return;        /* never clobber before we've read */
     if (_syncWeeklyPushTimer) return;
     _syncWeeklyPushTimer = setTimeout(function(){
       _syncWeeklyPushTimer = null;
@@ -1492,7 +1511,6 @@
         method: 'GET', url: syncWeeklyUrl(), headers: { 'Content-Type': 'application/json' },
         onload: function(res){
           var changed = false;
-          _pulled.weekly = true;   /* Pantry answered -> pushing is now safe */
           try {
             if (res.status >= 200 && res.status < 300 && res.responseText) {
               var basket = JSON.parse(res.responseText);
