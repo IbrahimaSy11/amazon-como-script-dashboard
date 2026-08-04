@@ -1,14 +1,11 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      22.1.2
+// @version      22.4.2
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
-// @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/store/*/dash*
-// @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/store/*/tasks*
-// @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/store/*/jobs*
-// @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/store/*/task/*
-// @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/store/*/packages*
+// @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
+// @match        https://na.store-management.f3.amazon.dev/*
 // @run-at       document-start
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
@@ -500,7 +497,10 @@
       padding: 10px 14px;
       background: #f0f4f8;
       border-bottom: 1px solid var(--cb-border);
+      cursor: move; user-select: none;
     }
+    #cbt-tp.cbt-tp-dragging { transition: none; }
+    #cbt-tp.cbt-tp-dragging #cbt-tp-header { cursor: grabbing; }
     #cbt-tp-title {
       font-weight: 800; font-size: 12px; color: var(--cb-navy);
       letter-spacing: 0.06em; text-transform: uppercase;
@@ -511,14 +511,16 @@
       background: var(--cb-blue); border-radius: 2px;
     }
     #cbt-tp-controls { display: flex; gap: 8px; align-items: center; }
-    #cbt-tp-font-dec, #cbt-tp-font-inc {
+    #cbt-tp-font-dec, #cbt-tp-font-inc, #cbt-tp-collapse {
       font-size: 11px; font-weight: 800; cursor: pointer; user-select: none;
       color: var(--cb-text2); padding: 2px 6px; border-radius: 4px;
       border: 1px solid var(--cb-border); transition: all 0.15s;
     }
-    #cbt-tp-font-dec:hover, #cbt-tp-font-inc:hover {
+    #cbt-tp-font-dec:hover, #cbt-tp-font-inc:hover, #cbt-tp-collapse:hover {
       background: var(--cb-blue); color: #fff; border-color: var(--cb-blue);
     }
+    /* Rolled up: header only, and the panel shrinks to fit it */
+    #cbt-tp.cbt-tp-rolled #cbt-tp-body { display: none; }
     #cbt-tp-theme {
       font-size: 14px; cursor: pointer; padding: 2px 5px; border-radius: 4px;
       transition: all 0.15s;
@@ -600,10 +602,10 @@
     }
     #cbt-tp.dark #cbt-tp-title { color: #e6edf3 !important; }
     #cbt-tp.dark #cbt-tp-title::before { background: #58a6ff !important; }
-    #cbt-tp.dark #cbt-tp-font-dec, #cbt-tp.dark #cbt-tp-font-inc {
+    #cbt-tp.dark #cbt-tp-font-dec, #cbt-tp.dark #cbt-tp-font-inc, #cbt-tp.dark #cbt-tp-collapse {
       color: #6e7b8d !important; border-color: rgba(110,123,141,0.2) !important;
     }
-    #cbt-tp.dark #cbt-tp-font-dec:hover, #cbt-tp.dark #cbt-tp-font-inc:hover {
+    #cbt-tp.dark #cbt-tp-font-dec:hover, #cbt-tp.dark #cbt-tp-font-inc:hover, #cbt-tp.dark #cbt-tp-collapse:hover {
       background: #58a6ff !important; color: #fff !important; border-color: #58a6ff !important;
     }
     #cbt-tp.dark #cbt-tp-body {
@@ -757,9 +759,10 @@
     #cbt-qr-err { display: none; color: var(--cb-red); font-size: 12px; font-weight: 600; text-align: center; padding: 0 16px 8px; }
     #cbt-qr-input {
       display: block; width: calc(100% - 52px); box-sizing: border-box;
-      margin: 0 26px 22px; padding: 11px 14px;
+      margin: 0 26px 22px; padding: 15px 14px;
       border: 1.5px solid var(--cb-border); border-radius: 8px;
-      font-size: 14px; font-family: var(--cb-mono); color: var(--cb-text);
+      font-size: 19px; font-weight: 700; letter-spacing: .02em;
+      font-family: var(--cb-mono); color: var(--cb-text);
       outline: none; text-align: center;
       transition: border-color .15s, box-shadow .15s;
     }
@@ -862,8 +865,11 @@
   var bodyWatcher = new MutationObserver(function () {
     var c = getContainer(); if (c) attach(c);
   });
-  bodyWatcher.observe(document.documentElement, { childList: true, subtree: true });
-  var c = getContainer(); if (c) attach(c);
+  /* Task sorting is COMO-only. isComoSite is hoisted, so it is safe here. */
+  if (isComoSite()) {
+    bodyWatcher.observe(document.documentElement, { childList: true, subtree: true });
+    var c = getContainer(); if (c) attach(c);
+  }
 
   /* ══════════════════════════════════════════
      PART 2 — TIME LEFT COLUMN
@@ -2228,10 +2234,36 @@
     location.reload();
   }
 
+  /* ── Which site are we on? ──
+     The script runs on two different tools:
+       COMO Operations Dashboard  -> task sorting, Time Left, Batcher Timers
+                                     board, and Search Associate on cart pages
+       Outbound Dashboard / HWMS  -> Search Associate panel + QR only
+     Everything COMO-specific stays off the Outbound site, and the Batcher
+     Timers board never appears there. Saved names/history come from
+     Tampermonkey storage and Firebase, both of which work across domains. */
+  function isComoSite() {
+    return location.hostname.indexOf('como-operations-dashboard') !== -1;
+  }
+  function isOutboundSite() {
+    return location.hostname === 'na.store-management.f3.amazon.dev';
+  }
+  /* The Search Associate panel belongs on COMO cart pages and on every
+     Outbound Dashboard page. */
+  function shouldShowSearchPanel() {
+    if (isOutboundSite()) return true;
+    return isTaskDetailPage();
+  }
+
   /* A cart/task detail page. Only the Associate Search panel belongs here —
-     the Batcher Timers board is for the dashboard view. */
+     the Batcher Timers board is for the dashboard view.
+     Checked by URL as well as by DOM: on a fresh reload the script runs
+     before Angular has rendered div.job-details, and the URL is known
+     immediately, so the panel can mount right away. */
+  var TASK_DETAIL_RE = /\/(jobdetails|task)(\b|\/|\?|#|$)/i;
   function isTaskDetailPage() {
-    return !!document.querySelector('div.job-details');
+    if (document.querySelector('div.job-details')) return true;
+    return TASK_DETAIL_RE.test(location.pathname);
   }
 
   /* Routes the board must never appear on. This app does client-side routing,
@@ -2246,6 +2278,7 @@
   var DASHBOARD_PATH_RE = /^\/store\/[^\/]+\/dash\/?$/i;
 
   function isDashboardView() {
+    if (!isComoSite()) return false;        /* board is COMO-only */
     if (isTaskDetailPage()) return false;
     if (!DASHBOARD_PATH_RE.test(location.pathname)) return false;
     if (NON_DASHBOARD_RE.test(location.hash)) return false;
@@ -2344,7 +2377,7 @@
 
   /* Same idea for the Associate Search panel on task detail pages. */
   function taskPanelHealthCheck() {
-    var onTaskPage = !!document.querySelector('div.job-details');
+    var onTaskPage = shouldShowSearchPanel();
     var tp = document.getElementById('cbt-tp');
     if (onTaskPage) {
       if (!tp || !tp.isConnected) { _tpRef = null; injectTaskPanel(); }
@@ -2920,6 +2953,7 @@
           '<span id="cbt-tp-font-dec" title="Smaller text">A−</span>' +
           '<span id="cbt-tp-font-inc" title="Larger text">A+</span>' +
           '<span id="cbt-tp-theme" title="Toggle Dark/Light" style="font-size:16px;cursor:pointer;">' + (isDark?'☀️':'🌙') + '</span>' +
+          '<span id="cbt-tp-collapse" title="Roll up/down">🔼</span>' +
         '</div>' +
       '</div>' +
       '<div id="cbt-tp-body">' +
@@ -2987,7 +3021,141 @@
     setHTML(el, html);
   }
 
+  /* ── Search Associate panel: drag to move, position remembered ── */
+  var TP_POS_KEY = 'cbt_tp_pos';
+
+  function loadTpPos() {
+    var raw = gmGet(TP_POS_KEY, null);
+    if (raw == null) { try { raw = localStorage.getItem(TP_POS_KEY); } catch(e) {} }
+    if (!raw) return null;
+    try {
+      var p = (typeof raw === 'string') ? JSON.parse(raw) : raw;
+      if (p && typeof p.left === 'number' && typeof p.top === 'number') return p;
+    } catch(e) {}
+    return null;
+  }
+  function saveTpPos(left, top) {
+    var json = JSON.stringify({ left: left, top: top });
+    gmSet(TP_POS_KEY, json);
+    try { localStorage.setItem(TP_POS_KEY, json); } catch(e) {}
+  }
+  /* Keep the panel reachable rather than boxed in: it may hang off any edge
+     as long as a grabbable strip of the header stays on screen, so you can
+     park it literally anywhere and still drag it back. */
+  function clampTpPos(tp, left, top) {
+    var w = tp.offsetWidth  || 420;
+    var h = tp.offsetHeight || 300;
+    var KEEP = 90;                                  /* visible strip, px */
+    var minLeft = -(w - KEEP);
+    var maxLeft = window.innerWidth - KEEP;
+    var minTop  = 0;                                /* header never above the top */
+    var maxTop  = Math.max(0, window.innerHeight - 44);
+    return {
+      left: Math.min(Math.max(minLeft, left), maxLeft),
+      top:  Math.min(Math.max(minTop,  top),  maxTop)
+    };
+  }
+  /* The panel's own CSS declares `top: 90px !important; right: 12px !important`.
+     A plain inline style loses to !important, which pinned the panel
+     vertically at 90px — horizontal drags worked, vertical ones did nothing.
+     Setting the position with matching priority frees it to go anywhere. */
+  function tpSetPos(tp, left, top) {
+    tp.style.setProperty('left',   left + 'px', 'important');
+    tp.style.setProperty('top',    top  + 'px', 'important');
+    tp.style.setProperty('right',  'auto',      'important');
+    tp.style.setProperty('bottom', 'auto',      'important');
+  }
+  /* Read the position from the box itself, not from inline styles. */
+  function tpCurrentPos(tp) {
+    var r = tp.getBoundingClientRect();
+    return { left: r.left, top: r.top };
+  }
+
+  function applyTpPos(tp) {
+    var p = loadTpPos();
+    if (!p) return;                 /* never moved — keep the default corner */
+    var c = clampTpPos(tp, p.left, p.top);
+    tpSetPos(tp, c.left, c.top);
+  }
+  function tpAttachDrag(tp) {
+    var header = tp.querySelector('#cbt-tp-header');
+    if (!header) return;
+    var dragging = false, startX = 0, startY = 0, startLeft = 0, startTop = 0;
+
+    header.addEventListener('mousedown', function(e){
+      /* the +/-, theme and roll buttons must stay clickable */
+      if (e.target.closest('#cbt-tp-controls')) return;
+      if (e.button !== 0) return;
+      var r = tp.getBoundingClientRect();
+      dragging = true;
+      startX = e.clientX; startY = e.clientY;
+      startLeft = r.left;  startTop = r.top;
+      /* pin to left/top so dragging works regardless of the right-anchored default */
+      tpSetPos(tp, r.left, r.top);
+      tp.classList.add('cbt-tp-dragging');
+      e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', function(e){
+      if (!dragging) return;
+      var c = clampTpPos(tp, startLeft + (e.clientX - startX), startTop + (e.clientY - startY));
+      tpSetPos(tp, c.left, c.top);
+    });
+
+    document.addEventListener('mouseup', function(){
+      if (!dragging) return;
+      dragging = false;
+      tp.classList.remove('cbt-tp-dragging');
+      var p = tpCurrentPos(tp);
+      saveTpPos(p.left, p.top);
+    });
+
+    /* if the window shrinks, pull the panel back into view */
+    window.addEventListener('resize', function(){
+      if (!tp.isConnected || !loadTpPos()) return;
+      var p = tpCurrentPos(tp);
+      var c = clampTpPos(tp, p.left, p.top);
+      tpSetPos(tp, c.left, c.top);
+      saveTpPos(c.left, c.top);
+    });
+  }
+
+  /* ── Roll the Search Associate panel up/down; state is remembered ── */
+  var TP_ROLLED_KEY = 'cbt_tp_rolled';
+  function loadTpRolled() {
+    var raw = gmGet(TP_ROLLED_KEY, null);
+    if (raw == null) { try { raw = localStorage.getItem(TP_ROLLED_KEY); } catch(e) {} }
+    return raw === '1' || raw === true;
+  }
+  function saveTpRolled(rolled) {
+    var v = rolled ? '1' : '0';
+    gmSet(TP_ROLLED_KEY, v);
+    try { localStorage.setItem(TP_ROLLED_KEY, v); } catch(e) {}
+  }
+  function applyTpRolled(tp, rolled) {
+    if (rolled) tp.classList.add('cbt-tp-rolled');
+    else tp.classList.remove('cbt-tp-rolled');
+    var btn = tp.querySelector('#cbt-tp-collapse');
+    if (btn) btn.textContent = rolled ? '🔽' : '🔼';
+  }
+
   function tpAttachEvents(tp) {
+    /* ── roll up / down ── */
+    var _tpRolled = loadTpRolled();
+    applyTpRolled(tp, _tpRolled);
+    var rollBtn = tp.querySelector('#cbt-tp-collapse');
+    if (rollBtn) rollBtn.addEventListener('click', function(){
+      _tpRolled = !_tpRolled;
+      applyTpRolled(tp, _tpRolled);
+      saveTpRolled(_tpRolled);
+      /* rolled up the panel is short — make sure it is still on screen */
+      if (loadTpPos()) {
+        var p = tpCurrentPos(tp);
+        var c = clampTpPos(tp, p.left, p.top);
+        tpSetPos(tp, c.left, c.top);
+      }
+    });
+
     // ── theme toggle ──
     var themeBtn = tp.querySelector('#cbt-tp-theme');
     if (themeBtn) themeBtn.addEventListener('click', function(){
@@ -3040,23 +3208,29 @@
   function injectTaskPanel() {
     var existingTp = document.getElementById('cbt-tp');
     if (existingTp && existingTp.isConnected) return;
-    if (!document.querySelector('div.job-details')) return;
+    if (!shouldShowSearchPanel()) return;
 
-    var mainContent = document.querySelector('div.container.main-content') || document.querySelector('.container.main-content');
-    if (mainContent) mainContent.style.overflow = 'visible';
-    var body = document.querySelector('body');
-    if (body) body.style.overflow = 'visible';
-    var ngScope = document.querySelector('.ng-scope');
-    if (ngScope) ngScope.style.overflow = 'visible';
-    var el = document.querySelector('div.job-details');
-    while (el && el !== document.body) {
-      var s = window.getComputedStyle(el).overflow;
-      if (s === 'hidden' || s === 'auto' || s === 'scroll') el.style.overflow = 'visible';
-      el = el.parentElement;
+    /* COMO's cart page clips fixed-position children, so ancestors get
+       overflow:visible. The Outbound site needs none of that. */
+    if (document.querySelector('div.job-details')) {
+      var mainContent = document.querySelector('div.container.main-content') || document.querySelector('.container.main-content');
+      if (mainContent) mainContent.style.overflow = 'visible';
+      var body = document.querySelector('body');
+      if (body) body.style.overflow = 'visible';
+      var ngScope = document.querySelector('.ng-scope');
+      if (ngScope) ngScope.style.overflow = 'visible';
+      var el = document.querySelector('div.job-details');
+      while (el && el !== document.body) {
+        var s = window.getComputedStyle(el).overflow;
+        if (s === 'hidden' || s === 'auto' || s === 'scroll') el.style.overflow = 'visible';
+        el = el.parentElement;
+      }
     }
 
     _tpRef = buildTaskPanel();
     document.body.appendChild(_tpRef);
+    applyTpPos(_tpRef);
+    tpAttachDrag(_tpRef);
     tpAttachEvents(_tpRef);
   }
 
@@ -3064,14 +3238,14 @@
        cart/task detail page -> Associate Search only
        dashboard view        -> Batcher Timers only                */
   var panelWatcher = new MutationObserver(function() {
-    if (isTaskDetailPage()) {
-      /* cart/task detail -> Associate Search only */
+    if (shouldShowSearchPanel()) {
+      /* cart/task detail, or any Outbound page -> Associate Search only */
       detachMainPanel();
       var tp = document.getElementById('cbt-tp');
       if (!tp || !tp.isConnected) injectTaskPanel();
       return;
     }
-    /* not a detail page -> Associate Search never belongs */
+    /* nowhere the search panel belongs -> make sure it is gone */
     var tpOff = document.getElementById('cbt-tp');
     if (tpOff) { tpOff.remove(); _tpRef = null; }
 
@@ -3200,12 +3374,34 @@
   function start() {
     MY_DEVICE_ID = getDeviceId(); // initialize once at startup
 
-    // Pull the shared names basket FIRST, before any scans, panel work,
+    /* ── Self-heal FIRST ──
+       These loops are what put the panels back whenever they are missing.
+       They used to be registered at the very end of start(), so any error
+       earlier in startup silently skipped them and the panels never came
+       back after a page reload. Registering them up front, before anything
+       that can fail, guarantees the panels always return.
+       The style sheet goes in first so panels mount already styled. */
+    try { document.head.appendChild(style); } catch(e) {}
+    setInterval(panelHealthCheck, PANEL_HEALTH_MS);
+    setInterval(taskPanelHealthCheck, PANEL_HEALTH_MS);
+    /* A fresh reload often renders the page's anchors well after this point,
+       so check rapidly for the first 60s to bring the panels up promptly. */
+    var _fastMountUntil = Date.now() + 60000;
+    setInterval(function(){
+      if (Date.now() > _fastMountUntil) return;
+      try { panelHealthCheck(); taskPanelHealthCheck(); } catch(e) {}
+    }, 400);
+    /* Late-loading pages: re-check once everything has finished loading. */
+    window.addEventListener('load', function(){
+      try { panelHealthCheck(); taskPanelHealthCheck(); } catch(e) {}
+    });
+
+    // Pull the shared names list FIRST, before any scans, panel work,
     // or push can happen, so a fresh install starts from the full list.
     // The gate in syncPush keeps every push queued until this completes,
-    // and the union push in the callback then re-seeds the basket with
-    // anything this computer has that the basket is missing.
-    syncPull(function(){ syncPush(); });
+    // and the union push in the callback then re-seeds with anything this
+    // computer has that the server is missing.
+    try { syncPull(function(){ syncPush(); }); } catch(e) {}
 
     // ── One-time migration to v21.9 own/remote split ──
     var CLEAN_KEY = 'cbt_cleaned_v21_9';
@@ -3244,17 +3440,17 @@
       gmSet(CLEAN_KEY, '1');
     }
 
-    document.head.appendChild(style);
-    timerWatcher.observe(document.documentElement, { childList: true, subtree: true });
-    injectAllTimers();
-    setInterval(function(){ tickTimers(); injectAllTimers(); }, 1000);
-    fetchAndUpdate();
-    panelWatcher.observe(document.documentElement, { childList: true, subtree: true });
-    if (isDashboardView()) injectPanel();
-    injectTaskPanel();
-    /* Self-heal: re-mount either panel automatically if it disappears. */
-    setInterval(panelHealthCheck, PANEL_HEALTH_MS);
-    setInterval(taskPanelHealthCheck, PANEL_HEALTH_MS);
+    if (isComoSite()) {
+      try {
+        timerWatcher.observe(document.documentElement, { childList: true, subtree: true });
+        injectAllTimers();
+        setInterval(function(){ try { tickTimers(); injectAllTimers(); } catch(e) {} }, 1000);
+        fetchAndUpdate();
+      } catch(e) {}
+    }
+    try { panelWatcher.observe(document.documentElement, { childList: true, subtree: true }); } catch(e) {}
+    try { if (isDashboardView()) injectPanel(); } catch(e) {}
+    try { injectTaskPanel(); } catch(e) {}
 
     /* React the moment the route changes instead of waiting for the next
        health tick — otherwise the board lingers for up to 2s on Packages.
@@ -3285,10 +3481,12 @@
       /* Immediate correction if the board is ever found out of place. */
       setInterval(function () { if (boardIsMisplaced()) detachMainPanel(); }, 400);
     })();
-    pollActiveTasks();
-    setInterval(pollActiveTasks, POLL_MS);
-    setInterval(tickLive, TICK_MS);
-    setInterval(fetchAndUpdate, 1000);
+    if (isComoSite()) {
+      pollActiveTasks();
+      setInterval(pollActiveTasks, POLL_MS);
+      setInterval(tickLive, TICK_MS);
+      setInterval(fetchAndUpdate, 1000);
+    }
     syncNamesFromAllTabs();
     scanLocalStorageForNames();
     setInterval(function(){
@@ -3299,16 +3497,18 @@
     setInterval(function(){ syncPull(); }, 60000);
     setInterval(function(){ syncHistoryPull(); }, 60000);
     setInterval(function(){ syncWeeklyPull(); }, 60000);
-    try {
-      GM_xmlhttpRequest({
-        method: 'GET', url: DRIVE_URL + '&_=' + Date.now(), responseType: 'json',
-        onload: function(res) {
-          if (res.status>=200&&res.status<300&&res.response) batchRateCache = res.response[STORE_ID]||200;
-          fetchAndUpdate();
-        },
-        onerror: function(){}
-      });
-    } catch(e) {}
+    if (isComoSite()) {
+      try {
+        GM_xmlhttpRequest({
+          method: 'GET', url: DRIVE_URL + '&_=' + Date.now(), responseType: 'json',
+          onload: function(res) {
+            if (res.status>=200&&res.status<300&&res.response) batchRateCache = res.response[STORE_ID]||200;
+            fetchAndUpdate();
+          },
+          onerror: function(){}
+        });
+      } catch(e) {}
+    }
   }
 
   if (document.readyState === 'loading') {
