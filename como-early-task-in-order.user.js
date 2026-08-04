@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      22.4.2
+// @version      22.5.0
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -767,6 +767,89 @@
       transition: border-color .15s, box-shadow .15s;
     }
     #cbt-qr-input:focus { border-color: var(--cb-blue); box-shadow: 0 0 0 3px rgba(41,121,255,.14); }
+
+    /* ══════════════════════════════════════
+       AUTO FORCE ASSIGN
+    ══════════════════════════════════════ */
+    #cbt-afa-btn {
+      cursor: pointer; font-size: 11px !important; font-weight: 800;
+      letter-spacing: .04em; padding: 3px 9px !important;
+      color: #fff !important; background: var(--cb-blue);
+      border: 1px solid var(--cb-blue) !important; border-radius: 5px;
+      transition: all .15s; white-space: nowrap;
+    }
+    #cbt-afa-btn:hover { background: var(--cb-blue-dim); border-color: var(--cb-blue-dim) !important; }
+    #cbt-afa-btn.busy { background: var(--cb-amber); border-color: var(--cb-amber) !important; color: #3a2600 !important; }
+
+    #cbt-afa-overlay {
+      position: fixed; inset: 0; z-index: 2147483645;
+      background: rgba(13,27,42,.45);
+      display: flex; align-items: center; justify-content: center;
+      font-family: var(--cb-sans); animation: cbtFadeIn .15s ease-out;
+    }
+    #cbt-afa-card {
+      background: #fff; border-radius: 14px; width: 520px; max-width: 92vw;
+      box-shadow: 0 20px 60px rgba(13,27,42,.35), 0 4px 16px rgba(13,27,42,.2);
+      overflow: hidden; display: flex; flex-direction: column; max-height: 82vh;
+    }
+    #cbt-afa-head {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 13px 18px; background: #f0f4f8; border-bottom: 1px solid var(--cb-border);
+    }
+    #cbt-afa-title {
+      font-size: 13px; font-weight: 800; color: var(--cb-navy);
+      letter-spacing: .05em; text-transform: uppercase;
+      display: flex; align-items: center; gap: 8px;
+    }
+    #cbt-afa-title::before { content: ''; width: 3px; height: 14px; background: var(--cb-blue); border-radius: 2px; }
+    #cbt-afa-x {
+      cursor: pointer; border: none; background: none; color: var(--cb-text3);
+      font-size: 15px; width: 26px; height: 26px; border-radius: 50%; padding: 0;
+      display: flex; align-items: center; justify-content: center; transition: all .15s;
+    }
+    #cbt-afa-x:hover { color: var(--cb-red); background: rgba(255,61,61,.1); }
+    #cbt-afa-body { padding: 16px 18px; overflow-y: auto; color: var(--cb-text); font-size: 13px; line-height: 1.6; }
+    #cbt-afa-lead { font-size: 14px; margin-bottom: 12px; }
+    #cbt-afa-lead b { color: var(--cb-navy); font-size: 17px; }
+    .cbt-afa-list {
+      border: 1px solid var(--cb-border); border-radius: 8px;
+      max-height: 240px; overflow-y: auto; background: var(--cb-row-alt);
+    }
+    .cbt-afa-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 7px 12px; border-bottom: 1px solid var(--cb-border);
+      font-family: var(--cb-mono); font-size: 12px;
+    }
+    .cbt-afa-row:last-child { border-bottom: none; }
+    .cbt-afa-ref { font-weight: 800; color: var(--cb-navy); min-width: 74px; }
+    .cbt-afa-msg { color: var(--cb-text2); font-family: var(--cb-sans); flex: 1; }
+    .cbt-afa-row.ok   .cbt-afa-msg { color: #0a6e2e; font-weight: 700; }
+    .cbt-afa-row.bad  .cbt-afa-msg { color: #8b0000; font-weight: 700; }
+    .cbt-afa-row.skip .cbt-afa-msg { color: #7a4f00; font-weight: 700; }
+    .cbt-afa-warn {
+      background: rgba(255,171,0,.12); border: 1px solid rgba(255,171,0,.5);
+      color: #7a4f00; border-radius: 8px; padding: 9px 12px; margin-top: 12px;
+      font-size: 12px; font-weight: 600;
+    }
+    #cbt-afa-bar {
+      height: 8px; background: var(--cb-border); border-radius: 5px;
+      overflow: hidden; margin: 6px 0 14px;
+    }
+    #cbt-afa-fill { height: 100%; width: 0%; background: var(--cb-blue); transition: width .25s ease-out; }
+    #cbt-afa-foot {
+      display: flex; justify-content: flex-end; gap: 9px;
+      padding: 13px 18px; background: #f8fafc; border-top: 1px solid var(--cb-border);
+    }
+    .cbt-afa-act {
+      cursor: pointer; font-size: 13px; font-weight: 700; padding: 8px 16px;
+      border-radius: 8px; border: 1.5px solid var(--cb-border);
+      background: #fff; color: var(--cb-text2); transition: all .15s;
+    }
+    .cbt-afa-act:hover { background: var(--cb-border); }
+    .cbt-afa-act.go { background: var(--cb-blue); border-color: var(--cb-blue); color: #fff; }
+    .cbt-afa-act.go:hover { background: var(--cb-blue-dim); border-color: var(--cb-blue-dim); }
+    .cbt-afa-act.stop { background: var(--cb-red); border-color: var(--cb-red); color: #fff; }
+    .cbt-afa-act.stop:hover { filter: brightness(.9); }
 
   `
 
@@ -2064,6 +2147,7 @@
   function ingestData(d) {
     if (!d) return; var changed=false;
     deepCaptureNames(d, 0);
+    try { afaRecordJobs(d, 0); } catch(e) {}
     if (Array.isArray(d)) { d.forEach(function(i){if(ingestItem(i))changed=true;}); }
     else if (d.shortClientRef) { if(ingestItem(d))changed=true; }
     else { for(var k of ['summaries','tasks','results','items','jobs','data']) { if(Array.isArray(d[k])){d[k].forEach(function(i){if(ingestItem(i))changed=true;});if(changed)break;}}}
@@ -2115,6 +2199,7 @@
           '<span id="cbt-font-dec" title="Smaller text">A−</span>' +
           '<span id="cbt-font-inc" title="Larger text">A+</span>' +
           '<span id="cbt-theme-btn" title="Toggle Dark/Light">🌙</span>' +
+          '<span id="cbt-afa-btn" title="Force-assign every UNASSIGNABLE cart">\u26A1 Force Assign</span>' +
           '<span id="cbt-collapse-btn" title="Collapse/Expand">🔼</span>' +
         '</div>' +
       '</div>' +
@@ -2411,6 +2496,12 @@
         if (activeTab==='live')    renderLive();
         if (activeTab==='names')   renderNames();
       });
+    });
+
+    var afaBtn = panel2.querySelector('#cbt-afa-btn');
+    if (afaBtn) afaBtn.addEventListener('click', function(e){
+      e.stopPropagation();
+      try { afaConfirm(); } catch(err) {}
     });
 
     var isCollapsed = false;
@@ -3370,6 +3461,265 @@
   document.addEventListener('keydown', function(e){
     if (e.key === 'Escape' && _qrOverlay) qrClose();
   }, true);
+
+  /* ══════════════════════════════════════
+     AUTO FORCE ASSIGN
+
+     Does exactly what doing it by hand does, just without opening each
+     cart: POST /api/store/{storeId}/job/{jobId}/forceAssignable with
+     {"ignoreProblemSolve": false}, on the page's own logged-in session.
+     No auth, permission or CSRF handling is touched — the browser attaches
+     the same session it uses for every other click, and nothing is
+     requested that the account cannot already do by hand.
+
+     Carts are read off the dashboard you are looking at: only rows whose
+     status reads UNASSIGNABLE are eligible. Full job IDs come from the
+     row's own link, falling back to the dashboard API responses the
+     script already sees. One cart at a time, re-checked immediately
+     before each request, never the same cart twice.
+  ══════════════════════════════════════ */
+  var AFA_DELAY_MS   = 900;    /* pause between carts */
+  var AFA_TIMEOUT_MS = 15000;  /* give up on a single request after this */
+  var _afaJobIndex = Object.create(null);  /* shortRef -> full job id */
+  var _afaDone     = Object.create(null);  /* job id -> already processed */
+  var _afaRunning  = false, _afaStop = false, _afaOverlay = null;
+
+  /* Job ids look like {storeId}_CHECKIN_SERVICE_PUP-C-{uuid} */
+  function afaLooksLikeJobId(v) {
+    if (typeof v !== 'string' || v.length < 30 || v.indexOf('_') === -1) return false;
+    return STORE_ID ? v.indexOf(STORE_ID) === 0 : true;
+  }
+
+  /* Harvest shortRef -> full id from whatever JSON the dashboard fetches,
+     so a row's short id can be resolved even if its link carries no href. */
+  function afaRecordJobs(obj, depth) {
+    if (obj == null || depth > 6) return;
+    if (Array.isArray(obj)) {
+      for (var i = 0; i < obj.length && i < 5000; i++) afaRecordJobs(obj[i], depth + 1);
+      return;
+    }
+    if (typeof obj !== 'object') return;
+    var ref = obj.shortClientRef;
+    if (typeof ref === 'string' && ref) {
+      var id = null, named = ['id','jobId','jobID','taskId'];
+      for (var n = 0; n < named.length; n++) { if (afaLooksLikeJobId(obj[named[n]])) { id = obj[named[n]]; break; } }
+      if (!id) { for (var k in obj) { if (afaLooksLikeJobId(obj[k])) { id = obj[k]; break; } } }
+      if (id) _afaJobIndex[ref] = id;
+    }
+    for (var k2 in obj) { var v = obj[k2]; if (v && typeof v === 'object') afaRecordJobs(v, depth + 1); }
+  }
+
+  /* Every dashboard row whose status reads UNASSIGNABLE.
+     'ASSIGNABLE' rows are NOT matched: the test is for the whole word
+     UNASSIGNABLE, and rows in the Partially Batched / Staged for Pickup
+     sections are excluded exactly like the Time Left column excludes them. */
+  function afaScanDashboard() {
+    var found = [], seen = Object.create(null);
+    var cards = document.querySelectorAll('job-card');
+    for (var i = 0; i < cards.length; i++) {
+      var card = cards[i];
+      try { if (isInExcludedSection(card)) continue; } catch(e) {}
+      var txt = card.innerText || card.textContent || '';
+      if (!/UNASSIGNABLE/i.test(txt)) continue;
+      var a = card.querySelector('a');
+      var ref = a ? (a.textContent || '').trim() : '';
+      var id = null;
+      if (a) {
+        var href = a.getAttribute('href') || '';
+        var m = href.match(/jobId=([^&#]+)/i);
+        if (m) { try { id = decodeURIComponent(m[1]); } catch(e2) { id = m[1]; } }
+      }
+      if (!id && ref && _afaJobIndex[ref]) id = _afaJobIndex[ref];
+      var key = id || ('ref:' + ref + ':' + i);
+      if (seen[key]) continue;
+      seen[key] = true;
+      found.push({ ref: ref || '(unknown)', id: id });
+    }
+    return found;
+  }
+
+  /* The one write this feature makes — the same call the Yes button makes. */
+  function afaForceAssign(jobId) {
+    var url = COMO_BASE + '/api/store/' + STORE_ID + '/job/' + encodeURIComponent(jobId) + '/forceAssignable';
+    var ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
+    var timer = setTimeout(function(){ if (ctrl) ctrl.abort(); }, AFA_TIMEOUT_MS);
+    var opts = {
+      method: 'POST',
+      credentials: 'include',          /* the page's existing session, nothing added */
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({ ignoreProblemSolve: false })
+    };
+    if (ctrl) opts.signal = ctrl.signal;
+    return _origFetch(url, opts).then(function(res){
+      clearTimeout(timer);
+      return res.text().then(
+        function(t){ return { ok: res.ok, status: res.status, body: t }; },
+        function(){  return { ok: res.ok, status: res.status, body: '' }; }
+      );
+    }, function(err){
+      clearTimeout(timer);
+      return { ok: false, status: 0, body: (err && err.message) ? String(err.message) : 'network error' };
+    });
+  }
+
+  /* ── modal ── */
+  function afaClose() {
+    if (_afaRunning) return;                    /* never vanish mid-run */
+    if (_afaOverlay && _afaOverlay.parentNode) _afaOverlay.parentNode.removeChild(_afaOverlay);
+    _afaOverlay = null;
+    var b = document.getElementById('cbt-afa-btn');
+    if (b) { b.classList.remove('busy'); b.textContent = '\u26A1 Force Assign'; }
+  }
+  function afaShell(title, bodyHtml, footHtml) {
+    if (!_afaOverlay) {
+      _afaOverlay = document.createElement('div');
+      _afaOverlay.id = 'cbt-afa-overlay';
+      document.body.appendChild(_afaOverlay);
+      _afaOverlay.addEventListener('mousedown', function(e){ if (e.target === _afaOverlay) afaClose(); });
+    }
+    _afaOverlay.innerHTML =
+      '<div id="cbt-afa-card">' +
+        '<div id="cbt-afa-head"><span id="cbt-afa-title">' + title + '</span>' +
+        '<button id="cbt-afa-x" title="Close">\u2715</button></div>' +
+        '<div id="cbt-afa-body">' + bodyHtml + '</div>' +
+        '<div id="cbt-afa-foot">' + footHtml + '</div>' +
+      '</div>';
+    var x = _afaOverlay.querySelector('#cbt-afa-x');
+    if (x) x.addEventListener('click', afaClose);
+  }
+  function afaEsc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function afaRowsHtml(items) {
+    return '<div class="cbt-afa-list">' + items.map(function(it){
+      var cls = it.ok === true ? 'ok' : (it.skip ? 'skip' : (it.ok === false ? 'bad' : ''));
+      return '<div class="cbt-afa-row ' + cls + '">' +
+             '<span class="cbt-afa-ref">' + afaEsc(it.ref) + '</span>' +
+             '<span class="cbt-afa-msg">' + afaEsc(it.msg || (it.id ? 'ready' : 'task ID not found')) + '</span>' +
+             '</div>';
+    }).join('') + '</div>';
+  }
+
+  /* Step 1: show what would be touched and wait for a deliberate go-ahead. */
+  function afaConfirm() {
+    if (_afaRunning) { afaProgressView(); return; }
+    var list = afaScanDashboard();
+    var ready = list.filter(function(x){ return x.id && !_afaDone[x.id]; });
+    var noId  = list.filter(function(x){ return !x.id; });
+    var already = list.filter(function(x){ return x.id && _afaDone[x.id]; });
+
+    if (!list.length) {
+      afaShell('Auto Force Assign',
+        '<div id="cbt-afa-lead">No <b>UNASSIGNABLE</b> carts are showing on the dashboard right now.</div>' +
+        '<div style="color:var(--cb-text2)">Nothing to do. Close this and try again when some appear.</div>',
+        '<button class="cbt-afa-act" data-afa="close">Close</button>');
+    } else {
+      var warn = '';
+      if (noId.length)   warn += '<div class="cbt-afa-warn">' + noId.length + ' cart(s) below have no readable task ID and will be skipped. Let the dashboard finish loading, then reopen this window.</div>';
+      if (already.length) warn += '<div class="cbt-afa-warn">' + already.length + ' cart(s) were already processed in this session and will not be sent again.</div>';
+      afaShell('Auto Force Assign',
+        '<div id="cbt-afa-lead">This will force-assign <b>' + ready.length + '</b> cart' + (ready.length === 1 ? '' : 's') +
+        ' marked UNASSIGNABLE, one at a time.</div>' +
+        afaRowsHtml(list) + warn,
+        '<button class="cbt-afa-act" data-afa="close">Cancel</button>' +
+        (ready.length ? '<button class="cbt-afa-act go" data-afa="go">Force assign ' + ready.length + '</button>' : ''));
+    }
+    var card = _afaOverlay.querySelector('#cbt-afa-card');
+    card.addEventListener('click', function(e){
+      var b = e.target.closest('[data-afa]');
+      if (!b) return;
+      if (b.getAttribute('data-afa') === 'close') afaClose();
+      if (b.getAttribute('data-afa') === 'go') afaRun(ready);
+    });
+  }
+
+  function afaProgressView() {
+    afaShell('Auto Force Assign \u2014 running',
+      '<div id="cbt-afa-lead"><span id="cbt-afa-count">Starting\u2026</span></div>' +
+      '<div id="cbt-afa-bar"><div id="cbt-afa-fill"></div></div>' +
+      '<div id="cbt-afa-live"></div>',
+      '<button class="cbt-afa-act stop" data-afa="stop">Stop</button>');
+    var card = _afaOverlay.querySelector('#cbt-afa-card');
+    card.addEventListener('click', function(e){
+      var b = e.target.closest('[data-afa]');
+      if (b && b.getAttribute('data-afa') === 'stop') {
+        _afaStop = true;
+        b.textContent = 'Stopping\u2026';
+        b.disabled = true;
+      }
+    });
+  }
+  function afaProgress(done, total, ref, results) {
+    var c = document.getElementById('cbt-afa-count');
+    if (c) c.innerHTML = 'Processing <b>' + done + '</b> of <b>' + total + '</b>' + (ref ? ' \u2014 cart ' + afaEsc(ref) : '');
+    var f = document.getElementById('cbt-afa-fill');
+    if (f) f.style.width = Math.round((done / Math.max(1, total)) * 100) + '%';
+    var live = document.getElementById('cbt-afa-live');
+    if (live && results.length) live.innerHTML = afaRowsHtml(results.slice(-6));
+  }
+
+  function afaSummary(results, stopped) {
+    var okN   = results.filter(function(r){ return r.ok === true; }).length;
+    var skipN = results.filter(function(r){ return r.skip; }).length;
+    var badN  = results.filter(function(r){ return r.ok === false && !r.skip; }).length;
+    afaShell('Auto Force Assign \u2014 finished',
+      '<div id="cbt-afa-lead">' + (stopped ? 'Stopped early. ' : '') +
+      '<b>' + okN + '</b> assigned' +
+      (skipN ? ', <b>' + skipN + '</b> skipped' : '') +
+      (badN  ? ', <b>' + badN  + '</b> failed'  : '') + '.</div>' +
+      (results.length ? afaRowsHtml(results) : '<div style="color:var(--cb-text2)">Nothing was processed.</div>'),
+      '<button class="cbt-afa-act go" data-afa="close">Done</button>');
+    var card = _afaOverlay.querySelector('#cbt-afa-card');
+    card.addEventListener('click', function(e){
+      var b = e.target.closest('[data-afa]');
+      if (b && b.getAttribute('data-afa') === 'close') afaClose();
+    });
+  }
+
+  /* Step 2: one cart at a time, re-checked immediately before each send. */
+  function afaRun(list) {
+    _afaRunning = true; _afaStop = false;
+    var btn = document.getElementById('cbt-afa-btn');
+    if (btn) { btn.classList.add('busy'); btn.textContent = '\u26A1 Running\u2026'; }
+    afaProgressView();
+    var results = [], i = 0;
+
+    function finish() {
+      _afaRunning = false;
+      if (btn) { btn.classList.remove('busy'); btn.textContent = '\u26A1 Force Assign'; }
+      afaSummary(results, _afaStop);
+    }
+    function next(delay) { i++; setTimeout(step, delay); }
+
+    function step() {
+      if (_afaStop || i >= list.length) return finish();
+      var item = list[i];
+      afaProgress(i + 1, list.length, item.ref, results);
+
+      if (!item.id) { results.push({ ref: item.ref, ok: false, msg: 'task ID not found' }); return next(60); }
+      if (_afaDone[item.id]) { results.push({ ref: item.ref, skip: true, ok: false, msg: 'already processed' }); return next(60); }
+
+      /* still UNASSIGNABLE right now? someone may have handled it already */
+      var live = afaScanDashboard();
+      var still = live.some(function(x){ return x.id ? x.id === item.id : x.ref === item.ref; });
+      if (!still) { results.push({ ref: item.ref, skip: true, ok: false, msg: 'no longer unassignable \u2014 skipped' }); return next(60); }
+
+      _afaDone[item.id] = true;   /* claim it before sending: never twice */
+      afaForceAssign(item.id).then(function(r){
+        if (r.ok) {
+          results.push({ ref: item.ref, ok: true, msg: 'assigned (HTTP ' + r.status + ')' });
+        } else {
+          var why = r.status ? ('HTTP ' + r.status) : 'no response';
+          if (r.body) why += ' \u2014 ' + String(r.body).replace(/\s+/g, ' ').slice(0, 90);
+          results.push({ ref: item.ref, ok: false, msg: why });
+        }
+        afaProgress(i + 1, list.length, item.ref, results);
+        next(AFA_DELAY_MS);
+      });
+    }
+    step();
+  }
 
   function start() {
     MY_DEVICE_ID = getDeviceId(); // initialize once at startup
