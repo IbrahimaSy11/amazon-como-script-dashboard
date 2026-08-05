@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      22.10.0
+// @version      22.11.0
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -412,29 +412,66 @@
     /* ══════════════════════════════════════
        FORCE ASSIGN BUTTON
     ══════════════════════════════════════ */
+    /* ══════════════════════════════════════
+       SCRIPT UI IS NOT SELECTABLE
+       Stops dashboard text becoming a QR code, and stops stray highlights
+       while clicking around. Editable fields are exempt below so typing,
+       caret movement and text editing all behave normally.
+    ══════════════════════════════════════ */
+    #cbt-panel, #cbt-tp, #cbt-qr-overlay, #cbt-afa-overlay, #cbt-ac-drop, #cbt-copy-toast {
+      -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; user-select: none;
+    }
+    #cbt-panel input, #cbt-panel textarea,
+    #cbt-tp input, #cbt-tp textarea,
+    #cbt-qr-overlay input, #cbt-qr-overlay textarea,
+    #cbt-afa-overlay input, #cbt-afa-overlay textarea,
+    #cbt-ac-drop input {
+      -webkit-user-select: text !important; -moz-user-select: text !important;
+      -ms-user-select: text !important; user-select: text !important;
+    }
+
+    /* ══════════════════════════════════════
+       FORCE ASSIGN BUTTON — white label in every state
+    ══════════════════════════════════════ */
     #cbt-afa-btn, #cbt-panel.dark #cbt-afa-btn {
-      display: inline-flex !important; align-items: center; gap: 6px;
-      padding: 5px 12px !important; border-radius: 7px;
+      display: inline-flex !important; align-items: center; justify-content: center;
+      padding: 6px 14px !important; border-radius: 7px;
       background: linear-gradient(180deg, #3d87ff 0%, #2979ff 100%) !important;
-      color: #fff !important; border: 1px solid #1f63d6 !important;
-      font-size: 11px !important; font-weight: 700 !important; letter-spacing: .03em;
+      color: #FFFFFF !important; border: 1px solid #1f63d6 !important;
+      font-size: 11px !important; font-weight: 700 !important; letter-spacing: .04em;
       line-height: 1; white-space: nowrap; cursor: pointer;
       box-shadow: 0 1px 2px rgba(13,27,42,.16);
       transition: background .15s, box-shadow .15s, transform .1s;
     }
     #cbt-afa-btn:hover, #cbt-panel.dark #cbt-afa-btn:hover {
       background: linear-gradient(180deg, #2f7cf5 0%, #1f63d6 100%) !important;
-      border-color: #1a54b8 !important;
+      border-color: #1a54b8 !important; color: #FFFFFF !important;
       box-shadow: 0 3px 10px rgba(41,121,255,.38);
       transform: translateY(-1px);
     }
-    #cbt-afa-btn:active { transform: translateY(0); box-shadow: 0 1px 2px rgba(13,27,42,.2); }
-    #cbt-afa-btn.busy, #cbt-panel.dark #cbt-afa-btn.busy {
-      background: linear-gradient(180deg, #ffc046 0%, #ffab00 100%) !important;
-      border-color: #d18f00 !important; color: #3a2600 !important;
+    #cbt-afa-btn:active, #cbt-panel.dark #cbt-afa-btn:active {
+      transform: translateY(0); color: #FFFFFF !important;
+      background: linear-gradient(180deg, #2569d8 0%, #1c58bd 100%) !important;
+      box-shadow: 0 1px 2px rgba(13,27,42,.2);
     }
-    #cbt-afa-btn .cbt-afa-ico { font-size: 12px; line-height: 1; }
-    #cbt-afa-btn .cbt-afa-lbl { line-height: 1; }
+    /* running: deep amber so white stays legible on it */
+    #cbt-afa-btn.busy, #cbt-panel.dark #cbt-afa-btn.busy,
+    #cbt-afa-btn.busy:hover, #cbt-panel.dark #cbt-afa-btn.busy:hover {
+      background: linear-gradient(180deg, #c8790a 0%, #a35c00 100%) !important;
+      border-color: #8a4e00 !important; color: #FFFFFF !important;
+    }
+    /* finished cleanly */
+    #cbt-afa-btn.ok, #cbt-panel.dark #cbt-afa-btn.ok {
+      background: linear-gradient(180deg, #1f8f4a 0%, #16713a 100%) !important;
+      border-color: #115c2f !important; color: #FFFFFF !important;
+    }
+    /* unavailable */
+    #cbt-afa-btn.off, #cbt-panel.dark #cbt-afa-btn.off {
+      background: linear-gradient(180deg, #8a97a6 0%, #6f7d8c 100%) !important;
+      border-color: #5d6a78 !important; color: #FFFFFF !important;
+      cursor: default; box-shadow: none; transform: none;
+    }
+    #cbt-afa-btn .cbt-afa-lbl { line-height: 1; color: #FFFFFF !important; }
 
     /* ══════════════════════════════════════
        NIGHT MODE — Force Assign popup
@@ -1562,7 +1599,15 @@
   /* Every root this script owns. Popups are scaled on their inner card, not
      their full-screen backdrop, so the backdrop still covers the viewport
      exactly and the card stays centred at any size. */
+  var _uiScaleLoaded = false;
   function applyUiScale() {
+    /* Read the saved size the first time anything is drawn, so a panel that
+       mounts before startup finishes still comes up at the chosen size
+       instead of snapping back to 100%. */
+    if (!_uiScaleLoaded) {
+      _uiScaleLoaded = true;
+      try { _uiScale = loadUiScale(); } catch(e) {}
+    }
     var z = _uiScale;
     var panel = document.getElementById('cbt-panel');
     if (panel) {
@@ -2458,7 +2503,7 @@
           '<span id="cbt-font-inc" title="Larger (A+)">A+</span>' +
           '<span id="cbt-theme-btn" title="Toggle Dark/Light">🌙</span>' +
           '<span id="cbt-afa-btn" title="Force-assign every UNASSIGNABLE cart">' +
-            '<span class="cbt-afa-ico">\u26A1</span><span class="cbt-afa-lbl">Force Assign</span>' +
+            '<span class="cbt-afa-lbl">Force Assign</span>' +
           '</span>' +
           '<span id="cbt-collapse-btn" title="Collapse/Expand">🔼</span>' +
         '</div>' +
@@ -2702,6 +2747,7 @@
 
     _mountFails = 0;              /* mounted successfully */
     clearAutoReloadCount();       /* board is up — reset the reload budget */
+    try { applyUiScale(); } catch(ex) {}   /* restore the saved size */
     renderLive();
     renderHistory();
     renderWeekly();
@@ -3627,6 +3673,21 @@
   var _qrOverlay = null;
   var _qrSuppressNextMouseup = false;
 
+  /* Every surface this script draws. Text inside these is not selectable and
+     never becomes a QR code — the feature is for the page's own content. */
+  var QR_UI_IDS = ['cbt-panel', 'cbt-tp', 'cbt-qr-overlay', 'cbt-afa-overlay', 'cbt-ac-drop', 'cbt-copy-toast'];
+
+  /* Walks up through shadow roots as well as normal parents. */
+  function qrInScriptUI(node) {
+    var n = node, guard = 0;
+    while (n && guard++ < 200) {
+      if (n.nodeType === 1 && n.id && QR_UI_IDS.indexOf(n.id) !== -1) return true;
+      if (n.nodeType === 11 && n.host) { n = n.host; continue; }   /* shadow root */
+      n = n.parentNode;
+    }
+    return false;
+  }
+
   function qrRender(text) {
     var canvas = document.getElementById('cbt-qr-canvas');
     var err = document.getElementById('cbt-qr-err');
@@ -3709,14 +3770,28 @@
   /* highlight any text -> open the QR popup */
   document.addEventListener('mouseup', function(e){
     if (_qrOverlay && _qrOverlay.contains(e.target)) return;
+    /* Anything that starts inside the dashboard, a popup or a dropdown is
+       not QR material — ignore it outright, including via shadow paths. */
+    var origin = e.target;
+    try {
+      if (typeof e.composedPath === 'function') {
+        var path = e.composedPath();
+        if (path && path.length) origin = path[0];
+      }
+    } catch(ex) {}
+    if (qrInScriptUI(origin) || qrInScriptUI(e.target)) return;
     /* This mouseup belongs to the click that just closed the popup — ignore
        it once, then resume normal behavior. */
     if (_qrSuppressNextMouseup) { _qrSuppressNextMouseup = false; return; }
     setTimeout(function(){
-      var sel = '';
-      try { sel = String(window.getSelection() || ''); } catch(ex) {}
+      var sel = '', selection = null;
+      try { selection = window.getSelection(); sel = String(selection || ''); } catch(ex) {}
       sel = sel.trim();
       if (!sel) return;
+      /* second guard: the selection itself must not live inside our UI */
+      try {
+        if (selection && (qrInScriptUI(selection.anchorNode) || qrInScriptUI(selection.focusNode))) return;
+      } catch(ex) {}
       if (sel.length > 1000) sel = sel.slice(0, 1000);
       qrOpen(sel);
     }, 10);
@@ -3970,7 +4045,7 @@
   function afaSetBtn(text, busy) {
     var b = document.getElementById('cbt-afa-btn');
     if (!b) return;
-    b.innerHTML = '<span class="cbt-afa-ico">\u26A1</span><span class="cbt-afa-lbl">' + text + '</span>';
+    b.innerHTML = '<span class="cbt-afa-lbl">' + text + '</span>';
     if (busy) b.classList.add('busy'); else b.classList.remove('busy');
   }
 
@@ -4482,10 +4557,54 @@
   /* Bind directly to a native input living inside a shadow root. Delegated
      document listeners do reach it, but binding on the element itself is
      immune to any stopPropagation the component does internally. */
+  /* True when the field sits inside a dialog, so page-level search boxes
+     never get focus stolen on load — only fields in a popup do. */
+  function acInModal(el) {
+    var n = el, guard = 0;
+    while (n && guard++ < 200) {
+      if (n.nodeType === 1) {
+        var tag = (n.tagName || '').toLowerCase();
+        if (tag === 'kat-modal' || tag === 'dialog') return true;
+        if (n.getAttribute) {
+          var role = n.getAttribute('role');
+          if (role === 'dialog' || role === 'alertdialog') return true;
+        }
+        var cls = (typeof n.className === 'string') ? n.className : '';
+        if (/(^|\s|-)(modal|dialog|popup)(\s|-|$)/i.test(cls)) return true;
+      }
+      if (n.nodeType === 11 && n.host) { n = n.host; continue; }
+      n = n.parentNode;
+    }
+    return false;
+  }
+
+  /* Put the caret in the field as soon as its popup appears, exactly once,
+     so typing can start immediately. Waits for the input to actually be
+     laid out, and backs off if focus is already in some other field. */
+  function acAutoFocus(input) {
+    if (!input || input._cbtAcFocused) return;
+    input._cbtAcFocused = true;
+    var tries = 0;
+    (function attempt(){
+      if (++tries > 20 || !input.isConnected) return;
+      var r;
+      try { r = input.getBoundingClientRect(); } catch(e) { return; }
+      if (!r || (!r.width && !r.height)) { setTimeout(attempt, 80); return; }  /* not visible yet */
+      try {
+        var ae = document.activeElement;
+        var typingElsewhere = ae && ae !== input && ae !== document.body &&
+          (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable);
+        if (typingElsewhere) return;      /* never yank focus away mid-typing */
+        input.focus({ preventScroll: true });
+      } catch(e) { try { input.focus(); } catch(e2) {} }
+    })();
+  }
+
   function acBind(input, host) {
     if (!input || input._cbtAcBound) { if (host && input) input._cbtAcHost = host; return; }
     input._cbtAcBound = true;
     if (host) input._cbtAcHost = host;
+    if (acInModal(input)) acAutoFocus(input);
     input.addEventListener('focus', function(){
       _acInput = input; _acHost = input._cbtAcHost || null;
       if ((input.value || '').trim().length >= AC_MIN_CHARS) acRender(input.value);
@@ -4511,6 +4630,13 @@
   function acScanForFields() {
     var found = acFindKatInput();
     if (found) { acBind(found.input, found.host); return; }
+    /* light-DOM assignment fields (COMO's Manager Action dialog) */
+    try {
+      var plain = document.querySelectorAll('input');
+      for (var i = 0; i < plain.length; i++) {
+        if (!plain[i]._cbtAcBound && acIsAssociateField(plain[i])) acBind(plain[i], null);
+      }
+    } catch(e) {}
     /* fall back to a deep sweep only while a modal is actually open */
     if (document.querySelector('kat-modal, [role="dialog"], .modal')) {
       var deep = acDeepFindInput(document, 0);
@@ -4552,7 +4678,7 @@
        that can fail, guarantees the panels always return.
        The style sheet goes in first so panels mount already styled. */
     try { document.head.appendChild(style); } catch(e) {}
-    try { _uiScale = loadUiScale(); } catch(e) { _uiScale = UI_SCALE_DEFAULT; }
+    try { _uiScale = loadUiScale(); _uiScaleLoaded = true; } catch(e) { _uiScale = UI_SCALE_DEFAULT; }
     setInterval(panelHealthCheck, PANEL_HEALTH_MS);
     setInterval(taskPanelHealthCheck, PANEL_HEALTH_MS);
     /* A fresh reload often renders the page's anchors well after this point,
