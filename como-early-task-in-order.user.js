@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      22.5.0
+// @version      22.10.0
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -392,6 +392,132 @@
 
     /* ── Font size controls ── */
     #cbt-font-dec, #cbt-font-inc { font-size: 12px !important; }
+
+    /* ══════════════════════════════════════
+       HEADER — pure white in both themes
+    ══════════════════════════════════════ */
+    #cbt-header { background: #FFFFFF !important; }
+    #cbt-panel.dark #cbt-header {
+      background: #FFFFFF !important;
+      border-bottom: 1px solid #d9e0e8 !important;
+    }
+    /* header contents stay dark-on-white whichever theme is active */
+    #cbt-panel.dark #cbt-title { color: var(--cb-navy) !important; }
+    #cbt-panel.dark #cbt-title::before { background: var(--cb-blue) !important; }
+    #cbt-panel.dark #cbt-controls span { color: var(--cb-text2) !important; border-color: #dbe2ea !important; }
+    #cbt-panel.dark #cbt-controls span:hover {
+      background: var(--cb-blue) !important; color: #fff !important; border-color: var(--cb-blue) !important;
+    }
+
+    /* ══════════════════════════════════════
+       FORCE ASSIGN BUTTON
+    ══════════════════════════════════════ */
+    #cbt-afa-btn, #cbt-panel.dark #cbt-afa-btn {
+      display: inline-flex !important; align-items: center; gap: 6px;
+      padding: 5px 12px !important; border-radius: 7px;
+      background: linear-gradient(180deg, #3d87ff 0%, #2979ff 100%) !important;
+      color: #fff !important; border: 1px solid #1f63d6 !important;
+      font-size: 11px !important; font-weight: 700 !important; letter-spacing: .03em;
+      line-height: 1; white-space: nowrap; cursor: pointer;
+      box-shadow: 0 1px 2px rgba(13,27,42,.16);
+      transition: background .15s, box-shadow .15s, transform .1s;
+    }
+    #cbt-afa-btn:hover, #cbt-panel.dark #cbt-afa-btn:hover {
+      background: linear-gradient(180deg, #2f7cf5 0%, #1f63d6 100%) !important;
+      border-color: #1a54b8 !important;
+      box-shadow: 0 3px 10px rgba(41,121,255,.38);
+      transform: translateY(-1px);
+    }
+    #cbt-afa-btn:active { transform: translateY(0); box-shadow: 0 1px 2px rgba(13,27,42,.2); }
+    #cbt-afa-btn.busy, #cbt-panel.dark #cbt-afa-btn.busy {
+      background: linear-gradient(180deg, #ffc046 0%, #ffab00 100%) !important;
+      border-color: #d18f00 !important; color: #3a2600 !important;
+    }
+    #cbt-afa-btn .cbt-afa-ico { font-size: 12px; line-height: 1; }
+    #cbt-afa-btn .cbt-afa-lbl { line-height: 1; }
+
+    /* ══════════════════════════════════════
+       NIGHT MODE — Force Assign popup
+    ══════════════════════════════════════ */
+    #cbt-afa-overlay.cbt-dark #cbt-afa-card {
+      background: #0d1117; box-shadow: 0 20px 60px rgba(0,0,0,.6), 0 4px 16px rgba(0,0,0,.4);
+    }
+    #cbt-afa-overlay.cbt-dark #cbt-afa-head {
+      background: linear-gradient(135deg,#0d1117,#161b22); border-bottom-color: #21262d;
+    }
+    #cbt-afa-overlay.cbt-dark #cbt-afa-title { color: #e6edf3; }
+    #cbt-afa-overlay.cbt-dark #cbt-afa-title::before { background: #58a6ff; }
+    #cbt-afa-overlay.cbt-dark #cbt-afa-x { color: #6e7b8d; }
+    #cbt-afa-overlay.cbt-dark #cbt-afa-x:hover { color: #f85149; background: rgba(248,81,73,.14); }
+    #cbt-afa-overlay.cbt-dark #cbt-afa-body { color: #c9d1d9; }
+    #cbt-afa-overlay.cbt-dark #cbt-afa-lead b { color: #e6edf3; }
+    #cbt-afa-overlay.cbt-dark .cbt-afa-list { background: #161b22; border-color: #21262d; }
+    #cbt-afa-overlay.cbt-dark .cbt-afa-row { border-bottom-color: #21262d; }
+    #cbt-afa-overlay.cbt-dark .cbt-afa-ref { color: #e6edf3; }
+    #cbt-afa-overlay.cbt-dark .cbt-afa-msg { color: #8b99aa; }
+    #cbt-afa-overlay.cbt-dark .cbt-afa-row.ok   .cbt-afa-msg { color: #3fb950; }
+    #cbt-afa-overlay.cbt-dark .cbt-afa-row.bad  .cbt-afa-msg { color: #f85149; }
+    #cbt-afa-overlay.cbt-dark .cbt-afa-row.skip .cbt-afa-msg { color: #e3b341; }
+    #cbt-afa-overlay.cbt-dark .cbt-afa-warn {
+      background: rgba(227,179,65,.12); border-color: rgba(227,179,65,.45); color: #e3b341;
+    }
+    #cbt-afa-overlay.cbt-dark #cbt-afa-bar { background: #21262d; }
+    #cbt-afa-overlay.cbt-dark #cbt-afa-fill { background: #58a6ff; }
+    #cbt-afa-overlay.cbt-dark #cbt-afa-foot { background: #161b22; border-top-color: #21262d; }
+    #cbt-afa-overlay.cbt-dark .cbt-afa-act {
+      background: #161b22; border-color: #30363d; color: #c9d1d9;
+    }
+    #cbt-afa-overlay.cbt-dark .cbt-afa-act:hover { background: #21262d; border-color: #3d444d; }
+    #cbt-afa-overlay.cbt-dark .cbt-afa-act.go {
+      background: #1f6feb; border-color: #1f6feb; color: #fff;
+    }
+    #cbt-afa-overlay.cbt-dark .cbt-afa-act.go:hover { background: #388bfd; border-color: #388bfd; }
+    #cbt-afa-overlay.cbt-dark .cbt-afa-act.stop { background: #da3633; border-color: #da3633; color: #fff; }
+    #cbt-afa-overlay.cbt-dark .cbt-afa-opt {
+      background: #161b22; border-color: #30363d; color: #c9d1d9;
+    }
+    #cbt-afa-overlay.cbt-dark .cbt-afa-opt:hover { background: #1c2333; border-color: #58a6ff; }
+    #cbt-afa-overlay.cbt-dark .cbt-afa-opt.off:hover { background: #161b22; border-color: #30363d; }
+    #cbt-afa-overlay.cbt-dark .cbt-afa-note { color: #8b99aa; }
+
+    /* ══════════════════════════════════════
+       NIGHT MODE — Search by Name dropdown
+    ══════════════════════════════════════ */
+    #cbt-ac-drop.cbt-dark {
+      background: #0d1117; border-color: #21262d;
+      box-shadow: 0 12px 36px rgba(0,0,0,.55), 0 2px 8px rgba(0,0,0,.4);
+      scrollbar-color: #21262d transparent;
+    }
+    #cbt-ac-drop.cbt-dark::-webkit-scrollbar-thumb { background: #21262d; }
+    #cbt-ac-drop.cbt-dark .cbt-ac-hd {
+      background: linear-gradient(180deg,#1a2233,#161b22);
+      border-bottom-color: #21262d; color: #8faac0;
+    }
+    #cbt-ac-drop.cbt-dark .cbt-ac-item { border-bottom-color: #21262d; }
+    #cbt-ac-drop.cbt-dark .cbt-ac-item:hover,
+    #cbt-ac-drop.cbt-dark .cbt-ac-item.on { background: #1c2333; box-shadow: inset 3px 0 0 #58a6ff; }
+    #cbt-ac-drop.cbt-dark .cbt-ac-nm { color: #c9d1d9; }
+    #cbt-ac-drop.cbt-dark .cbt-ac-nm mark { background: rgba(88,166,255,.22); color: #58a6ff; }
+    #cbt-ac-drop.cbt-dark .cbt-ac-tag { color: #6e7b8d; }
+    #cbt-ac-drop.cbt-dark .cbt-ac-none { color: #6e7b8d; }
+    #cbt-ac-drop.cbt-dark .cbt-ac-foot {
+      background: #161b22; border-top-color: #21262d; color: #6e7b8d;
+    }
+
+    /* QR popup stays plain white in both themes — never themed, never scaled */
+    #cbt-qr-card { background: #FFFFFF !important; }
+    #cbt-scale-reset {
+      font-size: 11px !important; font-variant-numeric: tabular-nums;
+      min-width: 40px; text-align: center;
+    }
+
+    /* Scaling safeguards: at larger sizes long values must wrap inside their
+       box rather than push a panel out of shape. */
+    #cbt-qr-card, #cbt-afa-card { max-width: 92vw; }
+    #cbt-qr-input { word-break: break-all; }
+    .cbt-afa-msg  { word-break: break-word; }
+    .cbt-afa-ref  { word-break: break-all; }
+    #cbt-afa-lead { word-break: break-word; }
 
     /* ══════════════════════════════════════
        DARK MODE — Batcher Timer
@@ -850,6 +976,57 @@
     .cbt-afa-act.go:hover { background: var(--cb-blue-dim); border-color: var(--cb-blue-dim); }
     .cbt-afa-act.stop { background: var(--cb-red); border-color: var(--cb-red); color: #fff; }
     .cbt-afa-act.stop:hover { filter: brightness(.9); }
+    .cbt-afa-opt {
+      display: flex; align-items: flex-start; gap: 9px; cursor: pointer;
+      margin-top: 14px; padding: 11px 13px; border-radius: 8px;
+      border: 1.5px solid var(--cb-border); background: var(--cb-row-alt);
+      font-size: 13px; line-height: 1.5; transition: border-color .15s, background .15s;
+    }
+    .cbt-afa-opt:hover { border-color: var(--cb-blue); background: #edf2fb; }
+    .cbt-afa-opt.off { opacity: .55; cursor: default; }
+    .cbt-afa-opt.off:hover { border-color: var(--cb-border); background: var(--cb-row-alt); }
+    .cbt-afa-opt input { margin-top: 2px; width: 15px; height: 15px; cursor: pointer; flex-shrink: 0; }
+    .cbt-afa-note {
+      font-size: 12px; color: var(--cb-text2); line-height: 1.55;
+      padding: 8px 13px 0; }
+
+    /* ══════════════════════════════════════
+       ASSOCIATE AUTOCOMPLETE (assignment fields)
+    ══════════════════════════════════════ */
+    #cbt-ac-drop {
+      position: fixed; z-index: 2147483647;   /* above any site modal */
+      background: #fff; border: 1px solid var(--cb-border); border-radius: 9px;
+      box-shadow: 0 12px 36px rgba(13,27,42,.28), 0 2px 8px rgba(13,27,42,.16);
+      font-family: var(--cb-sans); overflow: hidden;
+      max-height: 268px; overflow-y: auto; min-width: 220px;
+      scrollbar-width: thin; scrollbar-color: var(--cb-border) transparent;
+    }
+    #cbt-ac-drop::-webkit-scrollbar { width: 5px; }
+    #cbt-ac-drop::-webkit-scrollbar-thumb { background: var(--cb-border); border-radius: 3px; }
+    .cbt-ac-hd {
+      font-size: 9px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
+      color: var(--cb-text2); padding: 8px 12px 6px;
+      background: linear-gradient(180deg,#f0f4ff,#f8fafc);
+      border-bottom: 1px solid var(--cb-border); position: sticky; top: 0;
+    }
+    .cbt-ac-item {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px;
+      padding: 9px 12px; cursor: pointer; border-bottom: 1px solid var(--cb-border);
+      transition: background .1s;
+    }
+    .cbt-ac-item:last-child { border-bottom: none; }
+    .cbt-ac-item:hover, .cbt-ac-item.on { background: #edf2fb; box-shadow: inset 3px 0 0 var(--cb-blue); }
+    .cbt-ac-nm {
+      font-family: var(--cb-mono); font-size: 13px; font-weight: 700; color: var(--cb-text);
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .cbt-ac-nm mark { background: rgba(41,121,255,.18); color: var(--cb-blue-dim); border-radius: 2px; padding: 0 1px; }
+    .cbt-ac-tag { font-size: 10px; font-weight: 700; color: var(--cb-text3); letter-spacing: .05em; text-transform: uppercase; flex-shrink: 0; }
+    .cbt-ac-none { padding: 13px 14px; font-size: 13px; color: var(--cb-text3); font-style: italic; text-align: center; }
+    .cbt-ac-foot {
+      padding: 6px 12px; font-size: 10px; color: var(--cb-text3);
+      background: #f8fafc; border-top: 1px solid var(--cb-border); text-align: center;
+    }
 
   `
 
@@ -1348,25 +1525,105 @@
   }
 
   // ── Text size (zoom) for the main Batcher Timer panel ──
-  var FONT_SCALE_KEY = 'cbt_font_scale';
-  function loadFontScale() {
-    var raw = gmGet(FONT_SCALE_KEY, null);
-    if (raw == null) { try { raw = localStorage.getItem(FONT_SCALE_KEY); } catch(e) {} }
-    var v = parseFloat(raw);
-    if (!v || isNaN(v)) v = 1;
-    return Math.min(2.0, Math.max(0.7, v));
+  /* ══════════════════════════════════════
+     UI SCALE
+
+     One scale for everything this script draws — board, popups, dropdowns
+     and anything added later — so nothing is left behind at a fixed size.
+     Applied with CSS zoom on each surface's root, which scales layout as
+     well as text, so rows, columns, padding and icons all grow together
+     and stay aligned instead of overlapping.
+
+     It only ever touches elements this script created. The dashboard
+     itself is never zoomed, and the browser's own zoom is untouched.
+     Deliberately a NEW storage key, so everyone starts at a clean 100%.
+  ══════════════════════════════════════ */
+  var HEADER_FIXED_SCALE = 1.5;   /* header bar: constant, never scaled */
+  var UI_SCALE_KEY  = 'cbt_ui_scale';
+  var UI_SCALE_MIN  = 0.7, UI_SCALE_MAX = 2.0, UI_SCALE_STEP = 0.1, UI_SCALE_DEFAULT = 1;
+  var _uiScale = UI_SCALE_DEFAULT;
+
+  function clampUiScale(v) {
+    v = parseFloat(v);
+    if (!v || isNaN(v)) v = UI_SCALE_DEFAULT;
+    return Math.min(UI_SCALE_MAX, Math.max(UI_SCALE_MIN, Math.round(v * 100) / 100));
   }
-  function saveFontScale(v) {
-    gmSet(FONT_SCALE_KEY, String(v));
-    try { localStorage.setItem(FONT_SCALE_KEY, String(v)); } catch(e) {}
+  function loadUiScale() {
+    var raw = gmGet(UI_SCALE_KEY, null);
+    if (raw == null) { try { raw = localStorage.getItem(UI_SCALE_KEY); } catch(e) {} }
+    if (raw == null) return UI_SCALE_DEFAULT;          /* first run: 100% */
+    return clampUiScale(raw);
   }
-  function applyFontScale(panel, scale) {
-    if (!panel) return;
-    ['#cbt-stats-bar', '#cbt-tabs', '#cbt-body'].forEach(function(sel){
-      var el = panel.querySelector(sel);
-      if (el) el.style.zoom = scale;
+  function saveUiScale(v) {
+    gmSet(UI_SCALE_KEY, String(v));
+    try { localStorage.setItem(UI_SCALE_KEY, String(v)); } catch(e) {}
+  }
+
+  /* Every root this script owns. Popups are scaled on their inner card, not
+     their full-screen backdrop, so the backdrop still covers the viewport
+     exactly and the card stays centred at any size. */
+  function applyUiScale() {
+    var z = _uiScale;
+    var panel = document.getElementById('cbt-panel');
+    if (panel) {
+      /* The header bar is pinned at 150% and deliberately ignores A- / A+,
+         so it stays a constant anchor while the content below resizes. */
+      var hdr = panel.querySelector('#cbt-header');
+      if (hdr) hdr.style.zoom = HEADER_FIXED_SCALE;
+      /* Everything below the header follows the scale controls. */
+      ['#cbt-stats-bar', '#cbt-tabs', '#cbt-body', '#cbt-drag-bottom'].forEach(function(sel){
+        var el = panel.querySelector(sel);
+        if (el) el.style.zoom = z;
+      });
+    }
+    var tp = document.getElementById('cbt-tp');
+    if (tp) { tp.style.zoom = z; }
+
+    /* The QR popup is intentionally left out: it keeps its own fixed size
+       and its plain white styling in both day and night mode. */
+    var afa = document.getElementById('cbt-afa-card');
+    if (afa) {
+      afa.style.zoom = z;
+      afa.style.maxHeight = Math.round((window.innerHeight * 0.82) / z) + 'px';
+      afa.style.maxWidth  = Math.round((window.innerWidth  * 0.92) / z) + 'px';
+    }
+    var drop = document.getElementById('cbt-ac-drop');
+    if (drop) {
+      drop.style.zoom = z;
+      try { acPlace(); } catch(e) {}   /* re-anchor: zoom changes its metrics */
+    }
+    var label = document.getElementById('cbt-scale-reset');
+    if (label) label.textContent = Math.round(z * 100) + '%';
+  }
+
+  /* Which theme is active right now. The board carries the truth once it
+     exists; before that fall back to the stored preference. */
+  function isDarkMode() {
+    var p = document.getElementById('cbt-panel');
+    if (p) return p.classList.contains('dark');
+    try {
+      var v = localStorage.getItem('cbt_dark');
+      return v !== 'false' && v !== '0';
+    } catch(e) { return true; }
+  }
+
+  /* Popups live on <body>, outside the board, so they cannot inherit its
+     .dark class — they get their own marker instead. */
+  function applyPopupTheme() {
+    var dark = isDarkMode();
+    ['cbt-afa-overlay', 'cbt-ac-drop'].forEach(function(id){
+      var el = document.getElementById(id);
+      if (el) el.classList.toggle('cbt-dark', dark);
     });
   }
+
+  function setUiScale(v, skipSave) {
+    _uiScale = clampUiScale(v);
+    if (!skipSave) saveUiScale(_uiScale);
+    applyUiScale();
+  }
+  function stepUiScale(dir) { setUiScale(_uiScale + dir * UI_SCALE_STEP); }
+  function resetUiScale()   { setUiScale(UI_SCALE_DEFAULT); }
 
   // ── Text size (zoom) for the Associate Search (task detail) panel ──
   var TP_FONT_SCALE_KEY = 'cbt_tp_font_scale';
@@ -2196,10 +2453,13 @@
       '<div id="cbt-header">' +
         '<span id="cbt-title">Batcher Timers</span>' +
         '<div id="cbt-controls">' +
-          '<span id="cbt-font-dec" title="Smaller text">A−</span>' +
-          '<span id="cbt-font-inc" title="Larger text">A+</span>' +
+          '<span id="cbt-font-dec" title="Smaller (A−)">A−</span>' +
+          '<span id="cbt-scale-reset" title="Reset size to 100%">100%</span>' +
+          '<span id="cbt-font-inc" title="Larger (A+)">A+</span>' +
           '<span id="cbt-theme-btn" title="Toggle Dark/Light">🌙</span>' +
-          '<span id="cbt-afa-btn" title="Force-assign every UNASSIGNABLE cart">\u26A1 Force Assign</span>' +
+          '<span id="cbt-afa-btn" title="Force-assign every UNASSIGNABLE cart">' +
+            '<span class="cbt-afa-ico">\u26A1</span><span class="cbt-afa-lbl">Force Assign</span>' +
+          '</span>' +
           '<span id="cbt-collapse-btn" title="Collapse/Expand">🔼</span>' +
         '</div>' +
       '</div>' +
@@ -2335,7 +2595,14 @@
   }
   /* The Search Associate panel belongs on COMO cart pages and on every
      Outbound Dashboard page. */
+  /* The floating Search Associate panel has been retired: the autocomplete
+     types straight into the site's own assignment fields, so there is no
+     longer anything to copy out of a side panel. The panel's code is left
+     intact — set this back to true to bring it back if it is ever needed. */
+  var SHOW_SEARCH_PANEL = false;
+
   function shouldShowSearchPanel() {
+    if (!SHOW_SEARCH_PANEL) return false;
     if (isOutboundSite()) return true;
     return isTaskDetailPage();
   }
@@ -2543,20 +2810,16 @@
       isDark = !isDark;
       try { localStorage.setItem('cbt_dark', isDark); } catch(e) {}
       applyTheme();
+      try { applyPopupTheme(); } catch(e) {}
     });
 
-    var _fontScale = loadFontScale();
-    applyFontScale(panel2, _fontScale);
-    var fontIncBtn = panel2.querySelector('#cbt-font-inc');
-    var fontDecBtn = panel2.querySelector('#cbt-font-dec');
-    if (fontIncBtn) fontIncBtn.addEventListener('click', function() {
-      _fontScale = Math.min(2.0, Math.round((_fontScale + 0.1) * 10) / 10);
-      saveFontScale(_fontScale); applyFontScale(panel2, _fontScale);
-    });
-    if (fontDecBtn) fontDecBtn.addEventListener('click', function() {
-      _fontScale = Math.max(0.7, Math.round((_fontScale - 0.1) * 10) / 10);
-      saveFontScale(_fontScale); applyFontScale(panel2, _fontScale);
-    });
+    applyUiScale();
+    var fontIncBtn  = panel2.querySelector('#cbt-font-inc');
+    var fontDecBtn  = panel2.querySelector('#cbt-font-dec');
+    var scaleResetB = panel2.querySelector('#cbt-scale-reset');
+    if (fontIncBtn)  fontIncBtn.addEventListener('click',  function(){ stepUiScale(1); });
+    if (fontDecBtn)  fontDecBtn.addEventListener('click',  function(){ stepUiScale(-1); });
+    if (scaleResetB) scaleResetB.addEventListener('click', function(){ resetUiScale(); });
 
     var isDragging = false, dragStartY = 0, dragStartH = 350;
     panel2.querySelector('#cbt-drag-bottom').addEventListener('mousedown', function(e) {
@@ -3426,6 +3689,7 @@
         '<input id="cbt-qr-input" type="text" spellcheck="false" autocomplete="off" placeholder="Text to encode..."/>' +
       '</div>';
     document.body.appendChild(_qrOverlay);
+    try { applyUiScale(); } catch(e) {}
     var input = _qrOverlay.querySelector('#cbt-qr-input');
     input.value = text;
     /* click on the dark backdrop (not the card) closes the popup. This is the
@@ -3481,6 +3745,7 @@
   var AFA_DELAY_MS   = 900;    /* pause between carts */
   var AFA_TIMEOUT_MS = 15000;  /* give up on a single request after this */
   var _afaJobIndex = Object.create(null);  /* shortRef -> full job id */
+  var _afaJobInfo  = Object.create(null);  /* job id -> { assignability, ref } */
   var _afaDone     = Object.create(null);  /* job id -> already processed */
   var _afaRunning  = false, _afaStop = false, _afaOverlay = null;
 
@@ -3504,7 +3769,13 @@
       var id = null, named = ['id','jobId','jobID','taskId'];
       for (var n = 0; n < named.length; n++) { if (afaLooksLikeJobId(obj[named[n]])) { id = obj[named[n]]; break; } }
       if (!id) { for (var k in obj) { if (afaLooksLikeJobId(obj[k])) { id = obj[k]; break; } } }
-      if (id) _afaJobIndex[ref] = id;
+      if (id) {
+        _afaJobIndex[ref] = id;
+        var asg = afaAssignabilityFrom(obj);
+        if (!_afaJobInfo[id]) _afaJobInfo[id] = { ref: ref, assignability: null };
+        _afaJobInfo[id].ref = ref;
+        if (asg) _afaJobInfo[id].assignability = asg;
+      }
     }
     for (var k2 in obj) { var v = obj[k2]; if (v && typeof v === 'object') afaRecordJobs(v, depth + 1); }
   }
@@ -3513,6 +3784,138 @@
      'ASSIGNABLE' rows are NOT matched: the test is for the whole word
      UNASSIGNABLE, and rows in the Partially Batched / Staged for Pickup
      sections are excluded exactly like the Time Left column excludes them. */
+  /* Pull an ASSIGNABLE / UNASSIGNABLE verdict out of a job record.
+     Field names are not assumed: any property whose name mentions
+     "assign" and whose value is one of those two words counts. Falls back
+     to a whole-object scan so a renamed field still resolves. */
+  function afaAssignabilityFrom(obj) {
+    if (!obj || typeof obj !== 'object') return null;
+    var k, v;
+    for (k in obj) {
+      v = obj[k];
+      if (typeof v !== 'string') continue;
+      if (!/assign/i.test(k)) continue;
+      if (/^UNASSIGNABLE$/i.test(v.trim())) return 'UNASSIGNABLE';
+      if (/^ASSIGNABLE$/i.test(v.trim()))   return 'ASSIGNABLE';
+    }
+    for (k in obj) {
+      v = obj[k];
+      if (typeof v !== 'string') continue;
+      if (/^UNASSIGNABLE$/i.test(v.trim())) return 'UNASSIGNABLE';
+      if (/^ASSIGNABLE$/i.test(v.trim()))   return 'ASSIGNABLE';
+    }
+    return null;
+  }
+
+  /* Ask the server directly for one job's details. Read-only GET; if the
+     endpoint is not there it simply fails and the caller falls back to the
+     dashboard data the script already holds. */
+  function afaFetchJobInfo(jobId) {
+    var url = COMO_BASE + '/api/store/' + STORE_ID + '/job/' + encodeURIComponent(jobId);
+    var ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
+    var timer = setTimeout(function(){ if (ctrl) ctrl.abort(); }, AFA_TIMEOUT_MS);
+    var opts = { method: 'GET', credentials: 'include', headers: { 'Accept': 'application/json' } };
+    if (ctrl) opts.signal = ctrl.signal;
+    return _origFetch(url, opts).then(function(res){
+      clearTimeout(timer);
+      if (!res.ok) return null;
+      return res.json().then(function(j){ return j; }, function(){ return null; });
+    }, function(){ clearTimeout(timer); return null; });
+  }
+
+  /* Deep-scan a fetched job payload for its assignability. */
+  function afaAssignabilityDeep(obj, depth) {
+    if (obj == null || depth > 6) return null;
+    if (Array.isArray(obj)) {
+      for (var i = 0; i < obj.length && i < 500; i++) {
+        var r = afaAssignabilityDeep(obj[i], depth + 1);
+        if (r) return r;
+      }
+      return null;
+    }
+    if (typeof obj !== 'object') return null;
+    var direct = afaAssignabilityFrom(obj);
+    if (direct) return direct;
+    for (var k in obj) {
+      var v = obj[k];
+      if (v && typeof v === 'object') {
+        var r2 = afaAssignabilityDeep(v, depth + 1);
+        if (r2) return r2;
+      }
+    }
+    return null;
+  }
+
+  /* Decide whether one Partially Batched cart may be force-assigned.
+     Nothing is sent unless the cart is positively confirmed UNASSIGNABLE.
+     Unknown status is treated as "do not touch", never as permission. */
+  function afaVerifyForcible(item) {
+    var cached = _afaJobInfo[item.id];
+    if (cached && cached.assignability === 'ASSIGNABLE') {
+      return Promise.resolve({ eligible: false, reason: 'already assignable' });
+    }
+    if (cached && cached.assignability === 'UNASSIGNABLE') {
+      return Promise.resolve({ eligible: true, reason: 'unassignable (dashboard data)' });
+    }
+    return afaFetchJobInfo(item.id).then(function(info){
+      var asg = info ? afaAssignabilityDeep(info, 0) : null;
+      if (asg === 'ASSIGNABLE')   return { eligible: false, reason: 'already assignable' };
+      if (asg === 'UNASSIGNABLE') return { eligible: true,  reason: 'unassignable (verified)' };
+      return { eligible: false, reason: 'could not verify status \u2014 skipped' };
+    });
+  }
+
+  /* Anchors sitting between one section heading and the next.
+     Used to read the Partially Batched table without ever reaching into
+     Staged for Pickup or Problem Solve. */
+  function afaSectionAnchors(startRe, stopRes) {
+    var all;
+    try { all = Array.prototype.slice.call(document.body.querySelectorAll('*')); } catch(e) { return []; }
+    var startIdx = -1, i, t;
+    for (i = 0; i < all.length; i++) {
+      t = (all[i].textContent || '').trim();
+      if (t.length < 60 && startRe.test(t)) { startIdx = i; break; }
+    }
+    if (startIdx === -1) return [];
+    var stopIdx = all.length;
+    for (i = startIdx + 1; i < all.length; i++) {
+      t = (all[i].textContent || '').trim();
+      if (t.length >= 60) continue;
+      for (var j = 0; j < stopRes.length; j++) {
+        if (stopRes[j].test(t)) { stopIdx = i; break; }
+      }
+      if (stopIdx !== all.length) break;
+    }
+    var out = [];
+    for (i = startIdx; i < stopIdx; i++) if (all[i].tagName === 'A') out.push(all[i]);
+    return out;
+  }
+
+  /* Carts listed under Partially Batched. This section shows no
+     assignability column, so every row is only a CANDIDATE here — each one
+     is verified individually before anything is sent. Problem Solve and
+     Staged for Pickup act as hard stops for the scan. */
+  function afaScanPartiallyBatched() {
+    var stops = [/^Staged\s+for\s+Pickup/i, /^Problem\s+Solve/i, /^Unassigned/i, /^Assigned/i];
+    var anchors = afaSectionAnchors(/^Partially\s+Batched(\s*\(\d+\))?$/i, stops);
+    var found = [], seen = Object.create(null);
+    for (var i = 0; i < anchors.length; i++) {
+      var a = anchors[i];
+      var ref = (a.textContent || '').trim();
+      if (!ref || ref.length > 24) continue;
+      var id = null;
+      var href = a.getAttribute('href') || '';
+      var m = href.match(/jobId=([^&#]+)/i);
+      if (m) { try { id = decodeURIComponent(m[1]); } catch(e) { id = m[1]; } }
+      if (!id && _afaJobIndex[ref]) id = _afaJobIndex[ref];
+      var key = id || ('ref:' + ref);
+      if (seen[key]) continue;
+      seen[key] = true;
+      found.push({ ref: ref, id: id, partial: true });
+    }
+    return found;
+  }
+
   function afaScanDashboard() {
     var found = [], seen = Object.create(null);
     var cards = document.querySelectorAll('job-card');
@@ -3563,12 +3966,19 @@
   }
 
   /* ── modal ── */
+  /* Keeps the icon and label as separate elements so they stay aligned. */
+  function afaSetBtn(text, busy) {
+    var b = document.getElementById('cbt-afa-btn');
+    if (!b) return;
+    b.innerHTML = '<span class="cbt-afa-ico">\u26A1</span><span class="cbt-afa-lbl">' + text + '</span>';
+    if (busy) b.classList.add('busy'); else b.classList.remove('busy');
+  }
+
   function afaClose() {
     if (_afaRunning) return;                    /* never vanish mid-run */
     if (_afaOverlay && _afaOverlay.parentNode) _afaOverlay.parentNode.removeChild(_afaOverlay);
     _afaOverlay = null;
-    var b = document.getElementById('cbt-afa-btn');
-    if (b) { b.classList.remove('busy'); b.textContent = '\u26A1 Force Assign'; }
+    afaSetBtn('Force Assign', false);
   }
   function afaShell(title, bodyHtml, footHtml) {
     if (!_afaOverlay) {
@@ -3586,6 +3996,8 @@
       '</div>';
     var x = _afaOverlay.querySelector('#cbt-afa-x');
     if (x) x.addEventListener('click', afaClose);
+    try { applyPopupTheme(); } catch(e) {}
+    try { applyUiScale(); } catch(e) {}
   }
   function afaEsc(s) {
     return String(s == null ? '' : s)
@@ -3605,15 +4017,33 @@
   function afaConfirm() {
     if (_afaRunning) { afaProgressView(); return; }
     var list = afaScanDashboard();
+    var pbAll = afaScanPartiallyBatched();
+    var pbReady = pbAll.filter(function(x){ return x.id && !_afaDone[x.id]; });
     var ready = list.filter(function(x){ return x.id && !_afaDone[x.id]; });
     var noId  = list.filter(function(x){ return !x.id; });
     var already = list.filter(function(x){ return x.id && _afaDone[x.id]; });
 
-    if (!list.length) {
+    var pbBox =
+      '<label class="cbt-afa-opt' + (pbReady.length ? '' : ' off') + '">' +
+        '<input type="checkbox" id="cbt-afa-pb"' + (pbReady.length ? '' : ' disabled') + '/>' +
+        '<span>Also include <b>Partially Batched</b> carts \u2014 <b>' + pbReady.length + '</b> found' +
+        (pbReady.length ? '' : ' (none available)') + '</span>' +
+      '</label>' +
+      (pbReady.length
+        ? '<div class="cbt-afa-note">That section shows no assignability column, so each cart is checked individually first. Any cart that is already assignable, or whose status cannot be confirmed, is skipped with a reason. Problem Solve is never touched.</div>'
+        : '');
+
+    if (!list.length && !pbReady.length) {
       afaShell('Auto Force Assign',
-        '<div id="cbt-afa-lead">No <b>UNASSIGNABLE</b> carts are showing on the dashboard right now.</div>' +
+        '<div id="cbt-afa-lead">No <b>UNASSIGNABLE</b> carts and no <b>Partially Batched</b> carts are available right now.</div>' +
         '<div style="color:var(--cb-text2)">Nothing to do. Close this and try again when some appear.</div>',
         '<button class="cbt-afa-act" data-afa="close">Close</button>');
+    } else if (!list.length) {
+      afaShell('Auto Force Assign',
+        '<div id="cbt-afa-lead">No <b>UNASSIGNABLE</b> carts on the dashboard right now.</div>' +
+        pbBox,
+        '<button class="cbt-afa-act" data-afa="close">Cancel</button>' +
+        '<button class="cbt-afa-act go" data-afa="go">Continue</button>');
     } else {
       var warn = '';
       if (noId.length)   warn += '<div class="cbt-afa-warn">' + noId.length + ' cart(s) below have no readable task ID and will be skipped. Let the dashboard finish loading, then reopen this window.</div>';
@@ -3621,16 +4051,23 @@
       afaShell('Auto Force Assign',
         '<div id="cbt-afa-lead">This will force-assign <b>' + ready.length + '</b> cart' + (ready.length === 1 ? '' : 's') +
         ' marked UNASSIGNABLE, one at a time.</div>' +
-        afaRowsHtml(list) + warn,
+        afaRowsHtml(list) + warn + pbBox,
         '<button class="cbt-afa-act" data-afa="close">Cancel</button>' +
-        (ready.length ? '<button class="cbt-afa-act go" data-afa="go">Force assign ' + ready.length + '</button>' : ''));
+        '<button class="cbt-afa-act go" data-afa="go">Start</button>');
     }
     var card = _afaOverlay.querySelector('#cbt-afa-card');
     card.addEventListener('click', function(e){
       var b = e.target.closest('[data-afa]');
       if (!b) return;
       if (b.getAttribute('data-afa') === 'close') afaClose();
-      if (b.getAttribute('data-afa') === 'go') afaRun(ready);
+      if (b.getAttribute('data-afa') === 'go') {
+        var cb = document.getElementById('cbt-afa-pb');
+        var queue = (typeof ready !== 'undefined' ? ready : []).slice();
+        /* Partially Batched only ever runs when this box is ticked. */
+        if (cb && cb.checked) queue = queue.concat(pbReady);
+        if (!queue.length) { afaClose(); return; }
+        afaRun(queue);
+      }
     });
   }
 
@@ -3681,13 +4118,13 @@
   function afaRun(list) {
     _afaRunning = true; _afaStop = false;
     var btn = document.getElementById('cbt-afa-btn');
-    if (btn) { btn.classList.add('busy'); btn.textContent = '\u26A1 Running\u2026'; }
+    afaSetBtn('Running\u2026', true);
     afaProgressView();
     var results = [], i = 0;
 
     function finish() {
       _afaRunning = false;
-      if (btn) { btn.classList.remove('busy'); btn.textContent = '\u26A1 Force Assign'; }
+      afaSetBtn('Force Assign', false);
       afaSummary(results, _afaStop);
     }
     function next(delay) { i++; setTimeout(step, delay); }
@@ -3699,6 +4136,35 @@
 
       if (!item.id) { results.push({ ref: item.ref, ok: false, msg: 'task ID not found' }); return next(60); }
       if (_afaDone[item.id]) { results.push({ ref: item.ref, skip: true, ok: false, msg: 'already processed' }); return next(60); }
+
+      function send(noteWhy) {
+        _afaDone[item.id] = true;   /* claim it before sending: never twice */
+        return afaForceAssign(item.id).then(function(r){
+          if (r.ok) {
+            results.push({ ref: item.ref, ok: true, msg: 'assigned (HTTP ' + r.status + ')' + (noteWhy ? ' \u2014 ' + noteWhy : '') });
+          } else {
+            var why = r.status ? ('HTTP ' + r.status) : 'no response';
+            if (r.body) why += ' \u2014 ' + String(r.body).replace(/\s+/g, ' ').slice(0, 90);
+            results.push({ ref: item.ref, ok: false, msg: why });
+          }
+          afaProgress(i + 1, list.length, item.ref, results);
+          next(AFA_DELAY_MS);
+        });
+      }
+
+      /* Partially Batched carts carry no status on screen — verify each one
+         against the server / dashboard data before sending anything. */
+      if (item.partial) {
+        afaVerifyForcible(item).then(function(v){
+          if (!v.eligible) {
+            results.push({ ref: item.ref, skip: true, ok: false, msg: 'partially batched \u2014 ' + v.reason });
+            afaProgress(i + 1, list.length, item.ref, results);
+            return next(120);
+          }
+          send('partially batched');
+        });
+        return;
+      }
 
       /* still UNASSIGNABLE right now? someone may have handled it already */
       var live = afaScanDashboard();
@@ -3721,6 +4187,360 @@
     step();
   }
 
+  /* ══════════════════════════════════════
+     ASSOCIATE AUTOCOMPLETE
+
+     Types ahead inside the site's own assignment fields — the Manager
+     Action "Assign to Associate" box on COMO, and "Enter associate ID" in
+     the Outbound "Assign procurement lists" window — so there is no more
+     copying out of a side panel.
+
+     It only ever inserts a login that already exists in the saved
+     associate list (the same list the Names tab and the old search panel
+     use). Nothing is derived, transformed or invented from a typed name,
+     so an ID can never be guessed. Selecting somebody fills the field and
+     stops there: submitting stays a deliberate click on Assign / Confirm.
+  ══════════════════════════════════════ */
+  var AC_MIN_CHARS = 2;     /* start suggesting from the 2nd character */
+  var AC_MAX_ROWS  = 12;
+  var _acDrop = null, _acInput = null, _acItems = [], _acIdx = -1;
+  var _acHost = null;              /* the <kat-input> custom element, when there is one */
+  var _acWatch = null, _acRect = '';
+
+  /* Our own inputs must never get a second autocomplete on top. */
+  /* Events crossing a shadow boundary are retargeted: at document level
+     e.target is the outermost shadow HOST, not the field inside it. The
+     composed path still starts at the true element, so read it from there.
+     This is what stopped the Outbound field from ever being recognised. */
+  function acRealTarget(e) {
+    try {
+      if (typeof e.composedPath === 'function') {
+        var path = e.composedPath();
+        if (path && path.length) return path[0];
+      }
+    } catch(err) {}
+    return e.target;
+  }
+
+  /* The Outbound modal's field, reached through its nested open shadow roots:
+       kat-modal[data-testid="assign-modal"]
+         kat-input-group.assign-searchbar        -> shadowRoot
+           kat-input[data-testid="assign-searchbar-input"] -> shadowRoot
+             input[part="input"]
+     Each hop tolerates the element being in light DOM instead, so a markup
+     change on one level does not break the whole lookup. */
+  function acFindKatInput() {
+    var modal = document.querySelector('kat-modal[data-testid="assign-modal"]') ||
+                document.querySelector('kat-modal');
+    if (!modal) return null;
+    var group = modal.querySelector('kat-input-group.assign-searchbar') ||
+                (modal.shadowRoot && modal.shadowRoot.querySelector('kat-input-group.assign-searchbar')) ||
+                modal.querySelector('kat-input-group') ||
+                (modal.shadowRoot && modal.shadowRoot.querySelector('kat-input-group'));
+    if (!group) return null;
+    var host = (group.shadowRoot && group.shadowRoot.querySelector('kat-input[data-testid="assign-searchbar-input"]')) ||
+               group.querySelector('kat-input[data-testid="assign-searchbar-input"]') ||
+               (group.shadowRoot && group.shadowRoot.querySelector('kat-input')) ||
+               group.querySelector('kat-input');
+    if (!host) return null;
+    var input = (host.shadowRoot && host.shadowRoot.querySelector('input[part="input"]')) ||
+                (host.shadowRoot && host.shadowRoot.querySelector('input')) ||
+                host.querySelector('input');
+    if (!input) return null;
+    return { host: host, input: input };
+  }
+
+  /* Last-resort sweep: walk every open shadow root looking for an
+     associate-ish input, in case the testids or class names change. */
+  function acDeepFindInput(root, depth) {
+    if (!root || depth > 6) return null;
+    var nodes;
+    try { nodes = root.querySelectorAll('*'); } catch(e) { return null; }
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      if (n.tagName === 'INPUT' && acIsAssociateField(n)) return { host: n.getRootNode && n.getRootNode().host || null, input: n };
+      if (n.shadowRoot) {
+        var found = acDeepFindInput(n.shadowRoot, depth + 1);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
+  function acIsOurs(el) {
+    if (!el || !el.id) return false;
+    return el.id.indexOf('cbt-') === 0;
+  }
+
+  /* Label text sitting near a field, used to recognise it. */
+  function acContextText(el) {
+    var bits = [];
+    try {
+      if (el.id) {
+        var lab = document.querySelector('label[for="' + (window.CSS && CSS.escape ? CSS.escape(el.id) : el.id) + '"]');
+        if (lab) bits.push(lab.textContent || '');
+      }
+      var wrapLab = el.closest ? el.closest('label') : null;
+      if (wrapLab) bits.push(wrapLab.textContent || '');
+      var p = el.parentElement;
+      for (var i = 0; i < 3 && p; i++) { bits.push(p.textContent || ''); p = p.parentElement; }
+    } catch(e) {}
+    return bits.join(' ').slice(0, 400);
+  }
+
+  /* Is this the associate / user-id box of an assignment dialog?
+     Matched on wording rather than on class names, which are generated
+     and change between deployments. */
+  function acIsAssociateField(el) {
+    if (!el || el.tagName !== 'INPUT' || acIsOurs(el)) return false;
+    var type = (el.getAttribute('type') || 'text').toLowerCase();
+    if (type !== 'text' && type !== 'search' && type !== '') return false;
+    if (el.disabled || el.readOnly) return false;
+    var own = [el.getAttribute('placeholder'), el.getAttribute('name'), el.getAttribute('id'),
+               el.getAttribute('aria-label'), el.getAttribute('ng-model'), el.getAttribute('formcontrolname')]
+              .filter(Boolean).join(' ');
+    var hay = (own + ' ' + acContextText(el)).toLowerCase();
+    if (/associate|assoc\b|\blogin\b|user\s*id|userid|employee|\bassign/.test(hay)) return true;
+    return false;
+  }
+
+  /* Rank matches: whole-word/prefix hits first, then anything containing
+     the term, alphabetical inside each group. */
+  function acSearch(term) {
+    term = (term || '').toLowerCase().trim();
+    if (term.length < AC_MIN_CHARS) return [];
+    var all = loadAllNames(), pre = [], mid = [];
+    for (var k in all) {
+      var idx = k.indexOf(term);
+      if (idx === 0) pre.push(all[k]);
+      else if (idx > 0) mid.push(all[k]);
+      if (pre.length + mid.length > 400) break;
+    }
+    function byName(a, b){ return a.toLowerCase().localeCompare(b.toLowerCase()); }
+    pre.sort(byName); mid.sort(byName);
+    return { rows: pre.concat(mid).slice(0, AC_MAX_ROWS), total: pre.length + mid.length };
+  }
+
+  function acEsc(s) {
+    return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function acHighlight(name, term) {
+    var i = name.toLowerCase().indexOf(term.toLowerCase());
+    if (i === -1 || !term) return acEsc(name);
+    return acEsc(name.slice(0, i)) + '<mark>' + acEsc(name.slice(i, i + term.length)) +
+           '</mark>' + acEsc(name.slice(i + term.length));
+  }
+
+  function acClose() {
+    if (_acDrop && _acDrop.parentNode) _acDrop.parentNode.removeChild(_acDrop);
+    _acDrop = null; _acItems = []; _acIdx = -1;
+  }
+
+  function acPlace() {
+    if (!_acDrop || !_acInput) return;
+    /* The dropdown carries the UI zoom, and zoom multiplies the used value
+       of left/top/width — so divide by it to land on the real viewport
+       pixels of the field. Without this the list drifts off the input as
+       soon as the size is changed. */
+    var z = (typeof _uiScale === 'number' && _uiScale > 0) ? _uiScale : 1;
+    var r = _acInput.getBoundingClientRect();
+    var w = Math.max(r.width, 240);
+    var left = Math.min(r.left, window.innerWidth - w - 8);
+    _acDrop.style.width = (w / z) + 'px';
+    _acDrop.style.left  = (Math.max(8, left) / z) + 'px';
+    /* flip above the field when there is no room below */
+    var below = window.innerHeight - r.bottom;
+    if (below < 180 && r.top > below) {
+      _acDrop.style.top = 'auto';
+      _acDrop.style.bottom = ((window.innerHeight - r.top + 4) / z) + 'px';
+      _acDrop.style.maxHeight = (Math.max(120, r.top - 12) / z) + 'px';
+    } else {
+      _acDrop.style.bottom = 'auto';
+      _acDrop.style.top = ((r.bottom + 4) / z) + 'px';
+      _acDrop.style.maxHeight = (Math.max(120, below - 12) / z) + 'px';
+    }
+  }
+
+  function acRender(term) {
+    if (!_acInput) return;
+    var res = acSearch(term);
+    var rows = res.rows || [], total = res.total || 0;
+    if (!_acDrop) {
+      _acDrop = document.createElement('div');
+      _acDrop.id = 'cbt-ac-drop';
+      document.body.appendChild(_acDrop);
+      try { _acDrop.style.zoom = _uiScale; } catch(e) {}
+      try { applyPopupTheme(); } catch(e) {}
+      /* mousedown, not click: fires before the field loses focus */
+      _acDrop.addEventListener('mousedown', function(e){
+        var row = e.target.closest('.cbt-ac-item');
+        if (!row) return;
+        e.preventDefault(); e.stopPropagation();
+        acPick(row.getAttribute('data-name'));
+      });
+    }
+    _acItems = rows;
+    _acIdx = rows.length ? 0 : -1;
+    var html = '<div class="cbt-ac-hd">Associates</div>';
+    if (!rows.length) {
+      html += '<div class="cbt-ac-none">No matches found</div>';
+    } else {
+      html += rows.map(function(n, i){
+        return '<div class="cbt-ac-item' + (i === 0 ? ' on' : '') + '" data-name="' + acEsc(n) + '">' +
+                 '<span class="cbt-ac-nm">' + acHighlight(n, term) + '</span>' +
+                 '<span class="cbt-ac-tag">login</span>' +
+               '</div>';
+      }).join('');
+      if (total > rows.length) {
+        html += '<div class="cbt-ac-foot">' + (total - rows.length) + ' more \u2014 keep typing to narrow</div>';
+      }
+    }
+    _acDrop.innerHTML = html;
+    acPlace();
+  }
+
+  function acMove(step) {
+    if (!_acDrop || !_acItems.length) return;
+    _acIdx = (_acIdx + step + _acItems.length) % _acItems.length;
+    var nodes = _acDrop.querySelectorAll('.cbt-ac-item');
+    for (var i = 0; i < nodes.length; i++) nodes[i].classList.toggle('on', i === _acIdx);
+    if (nodes[_acIdx] && nodes[_acIdx].scrollIntoView) nodes[_acIdx].scrollIntoView({ block: 'nearest' });
+  }
+
+  /* Write the chosen login into the site's own field.
+     Uses the native value setter plus input/change events so frameworks
+     (AngularJS on COMO, React on Outbound) register the change as if it
+     had been typed. Nothing is submitted. */
+  function acFire(el) {
+    /* composed:true so the event escapes the shadow root and the app's own
+       listeners (and any framework value tracker) actually see it */
+    try { el.dispatchEvent(new Event('input',  { bubbles: true, composed: true })); } catch(e) {}
+    try { el.dispatchEvent(new Event('change', { bubbles: true, composed: true })); } catch(e) {}
+    try { el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, composed: true })); } catch(e) {}
+  }
+
+  function acSetValue(el, value, host) {
+    try {
+      var proto = (el instanceof HTMLTextAreaElement) ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      var desc = Object.getOwnPropertyDescriptor(proto, 'value');
+      if (desc && desc.set) desc.set.call(el, value); else el.value = value;
+    } catch(e) { el.value = value; }
+    acFire(el);
+    /* Mirror onto the custom element itself: Katal components hold their own
+       value property, and Confirm stays disabled until that one is set. */
+    if (host && host !== el) {
+      try { host.value = value; } catch(e) {}
+      try { if (host.setAttribute) host.setAttribute('value', value); } catch(e) {}
+      acFire(host);
+    }
+  }
+
+  function acPick(name) {
+    if (!name || !_acInput) return;
+    var el = _acInput;
+    acSetValue(el, name, _acHost); /* exact stored login — never derived */
+    acClose();
+    try { el.focus(); if (el.setSelectionRange) el.setSelectionRange(name.length, name.length); } catch(e) {}
+  }
+
+  /* ── wiring: delegated, so dialogs created later are covered ── */
+  document.addEventListener('focusin', function(e){
+    var el = acRealTarget(e);
+    if (!acIsAssociateField(el)) return;
+    acBind(el, null);
+    _acInput = el;
+    if ((el.value || '').trim().length >= AC_MIN_CHARS) acRender(el.value);
+  }, true);
+
+  document.addEventListener('input', function(e){
+    var t = acRealTarget(e);
+    if (t !== _acInput) return;
+    var v = t.value || '';
+    if (v.trim().length < AC_MIN_CHARS) { acClose(); return; }
+    acRender(v);
+  }, true);
+
+  document.addEventListener('keydown', function(e){
+    if (!_acDrop || acRealTarget(e) !== _acInput) return;
+    if (e.key === 'ArrowDown')      { e.preventDefault(); acMove(1); }
+    else if (e.key === 'ArrowUp')   { e.preventDefault(); acMove(-1); }
+    else if (e.key === 'Enter')     {
+      if (_acIdx >= 0 && _acItems[_acIdx]) { e.preventDefault(); e.stopPropagation(); acPick(_acItems[_acIdx]); }
+    }
+    else if (e.key === 'Escape')    { e.preventDefault(); e.stopPropagation(); acClose(); }
+    else if (e.key === 'Tab')       { acClose(); }
+  }, true);
+
+  document.addEventListener('mousedown', function(e){
+    if (!_acDrop) return;
+    var t = acRealTarget(e);
+    if (_acDrop.contains(t) || _acDrop.contains(e.target) || t === _acInput) return;
+    acClose();
+  }, true);
+
+  /* Bind directly to a native input living inside a shadow root. Delegated
+     document listeners do reach it, but binding on the element itself is
+     immune to any stopPropagation the component does internally. */
+  function acBind(input, host) {
+    if (!input || input._cbtAcBound) { if (host && input) input._cbtAcHost = host; return; }
+    input._cbtAcBound = true;
+    if (host) input._cbtAcHost = host;
+    input.addEventListener('focus', function(){
+      _acInput = input; _acHost = input._cbtAcHost || null;
+      if ((input.value || '').trim().length >= AC_MIN_CHARS) acRender(input.value);
+    });
+    input.addEventListener('input', function(){
+      _acInput = input; _acHost = input._cbtAcHost || null;
+      var v = input.value || '';
+      if (v.trim().length < AC_MIN_CHARS) { acClose(); return; }
+      acRender(v);
+    });
+    input.addEventListener('keydown', function(e){
+      if (!_acDrop || _acInput !== input) return;
+      if (e.key === 'ArrowDown')    { e.preventDefault(); acMove(1); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); acMove(-1); }
+      else if (e.key === 'Enter')   { if (_acIdx >= 0 && _acItems[_acIdx]) { e.preventDefault(); e.stopPropagation(); acPick(_acItems[_acIdx]); } }
+      else if (e.key === 'Escape')  { e.preventDefault(); e.stopPropagation(); acClose(); }
+      else if (e.key === 'Tab')     { acClose(); }
+    });
+  }
+
+  /* The assign modal is created on demand and its shadow roots appear with
+     it, so poll for the field rather than assuming it exists at load. */
+  function acScanForFields() {
+    var found = acFindKatInput();
+    if (found) { acBind(found.input, found.host); return; }
+    /* fall back to a deep sweep only while a modal is actually open */
+    if (document.querySelector('kat-modal, [role="dialog"], .modal')) {
+      var deep = acDeepFindInput(document, 0);
+      if (deep) acBind(deep.input, deep.host);
+    }
+  }
+
+  /* Keep the portal glued to the field: the modal body scrolls, and scroll
+     events inside a shadow root do not reach document listeners. Also
+     closes the dropdown the moment the field goes away with the modal. */
+  function acTick() {
+    if (!_acDrop) return;
+    if (!_acInput || !_acInput.isConnected) { acClose(); return; }
+    var r = _acInput.getBoundingClientRect();
+    if (!r.width && !r.height) { acClose(); return; }   /* modal closed / field hidden */
+    var sig = Math.round(r.left) + ':' + Math.round(r.top) + ':' + Math.round(r.width);
+    if (sig !== _acRect) { _acRect = sig; acPlace(); }
+  }
+
+  window.addEventListener('resize', function(){ try { applyUiScale(); } catch(e) {} });
+  window.addEventListener('resize', function(){ if (_acDrop) acPlace(); });
+  window.addEventListener('scroll', function(){ if (_acDrop) acPlace(); }, true);
+  try {
+    new MutationObserver(function(){ try { acScanForFields(); } catch(e) {} })
+      .observe(document.documentElement, { childList: true, subtree: true });
+  } catch(e) {}
+  _acWatch = setInterval(function(){
+    try { acScanForFields(); acTick(); } catch(e) {}
+  }, 300);
+
   function start() {
     MY_DEVICE_ID = getDeviceId(); // initialize once at startup
 
@@ -3732,6 +4552,7 @@
        that can fail, guarantees the panels always return.
        The style sheet goes in first so panels mount already styled. */
     try { document.head.appendChild(style); } catch(e) {}
+    try { _uiScale = loadUiScale(); } catch(e) { _uiScale = UI_SCALE_DEFAULT; }
     setInterval(panelHealthCheck, PANEL_HEALTH_MS);
     setInterval(taskPanelHealthCheck, PANEL_HEALTH_MS);
     /* A fresh reload often renders the page's anchors well after this point,
