@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      22.11.0
+// @version      22.15.0
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -203,7 +203,14 @@
     }
     .cbt-name-cell:hover { color: var(--cb-blue); }
     .cbt-assoc {
-      font-size: 14px; font-weight: 700; color: var(--cb-text); cursor: pointer;
+      /* Locked metrics: a LOW row's name must render identically to every
+         other name. Without a fixed line-height the inline LOW badge
+         changes the row's line box and the name shifts size/position. */
+      font-size: 14px !important; font-weight: 700 !important;
+      letter-spacing: normal !important; line-height: 1.3 !important;
+      font-family: var(--cb-sans) !important;
+      color: var(--cb-text); cursor: pointer;
+      display: inline-block; vertical-align: middle;
       transition: color 0.15s;
     }
     .cbt-assoc:hover { color: var(--cb-blue); }
@@ -247,8 +254,11 @@
 
     /* ── Slow batcher alert ── */
     .cbt-slow-alert {
+      /* Sits beside the name without contributing to the line box, so the
+         name keeps exactly the same size and spacing as on any other row. */
       display: inline-block; background: var(--cb-red); color: #fff;
       font-size: 9px; font-weight: 800; padding: 2px 6px;
+      line-height: 1; flex-shrink: 0;
       border-radius: 6px; margin-left: 6px; vertical-align: middle;
       letter-spacing: 0.06em; text-transform: uppercase;
       box-shadow: 0 0 8px rgba(255,61,61,0.45);
@@ -434,12 +444,16 @@
        FORCE ASSIGN BUTTON — white label in every state
     ══════════════════════════════════════ */
     #cbt-afa-btn, #cbt-panel.dark #cbt-afa-btn {
+      /* identical metrics to the A− / % / A+ / theme controls beside it:
+         same font size, same vertical padding, same radius, same border */
       display: inline-flex !important; align-items: center; justify-content: center;
-      padding: 6px 14px !important; border-radius: 7px;
+      font-size: 13px !important; line-height: 1.35 !important;
+      padding: 3px 9px !important; border-radius: 5px !important;
+      box-sizing: border-box; vertical-align: middle;
       background: linear-gradient(180deg, #3d87ff 0%, #2979ff 100%) !important;
       color: #FFFFFF !important; border: 1px solid #1f63d6 !important;
-      font-size: 11px !important; font-weight: 700 !important; letter-spacing: .04em;
-      line-height: 1; white-space: nowrap; cursor: pointer;
+      font-weight: 700 !important; letter-spacing: .02em;
+      white-space: nowrap; cursor: pointer;
       box-shadow: 0 1px 2px rgba(13,27,42,.16);
       transition: background .15s, box-shadow .15s, transform .1s;
     }
@@ -471,7 +485,34 @@
       border-color: #5d6a78 !important; color: #FFFFFF !important;
       cursor: default; box-shadow: none; transform: none;
     }
-    #cbt-afa-btn .cbt-afa-lbl { line-height: 1; color: #FFFFFF !important; }
+    /* Nothing may fade or darken this label: covers every state, every
+       descendant, inherited fills, opacity and text-shadow. */
+    #cbt-afa-btn,
+    #cbt-afa-btn *,
+    #cbt-afa-btn:hover, #cbt-afa-btn:hover *,
+    #cbt-afa-btn:active, #cbt-afa-btn:active *,
+    #cbt-afa-btn:focus, #cbt-afa-btn:focus *,
+    #cbt-afa-btn:focus-visible, #cbt-afa-btn:focus-visible *,
+    #cbt-afa-btn:focus-within, #cbt-afa-btn:focus-within *,
+    #cbt-afa-btn.busy, #cbt-afa-btn.busy *,
+    #cbt-afa-btn.ok,   #cbt-afa-btn.ok *,
+    #cbt-afa-btn.off,  #cbt-afa-btn.off *,
+    #cbt-afa-btn[disabled], #cbt-afa-btn[disabled] *,
+    #cbt-panel.dark #cbt-afa-btn, #cbt-panel.dark #cbt-afa-btn *,
+    #cbt-panel.dark #cbt-afa-btn:hover, #cbt-panel.dark #cbt-afa-btn:hover *,
+    #cbt-panel.dark #cbt-afa-btn:active, #cbt-panel.dark #cbt-afa-btn:active *,
+    #cbt-panel.dark #cbt-afa-btn:focus, #cbt-panel.dark #cbt-afa-btn:focus *,
+    #cbt-panel.dark #cbt-afa-btn.busy, #cbt-panel.dark #cbt-afa-btn.busy *,
+    #cbt-panel.dark #cbt-afa-btn.ok,   #cbt-panel.dark #cbt-afa-btn.ok *,
+    #cbt-panel.dark #cbt-afa-btn.off,  #cbt-panel.dark #cbt-afa-btn.off * {
+      color: #FFFFFF !important;
+      -webkit-text-fill-color: #FFFFFF !important;
+      opacity: 1 !important;
+      text-shadow: none !important;
+      filter: none !important;
+    }
+    #cbt-afa-btn:focus-visible { outline: 2px solid #FFFFFF; outline-offset: 2px; }
+    #cbt-afa-btn .cbt-afa-lbl { line-height: 1; }
 
     /* ══════════════════════════════════════
        NIGHT MODE — Force Assign popup
@@ -1469,6 +1510,9 @@
   var activeTab = 'live';
   var weeklySortKey = 'avgRate', weeklySortAsc = false, weeklySearchTerm = '';
   var liveSortKey = 'rate', liveSortAsc = false, liveSearchTerm = '';
+  /* Set once the user actually clicks a Live column header. Until then the
+     list keeps its default behaviour of floating LOW batchers to the top. */
+  var liveSortUser = false;
   var historySortKey = 'avgRate', historySortAsc = false, historySearchTerm = '';
   var namesSearchTerm = '';
   var _allNamesCache = null;
@@ -2963,7 +3007,11 @@
       th = e.target.closest('.cbt-sortable-live');
       if (th && document.getElementById('cbt-table') && document.getElementById('cbt-table').contains(th)) {
         var key2=th.dataset.sort;
-        if(liveSortKey===key2){liveSortAsc=!liveSortAsc;}else{liveSortKey=key2;liveSortAsc=false;}
+        /* liveSortKey starts as 'rate', so without the liveSortUser flag the
+           very first Bags/min click fell into the "same key" branch and
+           sorted ascending instead of descending. */
+        if (liveSortUser && liveSortKey === key2) { liveSortAsc = !liveSortAsc; }
+        else { liveSortKey = key2; liveSortAsc = false; liveSortUser = true; }
         renderLive();
       }
       th = e.target.closest('.cbt-sortable-hist');
@@ -3026,6 +3074,24 @@
     setHTML(resultsEl, html);
   }
 
+  /* The arrow was baked into the header markup and never moved. Redraw it
+     on whichever column is active, pointing the way the list is ordered. */
+  var LIVE_SORT_LABELS = { assoc: 'Associate', elapsed: 'Elapsed', rate: 'Bags/min' };
+  function updateLiveSortHeaders() {
+    var table = document.getElementById('cbt-table');
+    if (!table) return;
+    var ths = table.querySelectorAll('.cbt-sortable-live');
+    for (var i = 0; i < ths.length; i++) {
+      var th = ths[i];
+      var k = th.dataset ? th.dataset.sort : th.getAttribute('data-sort');
+      var base = LIVE_SORT_LABELS[k] ||
+                 (th.textContent || '').replace(/[\u25B2\u25BC]/g, '').trim();
+      var arrow = (k === liveSortKey) ? (liveSortAsc ? ' \u25B2' : ' \u25BC') : '';
+      var next = base + arrow;
+      if (th.textContent !== next) th.textContent = next;
+    }
+  }
+
   function renderLive() {
     var tbody=document.querySelector('#cbt-tbody'), empty=document.querySelector('#cbt-empty');
     if (!tbody||!empty) return;
@@ -3041,19 +3107,36 @@
         rows.push({ d: d, r: computeRow(d) });
       }
     });
+    /* While the user is explicitly sorting by Bags/min, the LOW-first
+       grouping is suspended — otherwise LOW rows stayed pinned at the top in
+       their own fixed order and clicking the column appeared to do nothing.
+       Every other time, LOW batchers still float to the top as before. */
+    var groupLowFirst = !(liveSortUser && liveSortKey === 'rate');
     rows.sort(function(A,B){
       var a=A.d, b=B.d, ra=A.r, rb=B.r;
-      var slowA = ra.scanRate && ra.scanRate < ALERT_RATE && (ra.elapsedSec||0) > 120;
-      var slowB = rb.scanRate && rb.scanRate < ALERT_RATE && (rb.elapsedSec||0) > 120;
-      if (slowA && !slowB) return -1;
-      if (!slowA && slowB) return 1;
-      if (slowA && slowB) return (ra.scanRate||0) - (rb.scanRate||0);
+      if (groupLowFirst) {
+        var slowA = ra.scanRate && ra.scanRate < ALERT_RATE && (ra.elapsedSec||0) > 120;
+        var slowB = rb.scanRate && rb.scanRate < ALERT_RATE && (rb.elapsedSec||0) > 120;
+        if (slowA && !slowB) return -1;
+        if (!slowA && slowB) return 1;
+        if (slowA && slowB) return (ra.scanRate||0) - (rb.scanRate||0);
+      }
       var va, vb;
       if(liveSortKey==='assoc'){va=(a.associateId||a.associate||'').toLowerCase();vb=(b.associateId||b.associate||'').toLowerCase();return liveSortAsc?va.localeCompare(vb):vb.localeCompare(va);}
-      else if(liveSortKey==='rate'){va=ra.scanRate||0;vb=rb.scanRate||0;}
+      else if(liveSortKey==='rate'){
+        /* rows with no rate yet always sink to the bottom, whichever
+           direction is active, so they never disturb the ordering */
+        var hasA = (ra.scanRate != null && !isNaN(ra.scanRate));
+        var hasB = (rb.scanRate != null && !isNaN(rb.scanRate));
+        if (hasA && !hasB) return -1;
+        if (!hasA && hasB) return 1;
+        if (!hasA && !hasB) return 0;
+        va = ra.scanRate; vb = rb.scanRate;      /* decimals compare fine */
+      }
       else{va=ra.elapsedSec||0;vb=rb.elapsedSec||0;}
       return liveSortAsc?va-vb:vb-va;
     });
+    updateLiveSortHeaders();
     if(rows.length===0){setHTML(tbody,'');empty.style.display='block';
       var body2=document.querySelector('#cbt-body');
       if(body2&&!body2.style.height){body2.style.height='350px';body2.style.maxHeight='350px';}
@@ -3821,7 +3904,12 @@
   var AFA_TIMEOUT_MS = 15000;  /* give up on a single request after this */
   var _afaJobIndex = Object.create(null);  /* shortRef -> full job id */
   var _afaJobInfo  = Object.create(null);  /* job id -> { assignability, ref } */
-  var _afaDone     = Object.create(null);  /* job id -> already processed */
+  /* Duplicate prevention is scoped to ONE run: it is emptied when a run
+     starts and again when it ends. A cart that failed, or that the request
+     did not shift out of Partially Batched, therefore stays eligible for
+     the next press of Force Assign instead of being locked out for the
+     rest of the session. */
+  var _afaDone     = Object.create(null);  /* job id -> claimed during THIS run */
   var _afaRunning  = false, _afaStop = false, _afaOverlay = null;
 
   /* Job ids look like {storeId}_CHECKIN_SERVICE_PUP-C-{uuid} */
@@ -3970,6 +4058,41 @@
      assignability column, so every row is only a CANDIDATE here — each one
      is verified individually before anything is sent. Problem Solve and
      Staged for Pickup act as hard stops for the scan. */
+  /* The count the dashboard shows next to a section heading. Used as the
+     authority the popup must agree with. */
+  function afaSectionCount(labelRe) {
+    var all;
+    try { all = document.body.querySelectorAll('*'); } catch(e) { return null; }
+    for (var i = 0; i < all.length; i++) {
+      var t = (all[i].textContent || '').trim();
+      if (t.length >= 60 || !labelRe.test(t)) continue;
+      var m = t.match(/\((\d+)\)/);
+      if (m) return parseInt(m[1], 10);
+    }
+    return null;
+  }
+
+  /* Pull the dashboard's current job list straight from the API and feed it
+     through the recorder, so job IDs are up to date the moment the popup
+     opens instead of relying on whatever happened to be intercepted
+     earlier. Read-only; same session as every other call. */
+  function afaRefreshJobData() {
+    return new Promise(function(resolve){
+      try {
+        var ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
+        var timer = setTimeout(function(){ if (ctrl) ctrl.abort(); }, 6000);
+        var opts = { credentials: 'include', headers: { Accept: 'application/json' } };
+        if (ctrl) opts.signal = ctrl.signal;
+        _origFetch(COMO_BASE + '/store/' + STORE_ID + '/activeJobsWithSiteSummary', opts)
+          .then(function(r){ clearTimeout(timer); return r.ok ? r.json() : null; })
+          .then(function(j){
+            if (j) { try { afaRecordJobs(j, 0); } catch(e) {} }
+            resolve();
+          }, function(){ clearTimeout(timer); resolve(); });
+      } catch(e) { resolve(); }
+    });
+  }
+
   function afaScanPartiallyBatched() {
     var stops = [/^Staged\s+for\s+Pickup/i, /^Problem\s+Solve/i, /^Unassigned/i, /^Assigned/i];
     var anchors = afaSectionAnchors(/^Partially\s+Batched(\s*\(\d+\))?$/i, stops);
@@ -3983,6 +4106,8 @@
       var m = href.match(/jobId=([^&#]+)/i);
       if (m) { try { id = decodeURIComponent(m[1]); } catch(e) { id = m[1]; } }
       if (!id && _afaJobIndex[ref]) id = _afaJobIndex[ref];
+      /* keyed on identity, never on position, so the same cart appearing
+         twice in the markup is counted once */
       var key = id || ('ref:' + ref);
       if (seen[key]) continue;
       seen[key] = true;
@@ -4089,21 +4214,59 @@
   }
 
   /* Step 1: show what would be touched and wait for a deliberate go-ahead. */
+  /* Opens with a short "checking" state, refreshes the job data, then waits
+     until the resolved list agrees with the count the dashboard prints
+     (or gives up after a couple of seconds and reports what it has).
+     This is what stopped the popup showing a stale 5-of-9. */
   function afaConfirm() {
     if (_afaRunning) { afaProgressView(); return; }
-    var list = afaScanDashboard();
-    var pbAll = afaScanPartiallyBatched();
-    var pbReady = pbAll.filter(function(x){ return x.id && !_afaDone[x.id]; });
-    var ready = list.filter(function(x){ return x.id && !_afaDone[x.id]; });
+    afaShell('Auto Force Assign',
+      '<div id="cbt-afa-lead">Checking the dashboard\u2026</div>' +
+      '<div id="cbt-afa-bar"><div id="cbt-afa-fill" style="width:35%"></div></div>' +
+      '<div style="color:var(--cb-text2);font-size:12px">Reading the current cart list.</div>',
+      '<button class="cbt-afa-act" data-afa="close">Cancel</button>');
+    var card0 = _afaOverlay.querySelector('#cbt-afa-card');
+    if (card0) card0.addEventListener('click', function(e){
+      var b = e.target.closest('[data-afa]');
+      if (b && b.getAttribute('data-afa') === 'close') afaClose();
+    });
+
+    var attempt = 0;
+    (function settle(){
+      afaRefreshJobData().then(function(){
+        if (!_afaOverlay) return;                    /* user closed it */
+        var pbNow    = afaScanPartiallyBatched();
+        var expected = afaSectionCount(/^Partially\s+Batched(\s*\(\d+\))?$/i);
+        var resolved = pbNow.filter(function(x){ return x.id; }).length;
+        /* keep trying while the dashboard says there are more than we can
+           currently identify — it is usually still filling in */
+        var short = (expected != null && (pbNow.length < expected || resolved < expected));
+        if (short && ++attempt < 5) { setTimeout(settle, 450); return; }
+        afaConfirmRender(afaScanDashboard(), pbNow, expected);
+      });
+    })();
+  }
+
+  function afaConfirmRender(list, pbAll, pbExpected) {
+    /* every cart still shown under Partially Batched is eligible, whatever
+       happened on a previous run */
+    var pbReady = pbAll.filter(function(x){ return x.id; });
+    var pbFound = (pbExpected != null) ? Math.max(pbExpected, pbAll.length) : pbAll.length;
+    var pbUnresolved = Math.max(0, pbFound - pbReady.length);
+    var ready = list.filter(function(x){ return x.id; });
     var noId  = list.filter(function(x){ return !x.id; });
-    var already = list.filter(function(x){ return x.id && _afaDone[x.id]; });
+    var already = [];
 
     var pbBox =
       '<label class="cbt-afa-opt' + (pbReady.length ? '' : ' off') + '">' +
         '<input type="checkbox" id="cbt-afa-pb"' + (pbReady.length ? '' : ' disabled') + '/>' +
-        '<span>Also include <b>Partially Batched</b> carts \u2014 <b>' + pbReady.length + '</b> found' +
+        '<span>Also include <b>Partially Batched</b> carts \u2014 <b>' + pbFound + '</b> found' +
+        (pbReady.length && pbReady.length !== pbFound ? ', <b>' + pbReady.length + '</b> ready to process' : '') +
         (pbReady.length ? '' : ' (none available)') + '</span>' +
       '</label>' +
+      (pbUnresolved && pbReady.length
+        ? '<div class="cbt-afa-warn">' + pbUnresolved + ' of them have no readable task ID yet and will be skipped. Give the dashboard a moment and reopen this window to pick them up.</div>'
+        : '') +
       (pbReady.length
         ? '<div class="cbt-afa-note">That section shows no assignability column, so each cart is checked individually first. Any cart that is already assignable, or whose status cannot be confirmed, is skipped with a reason. Problem Solve is never touched.</div>'
         : '');
@@ -4171,7 +4334,7 @@
     if (live && results.length) live.innerHTML = afaRowsHtml(results.slice(-6));
   }
 
-  function afaSummary(results, stopped) {
+  function afaSummary(results, stopped, retryable) {
     var okN   = results.filter(function(r){ return r.ok === true; }).length;
     var skipN = results.filter(function(r){ return r.skip; }).length;
     var badN  = results.filter(function(r){ return r.ok === false && !r.skip; }).length;
@@ -4180,6 +4343,9 @@
       '<b>' + okN + '</b> assigned' +
       (skipN ? ', <b>' + skipN + '</b> skipped' : '') +
       (badN  ? ', <b>' + badN  + '</b> failed'  : '') + '.</div>' +
+      (retryable
+        ? '<div class="cbt-afa-warn">' + retryable + ' cart(s) are still listed under Partially Batched. Press Force Assign again to retry them.</div>'
+        : '') +
       (results.length ? afaRowsHtml(results) : '<div style="color:var(--cb-text2)">Nothing was processed.</div>'),
       '<button class="cbt-afa-act go" data-afa="close">Done</button>');
     var card = _afaOverlay.querySelector('#cbt-afa-card');
@@ -4192,6 +4358,9 @@
   /* Step 2: one cart at a time, re-checked immediately before each send. */
   function afaRun(list) {
     _afaRunning = true; _afaStop = false;
+    _afaDone = Object.create(null);        /* fresh claim map for this run only */
+    var partialRefs = Object.create(null);
+    list.forEach(function(it){ if (it.partial) partialRefs[it.ref] = true; });
     var btn = document.getElementById('cbt-afa-btn');
     afaSetBtn('Running\u2026', true);
     afaProgressView();
@@ -4200,7 +4369,23 @@
     function finish() {
       _afaRunning = false;
       afaSetBtn('Force Assign', false);
-      afaSummary(results, _afaStop);
+      var stopped = _afaStop;
+      /* Re-read the dashboard: any cart still sitting under Partially
+         Batched can simply be run again next time. */
+      afaRefreshJobData().then(function(){
+        var stillThere = Object.create(null), retryable = 0;
+        try {
+          afaScanPartiallyBatched().forEach(function(x){
+            stillThere[x.ref] = true;
+            if (x.id) stillThere[x.id] = true;
+          });
+        } catch(e) {}
+        results.forEach(function(r){
+          if (partialRefs[r.ref] && stillThere[r.ref]) { r.retry = true; retryable++; }
+        });
+        _afaDone = Object.create(null);     /* nothing carries into the next run */
+        afaSummary(results, stopped, retryable);
+      });
     }
     function next(delay) { i++; setTimeout(step, delay); }
 
@@ -4210,7 +4395,7 @@
       afaProgress(i + 1, list.length, item.ref, results);
 
       if (!item.id) { results.push({ ref: item.ref, ok: false, msg: 'task ID not found' }); return next(60); }
-      if (_afaDone[item.id]) { results.push({ ref: item.ref, skip: true, ok: false, msg: 'already processed' }); return next(60); }
+      if (_afaDone[item.id]) { results.push({ ref: item.ref, skip: true, ok: false, msg: 'already handled in this run' }); return next(60); }
 
       function send(noteWhy) {
         _afaDone[item.id] = true;   /* claim it before sending: never twice */
@@ -4304,8 +4489,19 @@
              input[part="input"]
      Each hop tolerates the element being in light DOM instead, so a markup
      change on one level does not break the whole lookup. */
-  function acFindKatInput() {
-    var modal = document.querySelector('kat-modal[data-testid="assign-modal"]') ||
+  function acFindKatInput(scope) {
+    /* Confirmed structure (verified in DevTools):
+         kat-modal[data-testid="assign-modal"]
+           kat-input-group.assign-searchbar            <- light DOM
+             kat-input[data-testid="assign-searchbar-input"]   <- LIGHT DOM child
+               #shadow-root (open)
+                 input[part="input"][placeholder="Enter associate ID"]
+       The kat-input is NOT inside inputGroup.shadowRoot, so light DOM is
+       tried first at that level; the shadow lookups remain as fallbacks in
+       case a future build nests it differently. The katal-id is never used
+       because it changes between renders. */
+    var modal = scope ||
+                document.querySelector('kat-modal[data-testid="assign-modal"]') ||
                 document.querySelector('kat-modal');
     if (!modal) return null;
     var group = modal.querySelector('kat-input-group.assign-searchbar') ||
@@ -4313,12 +4509,13 @@
                 modal.querySelector('kat-input-group') ||
                 (modal.shadowRoot && modal.shadowRoot.querySelector('kat-input-group'));
     if (!group) return null;
-    var host = (group.shadowRoot && group.shadowRoot.querySelector('kat-input[data-testid="assign-searchbar-input"]')) ||
-               group.querySelector('kat-input[data-testid="assign-searchbar-input"]') ||
-               (group.shadowRoot && group.shadowRoot.querySelector('kat-input')) ||
-               group.querySelector('kat-input');
+    var host = group.querySelector('kat-input[data-testid="assign-searchbar-input"]') ||
+               (group.shadowRoot && group.shadowRoot.querySelector('kat-input[data-testid="assign-searchbar-input"]')) ||
+               group.querySelector('kat-input') ||
+               (group.shadowRoot && group.shadowRoot.querySelector('kat-input'));
     if (!host) return null;
-    var input = (host.shadowRoot && host.shadowRoot.querySelector('input[part="input"]')) ||
+    var input = (host.shadowRoot && host.shadowRoot.querySelector('input[part="input"][placeholder="Enter associate ID"]')) ||
+                (host.shadowRoot && host.shadowRoot.querySelector('input[part="input"]')) ||
                 (host.shadowRoot && host.shadowRoot.querySelector('input')) ||
                 host.querySelector('input');
     if (!input) return null;
@@ -4581,30 +4778,66 @@
   /* Put the caret in the field as soon as its popup appears, exactly once,
      so typing can start immediately. Waits for the input to actually be
      laid out, and backs off if focus is already in some other field. */
+  /* document.activeElement only reports the outermost host when focus is
+     inside a shadow root — descend to find what is really focused. */
+  function acDeepActive() {
+    var a = null;
+    try { a = document.activeElement; } catch(e) { return null; }
+    var guard = 0;
+    while (a && a.shadowRoot && a.shadowRoot.activeElement && guard++ < 12) {
+      a = a.shadowRoot.activeElement;
+    }
+    return a;
+  }
+
+  /* Focus the field once its popup is really on screen, then confirm it
+     actually took — Katal builds the modal in stages and can move focus
+     after our first attempt, which is why a single focus() call did not
+     stick on the Outbound dialog. Retries only until it lands, and stops
+     immediately if the user has clicked into something else. */
   function acAutoFocus(input) {
     if (!input || input._cbtAcFocused) return;
     input._cbtAcFocused = true;
-    var tries = 0;
-    (function attempt(){
-      if (++tries > 20 || !input.isConnected) return;
+    var tries = 0, MAX = 40;              /* ~4s of settling at most */
+
+    function userIsElsewhere() {
+      var a = acDeepActive();
+      return !!(a && a !== input && a !== document.body &&
+                (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable));
+    }
+
+    function again(delay) {
+      if (typeof requestAnimationFrame === 'function' && delay <= 16) requestAnimationFrame(attempt);
+      else setTimeout(attempt, delay);
+    }
+
+    function attempt(){
+      if (++tries > MAX || !input.isConnected) return;
       var r;
       try { r = input.getBoundingClientRect(); } catch(e) { return; }
-      if (!r || (!r.width && !r.height)) { setTimeout(attempt, 80); return; }  /* not visible yet */
-      try {
-        var ae = document.activeElement;
-        var typingElsewhere = ae && ae !== input && ae !== document.body &&
-          (ae.tagName === 'INPUT' || ae.tagName === 'TEXTAREA' || ae.isContentEditable);
-        if (typingElsewhere) return;      /* never yank focus away mid-typing */
-        input.focus({ preventScroll: true });
-      } catch(e) { try { input.focus(); } catch(e2) {} }
-    })();
+      if (!r || (!r.width && !r.height)) { again(100); return; }   /* not laid out yet */
+      if (acDeepActive() === input) return;          /* focus landed: stop */
+      if (userIsElsewhere()) return;                 /* user moved on: stop */
+      /* focus the native input itself — focusing the custom element does
+         nothing, which is why the attribute alone was unreliable */
+      try { input.focus({ preventScroll: true }); } catch(e) { try { input.focus(); } catch(e2) {} }
+      /* verify next frame, then again shortly after the modal animation */
+      again(tries < 6 ? 16 : 120);
+    }
+    attempt();
   }
 
   function acBind(input, host) {
     if (!input || input._cbtAcBound) { if (host && input) input._cbtAcHost = host; return; }
     input._cbtAcBound = true;
     if (host) input._cbtAcHost = host;
-    if (acInModal(input)) acAutoFocus(input);
+    /* Only auto-focus a field that is actually on screen. A hidden modal's
+       input would otherwise consume the single focus attempt at page load. */
+    if (acInModal(input)) {
+      var br;
+      try { br = input.getBoundingClientRect(); } catch(e) { br = null; }
+      if (br && (br.width || br.height)) acAutoFocus(input);
+    }
     input.addEventListener('focus', function(){
       _acInput = input; _acHost = input._cbtAcHost || null;
       if ((input.value || '').trim().length >= AC_MIN_CHARS) acRender(input.value);
@@ -4625,9 +4858,86 @@
     });
   }
 
+  /* ── Assignment modal watcher ──
+     Fires once per opening. The modal, both shadow roots and the native
+     input all appear at different moments, and the component moves focus
+     while it finishes animating — so this waits for the real input to
+     exist, focuses THAT (not the custom element), then verifies. */
+  var _acModalSeen = null;
+
+  /* "Open" means the modal is really on screen — not merely present in the
+     DOM. Katal keeps the modal mounted and toggles visible, so matching it
+     while hidden made the watcher mark the opening as handled at page load
+     and skip the real one. That single fallback selector is what defeated
+     every earlier focus attempt. */
+  function acModalIsOpen(m) {
+    if (!m) return false;
+    var v = m.getAttribute && m.getAttribute('visible');
+    if (v === 'false') return false;
+    var r;
+    try { r = m.getBoundingClientRect(); } catch(e) { return false; }
+    return !!(r && (r.width || r.height));
+  }
+
+  function acAssignModalEl() {
+    var all;
+    try { all = document.querySelectorAll('kat-modal'); } catch(e) { return null; }
+    var fallback = null;
+    for (var i = 0; i < all.length; i++) {
+      if (!acModalIsOpen(all[i])) continue;
+      if (all[i].getAttribute('data-testid') === 'assign-modal') return all[i];
+      if (!fallback) fallback = all[i];
+    }
+    return fallback;
+  }
+
+  /* Any other dialog holding an associate field (COMO's Manager Action). */
+  function acGenericModalEl() {
+    var sels = ['[role="dialog"]', '[role="alertdialog"]', 'dialog[open]', '.modal.in', '.modal'];
+    for (var s = 0; s < sels.length; s++) {
+      var nodes;
+      try { nodes = document.querySelectorAll(sels[s]); } catch(e) { continue; }
+      for (var i = 0; i < nodes.length; i++) {
+        var n = nodes[i];
+        var r;
+        try { r = n.getBoundingClientRect(); } catch(e) { continue; }
+        if (!r.width && !r.height) continue;                 /* not visible */
+        try {
+          var ins = n.querySelectorAll('input');
+          for (var k = 0; k < ins.length; k++) if (acIsAssociateField(ins[k])) return n;
+        } catch(e) {}
+      }
+    }
+    return null;
+  }
+
+  function acWatchAssignModal() {
+    var modal = acAssignModalEl() || acGenericModalEl();
+    if (!modal) { _acModalSeen = null; return; }   /* closed: arm for next time */
+    if (_acModalSeen === modal) return;            /* this opening already handled */
+
+    /* find the REAL native input; if the shadow roots are not built yet,
+       bail out and let the next tick try again */
+    var found = acFindKatInput(modal) || acFindKatInput();
+    if (!found) {
+      var deep = acDeepFindInput(modal, 0) || acDeepFindInput(document, 0);
+      if (!deep) return;
+      found = deep;
+    }
+    /* the input must be laid out before focusing is meaningful */
+    var rr;
+    try { rr = found.input.getBoundingClientRect(); } catch(e) { rr = null; }
+    if (!rr || (!rr.width && !rr.height)) return;   /* still animating: try next tick */
+    _acModalSeen = modal;
+    acBind(found.input, found.host);
+    found.input._cbtAcFocused = false;             /* allow one focus per opening */
+    acAutoFocus(found.input);
+  }
+
   /* The assign modal is created on demand and its shadow roots appear with
      it, so poll for the field rather than assuming it exists at load. */
   function acScanForFields() {
+    try { acWatchAssignModal(); } catch(e) {}
     var found = acFindKatInput();
     if (found) { acBind(found.input, found.host); return; }
     /* light-DOM assignment fields (COMO's Manager Action dialog) */
@@ -4661,7 +4971,10 @@
   window.addEventListener('scroll', function(){ if (_acDrop) acPlace(); }, true);
   try {
     new MutationObserver(function(){ try { acScanForFields(); } catch(e) {} })
-      .observe(document.documentElement, { childList: true, subtree: true });
+      .observe(document.documentElement, {
+        childList: true, subtree: true,
+        attributes: true, attributeFilter: ['visible', 'aria-hidden', 'open', 'class', 'style']
+      });
   } catch(e) {}
   _acWatch = setInterval(function(){
     try { acScanForFields(); acTick(); } catch(e) {}
