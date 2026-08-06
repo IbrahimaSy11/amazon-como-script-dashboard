@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      22.15.0
+// @version      23.0.0
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -916,6 +916,96 @@
       animation: cbt-tag-in .15s ease-out;
     }
     @keyframes cbt-tag-in { from { opacity: 0; transform: translateX(-3px); } to { opacity: 1; transform: none; } }
+
+    /* ══════════════════════════════════════
+       UNIFORM ROW GEOMETRY
+       Live, Today, Weekly and Hall of Fame rows all share one fixed height,
+       padding and vertical alignment. A SLOW row carries an extra inline
+       badge, which previously grew the row; with the height fixed and the
+       badge given line-height:1 it can no longer do that. Heights are in px
+       inside the zoomed body, so they scale proportionally at every size.
+    ══════════════════════════════════════ */
+    #cbt-table tbody tr, #cbt-hist-table tbody tr,
+    #cbt-weekly-table tbody tr, #cbt-hof-table tbody tr {
+      height: 48px !important;
+    }
+    #cbt-table tbody td, #cbt-hist-table tbody td,
+    #cbt-weekly-table tbody td, #cbt-hof-table tbody td {
+      height: 48px !important; padding: 4px 10px !important;
+      vertical-align: middle !important; line-height: 1.3 !important;
+      box-sizing: border-box; overflow: hidden;
+    }
+    /* consistent type sizing for every value in a row */
+    #cbt-table tbody td .cbt-assoc, #cbt-hist-table tbody td .cbt-assoc,
+    #cbt-weekly-table tbody td .cbt-assoc, #cbt-hof-table tbody td .cbt-assoc {
+      font-size: 14px !important; font-weight: 700 !important; line-height: 1.3 !important;
+    }
+    #cbt-table tbody td .cbt-ref, #cbt-hof-table tbody td .cbt-ref {
+      font-size: 10px !important; line-height: 1.2 !important; margin-top: 0 !important;
+    }
+    #cbt-table tbody td .cbt-elapsed, #cbt-table tbody td .cbt-rate,
+    #cbt-hist-table tbody td .cbt-hist-meta, #cbt-hist-table tbody td .cbt-hist-rate,
+    #cbt-weekly-table tbody td .cbt-hist-meta, #cbt-weekly-table tbody td .cbt-hist-rate,
+    #cbt-hof-table tbody td .cbt-hist-meta, #cbt-hof-table tbody td .cbt-hist-rate {
+      line-height: 1.3 !important; vertical-align: middle !important;
+    }
+
+    /* ══════════════════════════════════════
+       HALL OF FAME
+    ══════════════════════════════════════ */
+    #cbt-hof-table { width: 100%; border-collapse: collapse; }
+    #cbt-hof-table thead tr {
+      border-bottom: 2px solid var(--cb-border); background: #f8fafc;
+      position: sticky; top: 0; z-index: 1;
+    }
+    #cbt-hof-table th {
+      color: var(--cb-text2); font-weight: 700; font-size: 10px;
+      text-transform: uppercase; letter-spacing: 0.1em;
+      padding: 8px 10px; text-align: center; background: #f8fafc; white-space: nowrap;
+    }
+    #cbt-hof-table th:first-child, #cbt-hof-table td:first-child { text-align: left; }
+    #cbt-hof-table td {
+      border-bottom: 1px solid var(--cb-border); text-align: center;
+      font-size: 14px; color: var(--cb-text);
+    }
+    #cbt-hof-table tbody tr:last-child td { border-bottom: none; }
+    #cbt-hof-table tbody tr:nth-child(even) td { background: var(--cb-row-alt); }
+    #cbt-hof-table tbody tr:hover td { background: #edf2fb !important; }
+    #cbt-hof-table tbody tr:hover td:first-child { box-shadow: inset 3px 0 0 var(--cb-blue); }
+    /* the podium */
+    #cbt-hof-table tbody tr.cbt-hof-1 td { background: linear-gradient(90deg, rgba(212,160,23,.20), rgba(212,160,23,.02) 60%) !important; }
+    #cbt-hof-table tbody tr.cbt-hof-2 td { background: linear-gradient(90deg, rgba(154,171,184,.20), rgba(154,171,184,.02) 60%) !important; }
+    #cbt-hof-table tbody tr.cbt-hof-3 td { background: linear-gradient(90deg, rgba(184,115,51,.18), rgba(184,115,51,.02) 60%) !important; }
+    #cbt-hof-table tbody tr.cbt-hof-1 .cbt-assoc,
+    #cbt-hof-table tbody tr.cbt-hof-2 .cbt-assoc,
+    #cbt-hof-table tbody tr.cbt-hof-3 .cbt-assoc { font-weight: 700 !important; }
+    .cbt-hof-peak {
+      font-family: var(--cb-mono); font-size: 15px; font-weight: 800;
+      font-variant-numeric: tabular-nums; color: #0a6e2e;
+      background: rgba(0,200,83,.10); padding: 2px 8px; border-radius: 4px; display: inline-block;
+    }
+    .cbt-hof-when { font-size: 11px; color: var(--cb-text3); font-variant-numeric: tabular-nums; white-space: nowrap; }
+    #cbt-hof-empty {
+      display: none; text-align: center; color: var(--cb-text3);
+      padding: 16px 12px; font-style: italic; font-size: 13px; line-height: 1.5;
+    }
+    #cbt-hof-note {
+      font-size: 11px; color: var(--cb-text3); text-align: center;
+      padding: 6px 10px 8px; line-height: 1.45;
+    }
+    /* night mode */
+    #cbt-panel.dark #cbt-hof-table thead tr { background: #161b22 !important; border-bottom-color: #21262d !important; }
+    #cbt-panel.dark #cbt-hof-table th { background: #161b22 !important; color: #8faac0 !important; }
+    #cbt-panel.dark #cbt-hof-table td { color: #c9d1d9 !important; border-bottom-color: #21262d !important; }
+    #cbt-panel.dark #cbt-hof-table tbody tr:nth-child(even) td { background: #161b22 !important; }
+    #cbt-panel.dark #cbt-hof-table tbody tr:hover td { background: #1c2333 !important; }
+    #cbt-panel.dark #cbt-hof-table tbody tr:hover td:first-child { box-shadow: inset 3px 0 0 #58a6ff; }
+    #cbt-panel.dark #cbt-hof-table tbody tr.cbt-hof-1 td { background: linear-gradient(90deg, rgba(246,211,101,.18), rgba(246,211,101,.02) 60%) !important; }
+    #cbt-panel.dark #cbt-hof-table tbody tr.cbt-hof-2 td { background: linear-gradient(90deg, rgba(208,216,224,.16), rgba(208,216,224,.02) 60%) !important; }
+    #cbt-panel.dark #cbt-hof-table tbody tr.cbt-hof-3 td { background: linear-gradient(90deg, rgba(232,185,122,.16), rgba(232,185,122,.02) 60%) !important; }
+    #cbt-panel.dark .cbt-hof-peak { color: #3fb950 !important; background: rgba(0,200,83,.07) !important; }
+    #cbt-panel.dark .cbt-hof-when { color: #7a8fa3 !important; }
+    #cbt-panel.dark #cbt-hof-empty, #cbt-panel.dark #cbt-hof-note { color: #6e7b8d !important; }
 
     /* ── misc ── */
     .cbt-miss-dot { margin-left: 4px; font-size: 14px; vertical-align: middle; }
@@ -2364,6 +2454,264 @@
   }
 
   /* ══════════════════════════════════════
+     HALL OF FAME
+
+     Top 30 all-time peak rates. Two kinds of data, stored differently for
+     good reason:
+
+       peaks  -> ONE shared record per associate at /como_hof/peaks/{login}.
+                 A device only writes when its value is strictly higher than
+                 what the server currently holds, so a saved best can only
+                 ever ratchet upward — a stale device can never lower it.
+
+       totals -> per-device slices at /como_hof/totals/devices/{deviceId},
+                 summed for display. Same architecture as Today and Weekly:
+                 each machine owns its own slice, so nobody overwrites or
+                 double-counts anyone else's history.
+
+     Firebase is the source of truth so every computer and browser shows the
+     same records; GM storage is only a cache for instant paint and for
+     riding out a brief outage. Rank is never stored — it is derived from
+     the peak values at render time, so someone else beating a record moves
+     positions without touching anyone's saved number.
+  ══════════════════════════════════════ */
+  var HOF_MIN_PKGS = 20;      /* a record needs a real batch behind it */
+  var HOF_MIN_SEC  = 120;
+  var HOF_MAX_RATE = 20;      /* existing impossible-rate ceiling */
+  var HOF_TOP      = 30;
+  var HOF_PEAKS_KEY   = 'cbt_hof_peaks';
+  var HOF_OWN_KEY     = 'cbt_hof_own_totals';
+  var HOF_REMOTE_KEY  = 'cbt_hof_remote_totals';
+
+  function hofUrl(path)      { return FIREBASE_URL + path + '.json'; }
+  function hofKey(assoc) {
+    /* Firebase keys may not contain . $ # [ ] / */
+    return String(assoc || '').trim().toLowerCase().replace(/[.$#\[\]\/]/g, '_');
+  }
+
+  function hofLoadJson(key) {
+    try { var gm = gmGet(key, null); if (gm) return (typeof gm === 'string') ? JSON.parse(gm) : gm; } catch(e) {}
+    try { return JSON.parse(localStorage.getItem(key) || '{}'); } catch(e) { return {}; }
+  }
+  function hofSaveJson(key, obj) {
+    var json = JSON.stringify(obj || {});
+    gmSet(key, json);
+    try { localStorage.setItem(key, json); } catch(e) {}
+  }
+  function hofLoadPeaks()        { return hofLoadJson(HOF_PEAKS_KEY) || {}; }
+  function hofSavePeaks(p)       { hofSaveJson(HOF_PEAKS_KEY, p); }
+  function hofLoadOwnTotals()    { return hofLoadJson(HOF_OWN_KEY) || {}; }
+  function hofSaveOwnTotals(t)   { hofSaveJson(HOF_OWN_KEY, t); }
+  function hofLoadRemoteTotals() { return hofLoadJson(HOF_REMOTE_KEY) || {}; }
+  function hofSaveRemoteTotals(t){ hofSaveJson(HOF_REMOTE_KEY, t); }
+
+  /* Local cache only ever moves a peak upward. */
+  function hofMergePeak(key, rec) {
+    if (!key || !rec || typeof rec.rate !== 'number' || !(rec.rate > 0)) return false;
+    var peaks = hofLoadPeaks();
+    var cur = peaks[key];
+    if (cur && typeof cur.rate === 'number' && cur.rate >= rec.rate) return false;
+    peaks[key] = { assoc: rec.assoc || (cur && cur.assoc) || key, rate: rec.rate, at: rec.at || null };
+    hofSavePeaks(peaks);
+    return true;
+  }
+
+  /* Read the server value, then write ONLY if ours is strictly higher. */
+  function hofPushPeak(key, assoc, rate, ts) {
+    if (!syncEnabled()) return;
+    try {
+      GM_xmlhttpRequest({
+        method: 'GET', url: hofUrl('/como_hof/peaks/' + key),
+        headers: { 'Content-Type': 'application/json' },
+        onload: function(res){
+          var remote = null;
+          try {
+            if (res.status >= 200 && res.status < 300 && res.responseText && res.responseText !== 'null') {
+              remote = JSON.parse(res.responseText);
+            }
+          } catch(e) {}
+          if (remote && typeof remote.rate === 'number' && remote.rate >= rate) {
+            hofMergePeak(key, remote);      /* server already holds a better one */
+            if (activeTab === 'hof') renderHallOfFame();
+            return;
+          }
+          var rec = { assoc: assoc, rate: rate, at: ts };
+          GM_xmlhttpRequest({
+            method: 'PUT', url: hofUrl('/como_hof/peaks/' + key),
+            headers: { 'Content-Type': 'application/json' },
+            data: JSON.stringify(rec),
+            onload: function(){
+              hofMergePeak(key, rec);
+              if (activeTab === 'hof') renderHallOfFame();
+            },
+            onerror: function(){ hofMergePeak(key, rec); }   /* keep it locally, retry next record */
+          });
+        },
+        onerror: function(){ hofMergePeak(key, { assoc: assoc, rate: rate, at: ts }); }
+      });
+    } catch(e) {}
+  }
+
+  var _hofTotalsTimer = null;
+  function hofPushTotals() {
+    if (!syncEnabled()) return;
+    if (_hofTotalsTimer) return;
+    _hofTotalsTimer = setTimeout(function(){
+      _hofTotalsTimer = null;
+      try {
+        var devId = MY_DEVICE_ID || getDeviceId();
+        GM_xmlhttpRequest({
+          method: 'PUT', url: hofUrl('/como_hof/totals/devices/' + devId),
+          headers: { 'Content-Type': 'application/json' },
+          data: JSON.stringify(hofLoadOwnTotals()),
+          onload: function(){}, onerror: function(){}
+        });
+      } catch(e) {}
+    }, 2500);
+  }
+
+  function hofPull(cb) {
+    if (!syncEnabled()) { if (cb) cb(); return; }
+    try {
+      GM_xmlhttpRequest({
+        method: 'GET', url: hofUrl('/como_hof'),
+        headers: { 'Content-Type': 'application/json' },
+        onload: function(res){
+          try {
+            if (res.status >= 200 && res.status < 300 && res.responseText && res.responseText !== 'null') {
+              var data = JSON.parse(res.responseText) || {};
+              var changed = false;
+              var peaks = data.peaks || {};
+              for (var k in peaks) { if (hofMergePeak(k, peaks[k])) changed = true; }
+              /* remote totals = every device except this one */
+              var devId = MY_DEVICE_ID || getDeviceId();
+              var devices = (data.totals && data.totals.devices) || {};
+              var remote = {};
+              for (var d in devices) {
+                if (d === devId) continue;
+                var slice = devices[d] || {};
+                for (var a in slice) {
+                  var r = slice[a] || {};
+                  if (!remote[a]) remote[a] = { assoc: r.assoc || a, runs: 0, pkgs: 0 };
+                  remote[a].runs += (r.runs || 0);
+                  remote[a].pkgs += (r.pkgs || 0);
+                  if (r.assoc) remote[a].assoc = r.assoc;
+                }
+              }
+              hofSaveRemoteTotals(remote);
+              if (activeTab === 'hof') renderHallOfFame();
+            }
+          } catch(e) {}
+          if (cb) cb();
+        },
+        onerror: function(){ if (cb) cb(); }
+      });
+    } catch(e) { if (cb) cb(); }
+  }
+
+  /* Called for every completed batch. Totals always advance; the peak only
+     moves when the batch is substantial enough to be a real record. */
+  function hofRecordBatch(assoc, pkgs, elapsedSec, rate) {
+    if (!assoc) return;
+    var key = hofKey(assoc);
+    if (!key) return;
+
+    var own = hofLoadOwnTotals();
+    if (!own[key]) own[key] = { assoc: assoc, runs: 0, pkgs: 0 };
+    own[key].assoc = assoc;
+    own[key].runs += 1;
+    own[key].pkgs += (pkgs || 0);
+    hofSaveOwnTotals(own);
+    hofPushTotals();
+
+    if ((pkgs || 0) < HOF_MIN_PKGS) return;          /* too few packages */
+    if ((elapsedSec || 0) < HOF_MIN_SEC) return;     /* too short */
+    if (!(rate > 0) || rate > HOF_MAX_RATE) return;  /* missing or impossible */
+    var peaks = hofLoadPeaks();
+    var cur = peaks[key];
+    if (cur && typeof cur.rate === 'number' && cur.rate >= rate) return;  /* never decreases */
+    hofPushPeak(key, assoc, rate, Date.now());
+    if (activeTab === 'hof') renderHallOfFame();
+  }
+
+  function hofWhen(ts) {
+    if (!ts) return '\u2014';
+    try {
+      var d = new Date(ts);
+      if (isNaN(d.getTime())) return '\u2014';
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) +
+             ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    } catch(e) { return '\u2014'; }
+  }
+
+  function renderHallOfFame() {
+    var tbody = document.getElementById('cbt-hof-tbody');
+    if (!tbody) return;
+    var emptyEl = document.getElementById('cbt-hof-empty');
+    var noteEl  = document.getElementById('cbt-hof-note');
+
+    var peaks  = hofLoadPeaks();
+    var own    = hofLoadOwnTotals();
+    var remote = hofLoadRemoteTotals();
+
+    var rows = [];
+    for (var k in peaks) {
+      var p = peaks[k];
+      if (!p || typeof p.rate !== 'number' || !(p.rate > 0)) continue;
+      var o = own[k] || {}, r = remote[k] || {};
+      rows.push({
+        key: k,
+        assoc: p.assoc || o.assoc || r.assoc || k,
+        rate: p.rate,
+        at: p.at || null,
+        runs: (o.runs || 0) + (r.runs || 0),
+        pkgs: (o.pkgs || 0) + (r.pkgs || 0)
+      });
+    }
+    /* rank is derived, never stored */
+    rows.sort(function(a, b){
+      if (b.rate !== a.rate) return b.rate - a.rate;
+      if (b.pkgs !== a.pkgs) return b.pkgs - a.pkgs;
+      return a.assoc.toLowerCase().localeCompare(b.assoc.toLowerCase());
+    });
+    var total = rows.length;
+    rows = rows.slice(0, HOF_TOP);
+
+    if (!rows.length) {
+      setHTML(tbody, '');
+      if (emptyEl) {
+        emptyEl.style.display = 'block';
+        emptyEl.textContent = 'No records yet. A batch counts once it reaches ' +
+          HOF_MIN_PKGS + ' packages over at least ' + (HOF_MIN_SEC / 60) +
+          ' minutes, so the board fills in as shifts complete.';
+      }
+      if (noteEl) noteEl.textContent = '';
+      return;
+    }
+    if (emptyEl) emptyEl.style.display = 'none';
+
+    var html = '';
+    for (var i = 0; i < rows.length; i++) {
+      var e = rows[i];
+      var rankCls = i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : '';
+      var rowCls  = i < 3 ? (' class="cbt-hof-' + (i + 1) + '"') : '';
+      html += '<tr' + rowCls + '>' +
+        '<td><span class="cbt-assoc"><span class="cbt-rank ' + rankCls + '">' + (i + 1) + '</span>' +
+          e.assoc + '</span><span class="cbt-ref">' + e.assoc + '</span></td>' +
+        '<td><span class="cbt-hist-meta">' + e.runs + '</span></td>' +
+        '<td><span class="cbt-hist-meta">' + e.pkgs + '</span></td>' +
+        '<td><span class="cbt-hof-peak">' + e.rate.toFixed(1) + '</span></td>' +
+        '<td><span class="cbt-hof-when">' + hofWhen(e.at) + '</span></td>' +
+      '</tr>';
+    }
+    setHTML(tbody, html);
+    if (noteEl) {
+      noteEl.textContent = 'Personal-best rates, shared across every computer. ' +
+        (total > HOF_TOP ? ('Showing the top ' + HOF_TOP + ' of ' + total + ' associates.') : ('' + total + ' associate' + (total === 1 ? '' : 's') + ' on the board.'));
+    }
+  }
+
+  /* ══════════════════════════════════════
      COPY TO CLIPBOARD + VISUAL CONFIRMATION
   ══════════════════════════════════════ */
   var _ctEl = null, _ctTimer = null;
@@ -2471,6 +2819,7 @@
         avgRate:rate, lastRate:rate, totalMissing:missing, totalExpected:expected };
     }
     saveHistory(history);
+    try { hofRecordBatch(assoc, pkgs, elapsedSec, rate); } catch(e) {}
     if (activeTab==='history') renderHistory();
   }
 
@@ -2574,6 +2923,7 @@
         '<span class="cbt-tab" data-tab="history">Today</span>' +
         '<span class="cbt-tab" data-tab="weekly">Weekly</span>' +
         '<span class="cbt-tab" data-tab="names">Names</span>' +
+        '<span class="cbt-tab" data-tab="hof" title="Top 30 fastest batchers of all time">Hall of Fame</span>' +
       '</div>' +
       '<div id="cbt-body">' +
         '<div id="cbt-live-view">' +
@@ -2620,6 +2970,17 @@
             '<th style="text-align:left;">Associate (saved permanently)</th>' +
           '</tr></thead><tbody id="cbt-names-tbody"></tbody></table>' +
           '<div id="cbt-names-empty" style="display:none;text-align:center;color:#aaa;padding:9px 0;font-size:13px;font-style:italic;line-height:1.2;">No names saved yet</div>' +
+        '</div>' +
+        '<div id="cbt-hof-view" style="display:none">' +
+          '<table id="cbt-hof-table"><thead><tr>' +
+            '<th>#\u2003Associate</th>' +
+            '<th>Batches</th>' +
+            '<th>Packages</th>' +
+            '<th>Peak Bags/Min</th>' +
+            '<th>Record Set</th>' +
+          '</tr></thead><tbody id="cbt-hof-tbody"></tbody></table>' +
+          '<div id="cbt-hof-empty"></div>' +
+          '<div id="cbt-hof-note"></div>' +
         '</div>' +
       '</div>' +
       '<div id="cbt-drag-bottom" title="Drag to resize"></div>';
@@ -2796,6 +3157,7 @@
     renderHistory();
     renderWeekly();
     renderNames();
+    try { renderHallOfFame(); } catch(ex) {}
   }
 
   /* Runs on an interval: if the panel is gone or was detached by an
@@ -2848,10 +3210,13 @@
         document.getElementById('cbt-history-view').style.display = activeTab==='history' ? '' : 'none';
         document.getElementById('cbt-weekly-view').style.display  = activeTab==='weekly'  ? '' : 'none';
         document.getElementById('cbt-names-view').style.display   = activeTab==='names'   ? '' : 'none';
+        var hofView = document.getElementById('cbt-hof-view');
+        if (hofView) hofView.style.display = activeTab==='hof' ? '' : 'none';
         if (activeTab==='history') renderHistory();
         if (activeTab==='weekly')  renderWeekly();
         if (activeTab==='live')    renderLive();
         if (activeTab==='names')   renderNames();
+        if (activeTab==='hof')     { try { hofPull(); } catch(e) {} renderHallOfFame(); }
       });
     });
 
@@ -5104,9 +5469,11 @@
     }, 5000);
     syncHistoryPull(function(){ syncHistoryPush(); });
     syncWeeklyPull(function(){ syncWeeklyPush(); });
+    try { hofPull(); } catch(e) {}
     setInterval(function(){ syncPull(); }, 60000);
     setInterval(function(){ syncHistoryPull(); }, 60000);
     setInterval(function(){ syncWeeklyPull(); }, 60000);
+    setInterval(function(){ try { hofPull(); } catch(e) {} }, 60000);
     if (isComoSite()) {
       try {
         GM_xmlhttpRequest({
