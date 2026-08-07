@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.0.0
+// @version      23.4.0
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -428,7 +428,7 @@
        while clicking around. Editable fields are exempt below so typing,
        caret movement and text editing all behave normally.
     ══════════════════════════════════════ */
-    #cbt-panel, #cbt-tp, #cbt-qr-overlay, #cbt-afa-overlay, #cbt-ac-drop, #cbt-copy-toast {
+    #cbt-panel, #cbt-tp, #cbt-qr-overlay, #cbt-afa-overlay, #cbt-ac-drop {
       -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; user-select: none;
     }
     #cbt-panel input, #cbt-panel textarea,
@@ -879,30 +879,6 @@
     }
     @keyframes cbt-live-blink { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
 
-    /* ── Copy confirmation ── */
-    #cbt-copy-toast {
-      position: fixed; z-index: 2147483647; pointer-events: none;
-      background: linear-gradient(135deg,#00c853,#00a344); color: #fff;
-      font: 800 13px/1 var(--cb-sans); letter-spacing: .02em;
-      padding: 8px 13px; border-radius: 7px; white-space: nowrap;
-      box-shadow: 0 5px 18px rgba(0,200,83,.45);
-      opacity: 0; transform: translate(-50%, -4px);
-      transition: opacity .16s ease-out, transform .16s ease-out;
-    }
-    #cbt-copy-toast.show { opacity: 1; transform: translate(-50%, -26px); }
-    #cbt-copy-toast .cbt-ct-val {
-      font-weight: 600; opacity: .85; margin-left: 6px;
-      font-family: var(--cb-mono); font-size: 12px;
-    }
-    @keyframes cbt-copy-flash {
-      0%   { background: rgba(0,200,83,.55); }
-      60%  { background: rgba(0,200,83,.28); }
-      100% { background: transparent; }
-    }
-    .cbt-copied-flash {
-      animation: cbt-copy-flash .7s ease-out;
-      border-radius: 4px; box-shadow: 0 0 0 2px rgba(0,200,83,.4);
-    }
     /* Inline copy confirmation: the clicked name turns green and a
        small "Copied" tag appears right beside it */
     .cbt-copied-name, .cbt-copied-name:hover { color: #0a9e43 !important; }
@@ -931,10 +907,24 @@
     }
     #cbt-table tbody td, #cbt-hist-table tbody td,
     #cbt-weekly-table tbody td, #cbt-hof-table tbody td {
-      height: 48px !important; padding: 4px 10px !important;
+      height: 48px !important; padding: 0 10px !important;
       vertical-align: middle !important; line-height: 1.3 !important;
       box-sizing: border-box; overflow: hidden;
     }
+    /* A cell's height property is only a MINIMUM — content taller than it
+       still grows the row, which is why the two-line Live cell stayed taller than
+       the single-line Today / Weekly / Fastest cells. Every first cell now
+       wraps its content in this fixed-height box instead, so all four tables
+       resolve to exactly the same row geometry no matter what is inside. */
+    .cbt-cw {
+      display: flex; flex-direction: column; justify-content: center;
+      height: 40px; overflow: hidden; box-sizing: border-box;
+    }
+    .cbt-cw-top { display: flex; align-items: center; min-width: 0; }
+    .cbt-cw-top .cbt-assoc {
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+    }
+    .cbt-cw .cbt-ref { display: block; margin-top: 1px !important; }
     /* consistent type sizing for every value in a row */
     #cbt-table tbody td .cbt-assoc, #cbt-hist-table tbody td .cbt-assoc,
     #cbt-weekly-table tbody td .cbt-assoc, #cbt-hof-table tbody td .cbt-assoc {
@@ -953,15 +943,31 @@
     /* ══════════════════════════════════════
        HALL OF FAME
     ══════════════════════════════════════ */
-    #cbt-hof-table { width: 100%; border-collapse: collapse; }
+    /* Every tab view is pinned to the panel's width so switching tabs can
+       never widen, narrow or shift the dashboard. The Fastest table has the
+       most columns, so it scrolls internally rather than pushing outward. */
+    #cbt-live-view, #cbt-history-view, #cbt-weekly-view,
+    #cbt-names-view, #cbt-hof-view {
+      width: 100%; max-width: 100%; box-sizing: border-box;
+    }
+    #cbt-hof-view { overflow-x: auto; }
+    #cbt-hof-table { width: 100%; max-width: 100%; table-layout: fixed; border-collapse: collapse; }
+    #cbt-hof-table th:nth-child(1), #cbt-hof-table td:nth-child(1) { width: 36%; }
+    #cbt-hof-table th:nth-child(2), #cbt-hof-table td:nth-child(2) { width: 15%; }
+    #cbt-hof-table th:nth-child(3), #cbt-hof-table td:nth-child(3) { width: 16%; }
+    #cbt-hof-table th:nth-child(4), #cbt-hof-table td:nth-child(4) { width: 16%; }
+    #cbt-hof-table th:nth-child(5), #cbt-hof-table td:nth-child(5) { width: 17%; }
     #cbt-hof-table thead tr {
       border-bottom: 2px solid var(--cb-border); background: #f8fafc;
       position: sticky; top: 0; z-index: 1;
     }
     #cbt-hof-table th {
       color: var(--cb-text2); font-weight: 700; font-size: 10px;
-      text-transform: uppercase; letter-spacing: 0.1em;
-      padding: 8px 10px; text-align: center; background: #f8fafc; white-space: nowrap;
+      text-transform: uppercase; letter-spacing: 0.06em;
+      padding: 8px 6px; text-align: center; background: #f8fafc; white-space: nowrap;
+      /* short titles plus clipping: at larger sizes a heading now truncates
+         inside its own column instead of running into the next one */
+      overflow: hidden; text-overflow: ellipsis; max-width: 0;
     }
     #cbt-hof-table th:first-child, #cbt-hof-table td:first-child { text-align: left; }
     #cbt-hof-table td {
@@ -1007,10 +1013,6 @@
     #cbt-panel.dark .cbt-hof-when { color: #7a8fa3 !important; }
     #cbt-panel.dark #cbt-hof-empty, #cbt-panel.dark #cbt-hof-note { color: #6e7b8d !important; }
 
-    /* ── misc ── */
-    .cbt-miss-dot { margin-left: 4px; font-size: 14px; vertical-align: middle; }
-    .cbt-miss-dot.warn { color: var(--cb-amber); }
-    .cbt-miss-dot.alert { color: var(--cb-red); }
 
     /* ══════════════════════════════════════
        QR CODE FROM SELECTED TEXT
@@ -1203,6 +1205,42 @@
   ══════════════════════════════════════════ */
   var _sorting = false, _sortObserver = null, _attached = null;
 
+  /* Collapses a burst of MutationObserver callbacks into one call.
+     Four observers watch the whole document; on this dashboard a single
+     Angular render can fire hundreds of records, and each callback did a
+     full DOM sweep. The work is identical, just done once per burst
+     instead of once per mutation. Intervals still cover the same jobs, so
+     nothing is lost if a burst is coalesced. */
+  function coalesced(fn, ms) {
+    var pending = null;
+    return function () {
+      if (pending) return;
+      pending = setTimeout(function () {
+        pending = null;
+        try { fn(); } catch (e) {}
+      }, ms);
+    };
+  }
+
+  /* Same idea, but scheduled for the next animation frame instead of a
+     timer. Used where a delay would be SEEN: the Time Left column is
+     destroyed by the page's own re-render, and anything slower than a frame
+     shows up as the value blinking out and back. */
+  function coalescedFrame(fn) {
+    var pending = false;
+    var raf = (typeof requestAnimationFrame === 'function')
+      ? requestAnimationFrame
+      : function (cb) { return setTimeout(cb, 16); };
+    return function () {
+      if (pending) return;
+      pending = true;
+      raf(function () {
+        pending = false;
+        try { fn(); } catch (e) {}
+      });
+    };
+  }
+
   function getStoreTimezone() {
     var tzEl = document.querySelector('[class*="timezone"], [class*="time-zone"], .store-time, .current-time');
     if (tzEl) {
@@ -1290,9 +1328,9 @@
     return first ? first.parentElement : null;
   }
 
-  var bodyWatcher = new MutationObserver(function () {
+  var bodyWatcher = new MutationObserver(coalescedFrame(function () {
     var c = getContainer(); if (c) attach(c);
-  });
+  }));
   /* Task sorting is COMO-only. isComoSite is hoisted, so it is safe here. */
   if (isComoSite()) {
     bodyWatcher.observe(document.documentElement, { childList: true, subtree: true });
@@ -1347,17 +1385,21 @@
     btCol.parentNode.insertBefore(newCol, btCol.nextSibling);
   }
 
+  /* Hoisted: this was a literal inside a doubly-nested loop that runs for
+     every job card, every second. Same pattern, allocated once. */
+  var EXCLUDED_SECTION_RE = /partially\s*batched|staged\s*for\s*pickup/i;
+
   function isInExcludedSection(el) {
     var node = el;
     while (node && node !== document.body) {
       var prev = node.previousElementSibling;
       while (prev) {
-        if (/partially\s*batched|staged\s*for\s*pickup/i.test(prev.textContent || '')) return true;
+        if (EXCLUDED_SECTION_RE.test(prev.textContent || '')) return true;
         prev = prev.previousElementSibling;
       }
       if (node.parentElement) {
         var parentPrev = node.parentElement.previousElementSibling;
-        if (parentPrev && /partially\s*batched|staged\s*for\s*pickup/i.test(parentPrev.textContent || '')) return true;
+        if (parentPrev && EXCLUDED_SECTION_RE.test(parentPrev.textContent || '')) return true;
       }
       node = node.parentElement;
     }
@@ -1391,7 +1433,7 @@
     });
   }
 
-  var timerWatcher = new MutationObserver(function () { injectAllTimers(); });
+  var timerWatcher = new MutationObserver(coalescedFrame(function () { injectAllTimers(); }));
 
   /* ══════════════════════════════════════════
      PART 3 — BATCHERS + REMAINING PACKAGES
@@ -1494,83 +1536,6 @@
   }
   var MY_DEVICE_ID = null; // set in start()
 
-  // ── Merge helper: sum per-device slices into a flat { assoc -> record } map ──
-  // Basket format:  { devices: { devId: { assoc -> record }, ... }, legacy: { assoc -> record } }
-  // "legacy" holds flat data pushed by older script versions (backward-compat)
-  function mergeHistorySlices(basket) {
-    var out = {};
-    // Absorb legacy flat data first
-    var legacy = (basket && basket.legacy) || {};
-    for (var a in legacy) {
-      var r = legacy[a];
-      if (!out[a]) out[a] = { assoc: r.assoc||a, totalPkgs:0, totalSec:0, runs:0, totalMissing:0, totalExpected:0 };
-      out[a].totalPkgs    += r.totalPkgs    || 0;
-      out[a].totalSec     += r.totalSec     || 0;
-      out[a].runs         += r.runs         || 0;
-      out[a].totalMissing += r.totalMissing || 0;
-      out[a].totalExpected+= r.totalExpected|| 0;
-    }
-    // Sum each device slice on top
-    var devices = (basket && basket.devices) || {};
-    for (var devId in devices) {
-      var slice = devices[devId];
-      for (var a2 in slice) {
-        var r2 = slice[a2];
-        if (!out[a2]) out[a2] = { assoc: r2.assoc||a2, totalPkgs:0, totalSec:0, runs:0, totalMissing:0, totalExpected:0 };
-        out[a2].totalPkgs    += r2.totalPkgs    || 0;
-        out[a2].totalSec     += r2.totalSec     || 0;
-        out[a2].runs         += r2.runs         || 0;
-        out[a2].totalMissing += r2.totalMissing || 0;
-        out[a2].totalExpected+= r2.totalExpected|| 0;
-      }
-    }
-    // Recompute avgRate from merged totals, cap corrupt values
-    var cleanOut = {};
-    for (var a3 in out) {
-      var rec = out[a3];
-      if ((rec.totalPkgs||0) > 50000 || (rec.runs||0) > 200) continue; // skip corrupted
-      rec.avgRate = rec.totalSec > 0 ? rec.totalPkgs / (rec.totalSec / 60) : 0;
-      if (rec.avgRate > 20) continue; // impossibly fast — corrupted
-      cleanOut[a3] = rec;
-    }
-    return cleanOut;
-  }
-
-  function mergeWeeklySlices(basket) {
-    // basket: { devices: { devId: { dayKey: { assoc -> record } } }, legacy: { dayKey: { assoc -> record } } }
-    var out = {}; // dayKey -> { assoc -> record }
-    var legacy = (basket && basket.legacy) || {};
-    for (var dk in legacy) {
-      if (!out[dk]) out[dk] = {};
-      for (var a in legacy[dk]) {
-        var r = legacy[dk][a];
-        if (!out[dk][a]) out[dk][a] = { totalPkgs:0, totalSec:0, runs:0, totalMissing:0, totalExpected:0 };
-        out[dk][a].totalPkgs    += r.totalPkgs    || 0;
-        out[dk][a].totalSec     += r.totalSec     || 0;
-        out[dk][a].runs         += r.runs         || 0;
-        out[dk][a].totalMissing += r.totalMissing || 0;
-        out[dk][a].totalExpected+= r.totalExpected|| 0;
-      }
-    }
-    var devices = (basket && basket.devices) || {};
-    for (var devId in devices) {
-      var devData = devices[devId];
-      for (var dk2 in devData) {
-        if (!out[dk2]) out[dk2] = {};
-        for (var a2 in devData[dk2]) {
-          var r2 = devData[dk2][a2];
-          if (!out[dk2][a2]) out[dk2][a2] = { totalPkgs:0, totalSec:0, runs:0, totalMissing:0, totalExpected:0 };
-          out[dk2][a2].totalPkgs    += r2.totalPkgs    || 0;
-          out[dk2][a2].totalSec     += r2.totalSec     || 0;
-          out[dk2][a2].runs         += r2.runs         || 0;
-          out[dk2][a2].totalMissing += r2.totalMissing || 0;
-          out[dk2][a2].totalExpected+= r2.totalExpected|| 0;
-        }
-      }
-    }
-    return out;
-  }
-
   // ── Firebase Realtime Database sync ──
   // All three syncs (names, today, weekly) use your Firebase project.
   // Names use PATCH — server-side merge means a push can never remove
@@ -1591,7 +1556,6 @@
   // ── Own vs Remote cache keys ──
   // OWN = only this device's recorded batches (pushed to Pantry)
   // REMOTE_CACHE = sum of all OTHER devices' slices (rebuilt on pull, never pushed)
-  var OWN_HISTORY_KEY      = 'cbt_own_history';
   var OWN_WEEKLY_KEY       = 'cbt_own_weekly';
   var REMOTE_HISTORY_KEY   = 'cbt_remote_history_cache';
   var REMOTE_WEEKLY_KEY    = 'cbt_remote_weekly_cache';
@@ -1709,7 +1673,7 @@
      itself is never zoomed, and the browser's own zoom is untouched.
      Deliberately a NEW storage key, so everyone starts at a clean 100%.
   ══════════════════════════════════════ */
-  var HEADER_FIXED_SCALE = 1.5;   /* header bar: constant, never scaled */
+  var HEADER_FIXED_SCALE = 1.3;   /* header bar: constant, never scaled */
   var UI_SCALE_KEY  = 'cbt_ui_scale';
   var UI_SCALE_MIN  = 0.7, UI_SCALE_MAX = 2.0, UI_SCALE_STEP = 0.1, UI_SCALE_DEFAULT = 1;
   var _uiScale = UI_SCALE_DEFAULT;
@@ -2639,8 +2603,8 @@
     try {
       var d = new Date(ts);
       if (isNaN(d.getTime())) return '\u2014';
-      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: '2-digit' }) +
-             ' ' + d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+      /* short date only, e.g. 08/06/26 */
+      return d.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' });
     } catch(e) { return '\u2014'; }
   }
 
@@ -2696,8 +2660,9 @@
       var rankCls = i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : '';
       var rowCls  = i < 3 ? (' class="cbt-hof-' + (i + 1) + '"') : '';
       html += '<tr' + rowCls + '>' +
-        '<td><span class="cbt-assoc"><span class="cbt-rank ' + rankCls + '">' + (i + 1) + '</span>' +
-          e.assoc + '</span><span class="cbt-ref">' + e.assoc + '</span></td>' +
+        '<td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-assoc">' +
+          '<span class="cbt-rank ' + rankCls + '">' + (i + 1) + '</span>' + e.assoc +
+          '</span></span></span></td>' +
         '<td><span class="cbt-hist-meta">' + e.runs + '</span></td>' +
         '<td><span class="cbt-hist-meta">' + e.pkgs + '</span></td>' +
         '<td><span class="cbt-hof-peak">' + e.rate.toFixed(1) + '</span></td>' +
@@ -2714,28 +2679,6 @@
   /* ══════════════════════════════════════
      COPY TO CLIPBOARD + VISUAL CONFIRMATION
   ══════════════════════════════════════ */
-  var _ctEl = null, _ctTimer = null;
-
-  function showCopyToast(x, y, label) {
-    if (!_ctEl) {
-      _ctEl = document.createElement('div');
-      _ctEl.id = 'cbt-copy-toast';
-      document.body.appendChild(_ctEl);
-    }
-    var shown = label.length > 24 ? label.slice(0, 22) + '\u2026' : label;
-    _ctEl.innerHTML = '\u2713 Copied<span class="cbt-ct-val">' + shown + '</span>';
-    /* keep the toast on-screen near the click */
-    var px = Math.max(70, Math.min(window.innerWidth - 70, x));
-    var py = Math.max(30, y);
-    _ctEl.style.left = px + 'px';
-    _ctEl.style.top  = py + 'px';
-    _ctEl.classList.remove('show');
-    void _ctEl.offsetWidth;               /* restart the transition */
-    _ctEl.classList.add('show');
-    clearTimeout(_ctTimer);
-    _ctTimer = setTimeout(function(){ if (_ctEl) _ctEl.classList.remove('show'); }, 1150);
-  }
-
   /* execCommand fallback — navigator.clipboard needs a secure context and
      can reject, in which case the copy would silently do nothing. */
   function legacyCopy(text) {
@@ -2922,8 +2865,8 @@
         '<span class="cbt-tab active" data-tab="live">Live</span>' +
         '<span class="cbt-tab" data-tab="history">Today</span>' +
         '<span class="cbt-tab" data-tab="weekly">Weekly</span>' +
+        '<span class="cbt-tab" data-tab="hof" title="Top 30 fastest batchers of all time">Fastest</span>' +
         '<span class="cbt-tab" data-tab="names">Names</span>' +
-        '<span class="cbt-tab" data-tab="hof" title="Top 30 fastest batchers of all time">Hall of Fame</span>' +
       '</div>' +
       '<div id="cbt-body">' +
         '<div id="cbt-live-view">' +
@@ -2973,11 +2916,11 @@
         '</div>' +
         '<div id="cbt-hof-view" style="display:none">' +
           '<table id="cbt-hof-table"><thead><tr>' +
-            '<th>#\u2003Associate</th>' +
-            '<th>Batches</th>' +
-            '<th>Packages</th>' +
-            '<th>Peak Bags/Min</th>' +
-            '<th>Record Set</th>' +
+            '<th>#\u2003Name</th>' +
+            '<th>Batch</th>' +
+            '<th>Pkgs</th>' +
+            '<th>Peak</th>' +
+            '<th>Date</th>' +
           '</tr></thead><tbody id="cbt-hof-tbody"></tbody></table>' +
           '<div id="cbt-hof-empty"></div>' +
           '<div id="cbt-hof-note"></div>' +
@@ -2999,6 +2942,11 @@
   ══════════════════════════════════════ */
   var PANEL_HEALTH_MS = 2000;
   var _mountFails = 0;
+  /* While Date.now() is under this, the panel is checked every 400ms instead
+     of every 2s. Set at startup and renewed on every route change, so
+     returning to the dashboard re-mounts the board straight away rather than
+     waiting for the next slow health tick. */
+  var _fastMountUntil = 0;
 
   /* ── Auto-reload when the board never appears ──
      If the dashboard page loads but the board's anchor never renders,
@@ -3517,7 +3465,7 @@
       var rateCls=r.scanRate!=null?(r.scanRate<ALERT_RATE?'alert':r.scanRate<WARN_RATE?'warn':''):'pending';
       var rateTxt=r.scanRate!=null?r.scanRate.toFixed(1):'\u2014';
       var slowAlert=(r.scanRate!==null&&r.scanRate<ALERT_RATE&&r.elapsedSec>120)?'<span class="cbt-slow-alert">⚠ SLOW</span>':'';
-      html+='<tr><td><span class="cbt-assoc">'+assoc+'</span>'+slowAlert+'<span class="cbt-ref">'+shortRef+'</span></td>';
+      html+='<tr><td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-assoc">'+assoc+'</span>'+slowAlert+'</span><span class="cbt-ref">'+shortRef+'</span></span></td>';
       html+='<td><span class="cbt-elapsed '+elCls+'" data-start="'+(r.startMs||'')+'" data-live="'+(r.inProgress?'1':'0')+'">'+elTxt+'</span></td>';
       html+='<td><span class="cbt-rate '+rateCls+'">'+rateTxt+'</span></td></tr>';
     }
@@ -3558,7 +3506,7 @@
     for(var i=0;i<filtered.length;i++){
       var e=filtered[i],rateCls=e.avgRate>=WARN_RATE?'good':e.avgRate>=ALERT_RATE?'warn':'alert';
       var rankCls=i===0?'gold':i===1?'silver':i===2?'bronze':'';
-      html+='<tr><td><span class="cbt-assoc"><span class="cbt-rank '+rankCls+'">'+(i+1)+'</span>'+e.assoc+'</span></td>';
+      html+='<tr><td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-assoc"><span class="cbt-rank '+rankCls+'">'+(i+1)+'</span>'+e.assoc+'</span></span></span></td>';
       html+='<td><span class="cbt-hist-meta">'+e.runs+'</span></td><td><span class="cbt-hist-meta">'+e.totalPkgs+'</span></td>';
       html+='<td><span class="cbt-hist-rate '+rateCls+'">'+e.avgRate.toFixed(1)+'</span></td></tr>';
     }
@@ -3668,7 +3616,7 @@
     for(var i=0;i<filtered.length;i++){
       var e=filtered[i],rateCls=e.avgRate>=WARN_RATE?'good':e.avgRate>=ALERT_RATE?'warn':'alert';
       var rankCls=i===0?'gold':i===1?'silver':i===2?'bronze':'';
-      html+='<tr><td><span class="cbt-assoc"><span class="cbt-rank '+rankCls+'">'+(i+1)+'</span>'+e.assoc+'</span></td>';
+      html+='<tr><td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-assoc"><span class="cbt-rank '+rankCls+'">'+(i+1)+'</span>'+e.assoc+'</span></span></span></td>';
       html+='<td><span class="cbt-hist-meta">'+e.days+'</span></td><td><span class="cbt-hist-meta">'+e.runs+'</span></td>';
       html+='<td><span class="cbt-hist-meta">'+e.totalPkgs+'</span></td><td><span class="cbt-hist-rate '+rateCls+'">'+e.avgRate.toFixed(1)+'</span></td>';
       html+='<td><span class="cbt-hist-meta">'+fmtHours(e.totalSec)+'</span></td></tr>';
@@ -3754,7 +3702,11 @@
     var history = loadHistory();
     var entries = Object.values(history).filter(function(e){ return e.assoc.toLowerCase().indexOf(term)!==-1; });
     var shown = new Set();
-    var weeklyData = pruneWeeklyOlderThan(WEEKLY_DAYS);
+    pruneWeeklyOlderThan(WEEKLY_DAYS);        /* side effect kept as-is */
+    /* This used to iterate pruneWeeklyOlderThan's return value, but that
+       function returns nothing — Object.keys(undefined) threw and the
+       cross-search below never rendered. Read the weekly data directly. */
+    var weeklyData = sanitizeWeekly(getDisplayWeekly());
     for(var wdk of Object.keys(weeklyData)){
       for(var wa of Object.keys(weeklyData[wdk])){
         if(wa.toLowerCase().indexOf(term)!==-1) shown.add(wa.toLowerCase());
@@ -4085,7 +4037,7 @@
   /* Exactly one panel per page type:
        cart/task detail page -> Associate Search only
        dashboard view        -> Batcher Timers only                */
-  var panelWatcher = new MutationObserver(function() {
+  var panelWatcher = new MutationObserver(coalesced(function() {
     if (shouldShowSearchPanel()) {
       /* cart/task detail, or any Outbound page -> Associate Search only */
       detachMainPanel();
@@ -4101,7 +4053,7 @@
 
     var mp = document.getElementById('cbt-panel');
     if (!mp || !mp.isConnected) injectPanel();
-  });
+  }, 50));
 
   /* ══════════════════════════════════════
      QR CODE FROM SELECTED TEXT
@@ -4123,7 +4075,7 @@
 
   /* Every surface this script draws. Text inside these is not selectable and
      never becomes a QR code — the feature is for the page's own content. */
-  var QR_UI_IDS = ['cbt-panel', 'cbt-tp', 'cbt-qr-overlay', 'cbt-afa-overlay', 'cbt-ac-drop', 'cbt-copy-toast'];
+  var QR_UI_IDS = ['cbt-panel', 'cbt-tp', 'cbt-qr-overlay', 'cbt-afa-overlay', 'cbt-ac-drop'];
 
   /* Walks up through shadow roots as well as normal parents. */
   function qrInScriptUI(node) {
@@ -4215,39 +4167,11 @@
     qrRender(text);
   }
 
-  /* highlight any text -> open the QR popup */
-  document.addEventListener('mouseup', function(e){
-    if (_qrOverlay && _qrOverlay.contains(e.target)) return;
-    /* Anything that starts inside the dashboard, a popup or a dropdown is
-       not QR material — ignore it outright, including via shadow paths. */
-    var origin = e.target;
-    try {
-      if (typeof e.composedPath === 'function') {
-        var path = e.composedPath();
-        if (path && path.length) origin = path[0];
-      }
-    } catch(ex) {}
-    if (qrInScriptUI(origin) || qrInScriptUI(e.target)) return;
-    /* This mouseup belongs to the click that just closed the popup — ignore
-       it once, then resume normal behavior. */
-    if (_qrSuppressNextMouseup) { _qrSuppressNextMouseup = false; return; }
-    setTimeout(function(){
-      var sel = '', selection = null;
-      try { selection = window.getSelection(); sel = String(selection || ''); } catch(ex) {}
-      sel = sel.trim();
-      if (!sel) return;
-      /* second guard: the selection itself must not live inside our UI */
-      try {
-        if (selection && (qrInScriptUI(selection.anchorNode) || qrInScriptUI(selection.focusNode))) return;
-      } catch(ex) {}
-      if (sel.length > 1000) sel = sel.slice(0, 1000);
-      qrOpen(sel);
-    }, 10);
-  }, true);
-
-  document.addEventListener('keydown', function(e){
-    if (e.key === 'Escape' && _qrOverlay) qrClose();
-  }, true);
+  /* The automatic "highlight text -> generate a QR code" trigger has been
+     removed at your request. The popup code below/above is left untouched
+     and simply has no automatic entry point any more, so it can be wired to
+     a button later without rebuilding it. The site's own QR Generator is a
+     separate feature this script has never touched. */
 
   /* ══════════════════════════════════════
      AUTO FORCE ASSIGN
@@ -4928,8 +4852,43 @@
   /* Is this the associate / user-id box of an assignment dialog?
      Matched on wording rather than on class names, which are generated
      and change between deployments. */
+  /* The ONLY two places associate suggestions may appear:
+       COMO     -> the Manager Action dialog behind "Assign to Associate"
+       Outbound -> kat-modal[data-testid="assign-modal"] ("Assign
+                   procurement lists" -> "Enter associate ID")
+     Anything not inside one of those containers is rejected outright. This
+     is what previously let the dropdown attach to Search Historical, Search
+     and Resolve and other page-level search boxes: those fields merely
+     mention "associate ID" in their placeholder, and the old test looked at
+     wording alone with no container requirement. */
+  function acInAssignmentContainer(el) {
+    var n = el, guard = 0;
+    while (n && guard++ < 200) {
+      if (n.nodeType === 1) {
+        var tag = (n.tagName || '').toLowerCase();
+        if (tag === 'kat-modal') {
+          var tid = n.getAttribute ? (n.getAttribute('data-testid') || '') : '';
+          return /assign/i.test(tid);        /* only the assign modal */
+        }
+        var role = n.getAttribute ? (n.getAttribute('role') || '') : '';
+        var cls  = (typeof n.className === 'string') ? n.className : '';
+        if (tag === 'dialog' || role === 'dialog' || role === 'alertdialog' ||
+            /(^|\s|-)(modal|dialog)(\s|-|$)/i.test(cls)) {
+          /* a dialog qualifies only if it is an assignment dialog */
+          var txt = '';
+          try { txt = (n.textContent || '').slice(0, 800); } catch(e) {}
+          return /assign/i.test(txt);
+        }
+      }
+      if (n.nodeType === 11 && n.host) { n = n.host; continue; }   /* shadow root */
+      n = n.parentNode;
+    }
+    return false;                                /* not in a dialog at all */
+  }
+
   function acIsAssociateField(el) {
     if (!el || el.tagName !== 'INPUT' || acIsOurs(el)) return false;
+    if (!acInAssignmentContainer(el)) return false;
     var type = (el.getAttribute('type') || 'text').toLowerCase();
     if (type !== 'text' && type !== 'search' && type !== '') return false;
     if (el.disabled || el.readOnly) return false;
@@ -5335,7 +5294,7 @@
   window.addEventListener('resize', function(){ if (_acDrop) acPlace(); });
   window.addEventListener('scroll', function(){ if (_acDrop) acPlace(); }, true);
   try {
-    new MutationObserver(function(){ try { acScanForFields(); } catch(e) {} })
+    new MutationObserver(coalesced(function(){ acScanForFields(); }, 120))
       .observe(document.documentElement, {
         childList: true, subtree: true,
         attributes: true, attributeFilter: ['visible', 'aria-hidden', 'open', 'class', 'style']
@@ -5361,7 +5320,7 @@
     setInterval(taskPanelHealthCheck, PANEL_HEALTH_MS);
     /* A fresh reload often renders the page's anchors well after this point,
        so check rapidly for the first 60s to bring the panels up promptly. */
-    var _fastMountUntil = Date.now() + 60000;
+    _fastMountUntil = Date.now() + 60000;
     setInterval(function(){
       if (Date.now() > _fastMountUntil) return;
       try { panelHealthCheck(); taskPanelHealthCheck(); } catch(e) {}
@@ -5419,6 +5378,10 @@
       try {
         timerWatcher.observe(document.documentElement, { childList: true, subtree: true });
         injectAllTimers();
+            /* tickTimers updates the existing value in place — it never
+           removes or recreates the column. injectAllTimers stays as a
+           safety net for rows the observer missed; injectRowTimer already
+           no-ops when a row's column is present, so nothing is rebuilt. */
         setInterval(function(){ try { tickTimers(); injectAllTimers(); } catch(e) {} }, 1000);
         fetchAndUpdate();
       } catch(e) {}
@@ -5433,6 +5396,11 @@
     (function () {
       function onRoute() {
         if (!isDashboardView()) detachMainPanel();
+        /* Renew the rapid-check window: the anchor this board attaches to is
+           rendered by the page a moment after the route changes, and the
+           cached panel node is reinserted with its data intact as soon as it
+           appears. Live data keeps refreshing on its own intervals. */
+        _fastMountUntil = Date.now() + 15000;
         panelHealthCheck();
         taskPanelHealthCheck();
       }
