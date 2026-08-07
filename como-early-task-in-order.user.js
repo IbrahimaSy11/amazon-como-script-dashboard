@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.9
+// @version      23.9.11
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -1590,7 +1590,7 @@
 
   /* Hoisted: this was a literal inside a doubly-nested loop that runs for
      every job card, every second. Same pattern, allocated once. */
-  var EXCLUDED_SECTION_RE = /partially\s*batched|staged\s*for\s*pickup/i;
+  var EXCLUDED_SECTION_RE = /problem\s*solve|partially\s*batched|staged\s*for\s*pickup/i;
 
   function isInExcludedSection(el) {
     var node = el;
@@ -3096,7 +3096,14 @@
     var inProg = (op&&op.state==='IN_PROGRESS')||data.state==='BATCHING';
     var batchedN = Number(data.packagesBatched)||0;
     var nowMs = Date.now();
-    var clockMs = (endMs && startMs && endMs >= startMs) ? endMs : nowMs;
+
+    /* LIVE tasks must ALWAYS use the current clock.
+       Some COMO responses include an `end` value even while BATCHING is still
+       IN_PROGRESS. Other responses for the same task omit it. Using that
+       temporary end value made elapsed jump backward/forward, which also made
+       bags/min jump and flip red/green. Only trust op.end after the batch is
+       actually finished. */
+    var clockMs = (!inProg && endMs && startMs && endMs >= startMs) ? endMs : nowMs;
     var elapsedSec = startMs ? Math.max(0, (clockMs-startMs)/1000) : null;
     var scanRate = (batchedN>0&&elapsedSec>30) ? batchedN/(elapsedSec/60) : null;
     return { startMs:startMs, elapsedSec:elapsedSec, scanRate:scanRate, inProgress:inProg };
@@ -3197,7 +3204,14 @@
           if(Array.isArray(freshData[k])) items = items.concat(freshData[k]);
         });
         items.forEach(function(d){
-          if(d.shortClientRef && d.state==='BATCHING') activeRefs.add(d.shortClientRef);
+          if (!d || !d.shortClientRef) return;
+          var ops = Array.isArray(d.operationDetails) ? d.operationDetails : [];
+          var batchingOp = ops.find(function(o){ return o && o.name === 'BATCHING'; });
+          var isLiveBatch =
+            d.state === 'BATCHING' ||
+            d.operationState === 'IN_PROGRESS' ||
+            (batchingOp && batchingOp.state === 'IN_PROGRESS');
+          if (isLiveBatch) activeRefs.add(d.shortClientRef);
         });
         taskCache.forEach(function(val, key) {
           if(!activeRefs.has(key)) {
