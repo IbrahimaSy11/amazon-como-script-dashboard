@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.8.7
+// @version      23.8.8
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -4920,9 +4920,9 @@
     return found;
   }
 
-  /* Merge candidate sources by cart identity. A cart can be both UNASSIGNABLE
-     and completion-eligible; merging preserves both flags so an unavailable
-     Complete Task falls back to the normal Force Assign path. */
+  /* Merge candidate sources by cart identity. Flags are preserved because
+     the Force Assign and Auto Complete modes build separate queues from the
+     same dashboard data; Auto Complete never falls back to Force Assign. */
   function afaMergeQueue(base, extra) {
     var out = [];
     function same(a, b) {
@@ -5131,12 +5131,15 @@
     var acBox =
       '<label class="cbt-afa-opt' + (AFA_COMPLETE_PATH ? '' : ' off') + '">' +
         '<input type="checkbox" id="cbt-afa-oldcart"' + (AFA_COMPLETE_PATH ? '' : ' disabled') + '/>' +
-        '<span>Auto Complete Old Cart' +
+        '<span><b>Auto Complete Eligible Carts</b>' +
         (AFA_COMPLETE_PATH
-          ? ' \u2014 asks the server whether Complete Task is allowed; no time rule is used'
+          ? ' \u2014 starts immediately and uses Complete Task only. It never Force Assigns.'
           : ' \u2014 unavailable: the Complete Task request has not been captured yet') +
         '</span>' +
-      '</label>';
+      '</label>' +
+      (AFA_COMPLETE_PATH
+        ? '<div class="cbt-afa-note">When checked, this runs immediately with no Start button. It checks regular carts one at a time and completes only carts the server currently allows to complete. Partially Batched is automatically unchecked, and Problem Solve is never touched.</div>'
+        : '');
 
     if (!list.length && !pbReady.length && !completionCandidates.length) {
       afaShell('Auto Force Assign',
@@ -5162,28 +5165,44 @@
         '<button class="cbt-afa-act go" data-afa="go">Start</button>');
     }
     var card = _afaOverlay.querySelector('#cbt-afa-card');
+
+    /* Auto Complete is its own action. Checking it starts immediately, never
+       waits for Start, never includes Partially Batched, and never shares the
+       Force Assign queue. */
+    card.addEventListener('change', function(e){
+      var ac = e.target && e.target.id === 'cbt-afa-oldcart' ? e.target : null;
+      if (!ac || !ac.checked || _afaRunning) return;
+
+      var pb = document.getElementById('cbt-afa-pb');
+      if (pb) pb.checked = false;
+
+      var completeQueue = afaMergeQueue([], completionCandidates);
+      if (!completeQueue.length) {
+        ac.checked = false;
+        return;
+      }
+      afaRun(completeQueue, { autoComplete: true, completeOnly: true });
+    });
+
     card.addEventListener('click', function(e){
       var b = e.target.closest('[data-afa]');
       if (!b) return;
       if (b.getAttribute('data-afa') === 'close') afaClose();
       if (b.getAttribute('data-afa') === 'go') {
         var cb = document.getElementById('cbt-afa-pb');
-        var ac = document.getElementById('cbt-afa-oldcart');
         var queue = afaMergeQueue((typeof ready !== 'undefined' ? ready : []), []);
-        /* Partially Batched only ever runs when this box is ticked. */
+        /* The Start / Continue button is Force Assign only. Partially Batched
+           joins this queue only when its own checkbox is selected. */
         if (cb && cb.checked) queue = afaMergeQueue(queue, pbReady);
-        /* Auto Complete may also check regular carts that are not UNASSIGNABLE.
-           They are completion-only candidates: if the site's own Complete Task
-           button is disabled, they are skipped rather than force-assigned. */
-        if (ac && ac.checked) queue = afaMergeQueue(queue, completionCandidates);
         if (!queue.length) { afaClose(); return; }
-        afaRun(queue, { autoComplete: !!(ac && ac.checked) });
+        afaRun(queue, { autoComplete: false, completeOnly: false });
       }
     });
   }
 
-  function afaProgressView() {
-    afaShell('Auto Force Assign \u2014 running',
+  function afaProgressView(mode) {
+    var isComplete = mode === 'complete';
+    afaShell((isComplete ? 'Auto Complete' : 'Auto Force Assign') + ' \u2014 running',
       '<div id="cbt-afa-lead"><span id="cbt-afa-count">Starting\u2026</span></div>' +
       '<div id="cbt-afa-bar"><div id="cbt-afa-fill"></div></div>' +
       '<div id="cbt-afa-live"></div>',
@@ -5207,16 +5226,17 @@
     if (live && results.length) live.innerHTML = afaRowsHtml(results.slice(-6));
   }
 
-  function afaSummary(results, stopped, retryable) {
+  function afaSummary(results, stopped, retryable, mode) {
+    var isComplete = mode === 'complete';
     var okN   = results.filter(function(r){ return r.ok === true; }).length;
     var skipN = results.filter(function(r){ return r.skip; }).length;
     var badN  = results.filter(function(r){ return r.ok === false && !r.skip; }).length;
-    afaShell('Auto Force Assign \u2014 finished',
+    afaShell((isComplete ? 'Auto Complete' : 'Auto Force Assign') + ' \u2014 finished',
       '<div id="cbt-afa-lead">' + (stopped ? 'Stopped early. ' : '') +
-      '<b>' + okN + '</b> assigned' +
+      '<b>' + okN + '</b> ' + (isComplete ? 'completed' : 'assigned') +
       (skipN ? ', <b>' + skipN + '</b> skipped' : '') +
       (badN  ? ', <b>' + badN  + '</b> failed'  : '') + '.</div>' +
-      (retryable
+      (!isComplete && retryable
         ? '<div class="cbt-afa-warn">' + retryable + ' cart(s) are still listed under Partially Batched. Press Force Assign again to retry them.</div>'
         : '') +
       (results.length ? afaRowsHtml(results) : '<div style="color:var(--cb-text2)">Nothing was processed.</div>'),
@@ -5232,13 +5252,14 @@
   function afaRun(list, opts) {
     opts = opts || {};
     var autoComplete = !!opts.autoComplete;
+    var completeOnly = !!opts.completeOnly || autoComplete;
     _afaRunning = true; _afaStop = false;
     _afaDone = Object.create(null);        /* fresh claim map for this run only */
     var partialRefs = Object.create(null);
     list.forEach(function(it){ if (it.partial) partialRefs[it.ref] = true; });
     var btn = document.getElementById('cbt-afa-btn');
-    afaSetBtn('Running\u2026', true);
-    afaProgressView();
+    afaSetBtn(autoComplete ? 'Completing\u2026' : 'Running\u2026', true);
+    afaProgressView(autoComplete ? 'complete' : 'force');
     var results = [], i = 0;
 
     function finish() {
@@ -5259,7 +5280,7 @@
           if (partialRefs[r.ref] && stillThere[r.ref]) { r.retry = true; retryable++; }
         });
         _afaDone = Object.create(null);     /* nothing carries into the next run */
-        afaSummary(results, stopped, retryable);
+        afaSummary(results, stopped, retryable, autoComplete ? 'complete' : 'force');
       });
     }
     function next(delay) { i++; setTimeout(step, delay); }
@@ -5336,35 +5357,26 @@
         forceNow(probeReason || '');
       }
 
-      /* Auto Complete — server-authoritative eligibility check.
-         The hidden iframe probe used in v23.8.0 can be blocked by the site's
-         frame policy, which made every cart look ineligible even when the
-         normal Complete Task button was actually available. Instead, regular
-         carts now send the SAME completeJob request as a manual Complete Task
-         click. The server is the final gate: only HTTP success + literal true
-         counts as a completion. A normal rejection means "not completable"
-         and falls back to the existing Force Assign path only when that row
-         was already an UNASSIGNABLE cart. Network/auth/server errors never
-         trigger a fallback write. Partially Batched carts keep their original
-         Force Assign-only behavior. No AM/PM, Batch Target, or age rule exists. */
-      if (autoComplete) {
+      /* Auto Complete is deliberately COMPLETE-ONLY.
+         It never calls Force Assign, even when the same cart is UNASSIGNABLE.
+         The server remains the eligibility gate: literal true means completed;
+         a normal rejection is skipped; network/auth/server errors are reported.
+         Partially Batched is excluded from this mode entirely. */
+      if (autoComplete || completeOnly) {
         if (item.partial) {
-          continueWithoutCompletion('');
+          doneResult({ ref: item.ref, skip: true, ok: false, msg: 'Skipped \u2014 Partially Batched is Force Assign only' }, 80);
           return;
         }
 
+        _afaDone[item.id] = true;
         afaCompleteTask(item.id).then(function(r){
           if (_afaStop) return finish();
 
           if (afaCompletedOk(r)) {
-            _afaDone[item.id] = true;
             doneResult({ ref: item.ref, ok: true, msg: 'Completed \u2014 server allowed Complete Task' });
             return;
           }
 
-          /* A missing response, auth failure, or server failure is not proof
-             that the cart is ineligible. Stop on that cart rather than risk a
-             second write through Force Assign. */
           if (!r || !r.status || r.status === 401 || r.status === 403 || r.status >= 500) {
             var hardWhy = (!r || !r.status)
               ? ((r && r.body) ? String(r.body) : 'no response')
@@ -5373,14 +5385,10 @@
             return;
           }
 
-          /* 2xx with false/other body, or a normal 4xx conflict/validation
-             response, means the server did not allow completion right now.
-             Completion-only rows are skipped; rows that were independently
-             confirmed UNASSIGNABLE may continue through normal Force Assign. */
-          var rejectWhy = 'Complete Task not allowed';
+          var rejectWhy = 'Skipped \u2014 Complete Task not allowed';
           if (r.status) rejectWhy += ' (HTTP ' + r.status + ')';
           if (r.ok && r.body) rejectWhy += ' \u2014 response ' + String(r.body).replace(/\s+/g, ' ').slice(0, 50);
-          continueWithoutCompletion(rejectWhy);
+          doneResult({ ref: item.ref, skip: true, ok: false, msg: rejectWhy }, 80);
         });
         return;
       }
