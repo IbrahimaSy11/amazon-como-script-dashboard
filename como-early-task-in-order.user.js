@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.4.0
+// @version      23.5.0
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -314,11 +314,13 @@
     #cbt-weekly-search-clear:hover { color: var(--cb-red); background: rgba(255,61,61,0.1); }
 
     #cbt-live-results { margin-top: 0; }
+    #cbt-hof-search,
     #cbt-names-search {
       padding: 8px 8px 4px; background: #f8fafc;
       border-bottom: 1px solid var(--cb-border);
       display: flex; align-items: center; gap: 6px;
     }
+    #cbt-hof-search-input,
     #cbt-names-search-input {
       flex: 1; padding: 7px 12px 7px 32px; background-color: var(--cb-surface);
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238896a8' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E");
@@ -328,10 +330,12 @@
       font-family: var(--cb-sans);
       transition: border-color 0.15s, box-shadow 0.15s;
     }
+    #cbt-hof-search-input:focus,
     #cbt-names-search-input:focus {
       border-color: var(--cb-blue);
       box-shadow: 0 0 0 3px rgba(41,121,255,0.14);
     }
+    #cbt-hof-search-clear,
     #cbt-names-search-clear {
       font-size: 13px; border: none; background: none;
       cursor: pointer; color: var(--cb-text3);
@@ -339,6 +343,7 @@
       display: inline-flex; align-items: center; justify-content: center;
       transition: color 0.15s, background 0.15s;
     }
+    #cbt-hof-search-clear:hover,
     #cbt-names-search-clear:hover { color: var(--cb-red); background: rgba(255,61,61,0.1); }
 
     /* ── Search result sections ── */
@@ -658,16 +663,19 @@
       border-bottom-color: #21262d !important;
     }
     #cbt-panel.dark #cbt-weekly-search, #cbt-panel.dark #cbt-hist-search,
-    #cbt-panel.dark #cbt-live-search, #cbt-panel.dark #cbt-names-search {
+    #cbt-panel.dark #cbt-live-search, #cbt-panel.dark #cbt-names-search,
+    #cbt-panel.dark #cbt-hof-search {
       background: #161b22 !important; border-bottom-color: #21262d !important;
     }
     #cbt-panel.dark #cbt-search-input, #cbt-panel.dark #cbt-hist-search-input,
-    #cbt-panel.dark #cbt-live-search-input, #cbt-panel.dark #cbt-names-search-input {
+    #cbt-panel.dark #cbt-live-search-input, #cbt-panel.dark #cbt-names-search-input,
+    #cbt-panel.dark #cbt-hof-search-input {
       background-color: #0d1117 !important; border-color: #21262d !important; color: #c9d1d9 !important;
       background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%236e7b8d' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E") !important;
     }
     #cbt-panel.dark #cbt-search-input:focus, #cbt-panel.dark #cbt-hist-search-input:focus,
-    #cbt-panel.dark #cbt-live-search-input:focus, #cbt-panel.dark #cbt-names-search-input:focus {
+    #cbt-panel.dark #cbt-live-search-input:focus, #cbt-panel.dark #cbt-names-search-input:focus,
+    #cbt-panel.dark #cbt-hof-search-input:focus {
       border-color: #58a6ff !important;
       box-shadow: 0 0 0 3px rgba(88,166,255,0.14) !important;
     }
@@ -1569,6 +1577,7 @@
   var liveSortUser = false;
   var historySortKey = 'avgRate', historySortAsc = false, historySearchTerm = '';
   var namesSearchTerm = '';
+  var hofSearchTerm = '';
   var _allNamesCache = null;
 
   function todayStr() { return new Date().toLocaleDateString('en-US'); }
@@ -2639,15 +2648,25 @@
       return a.assoc.toLowerCase().localeCompare(b.assoc.toLowerCase());
     });
     var total = rows.length;
+    /* Rank is stamped from the FULL ordering before any filtering, so a
+       searched associate keeps the position they actually hold on the board
+       rather than being renumbered 1, 2, 3 within the results. */
+    for (var ri = 0; ri < rows.length; ri++) rows[ri].rank = ri + 1;
+    var hofTerm = (hofSearchTerm || '').toLowerCase().trim();
+    if (hofTerm) {
+      rows = rows.filter(function(x){ return x.assoc.toLowerCase().indexOf(hofTerm) !== -1; });
+    }
     rows = rows.slice(0, HOF_TOP);
 
     if (!rows.length) {
       setHTML(tbody, '');
       if (emptyEl) {
         emptyEl.style.display = 'block';
-        emptyEl.textContent = 'No records yet. A batch counts once it reaches ' +
-          HOF_MIN_PKGS + ' packages over at least ' + (HOF_MIN_SEC / 60) +
-          ' minutes, so the board fills in as shifts complete.';
+        emptyEl.textContent = hofTerm
+          ? ('No records match "' + hofSearchTerm + '"')
+          : ('No records yet. A batch counts once it reaches ' +
+             HOF_MIN_PKGS + ' packages over at least ' + (HOF_MIN_SEC / 60) +
+             ' minutes, so the board fills in as shifts complete.');
       }
       if (noteEl) noteEl.textContent = '';
       return;
@@ -2657,11 +2676,12 @@
     var html = '';
     for (var i = 0; i < rows.length; i++) {
       var e = rows[i];
-      var rankCls = i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : '';
-      var rowCls  = i < 3 ? (' class="cbt-hof-' + (i + 1) + '"') : '';
+      var rk = e.rank || (i + 1);
+      var rankCls = rk === 1 ? 'gold' : rk === 2 ? 'silver' : rk === 3 ? 'bronze' : '';
+      var rowCls  = rk <= 3 ? (' class="cbt-hof-' + rk + '"') : '';
       html += '<tr' + rowCls + '>' +
         '<td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-assoc">' +
-          '<span class="cbt-rank ' + rankCls + '">' + (i + 1) + '</span>' + e.assoc +
+          '<span class="cbt-rank ' + rankCls + '">' + rk + '</span>' + e.assoc +
           '</span></span></span></td>' +
         '<td><span class="cbt-hist-meta">' + e.runs + '</span></td>' +
         '<td><span class="cbt-hist-meta">' + e.pkgs + '</span></td>' +
@@ -2671,8 +2691,11 @@
     }
     setHTML(tbody, html);
     if (noteEl) {
-      noteEl.textContent = 'Personal-best rates, shared across every computer. ' +
-        (total > HOF_TOP ? ('Showing the top ' + HOF_TOP + ' of ' + total + ' associates.') : ('' + total + ' associate' + (total === 1 ? '' : 's') + ' on the board.'));
+      noteEl.textContent = hofTerm
+        ? (rows.length + ' match' + (rows.length === 1 ? '' : 'es') + ' of ' + total + ' on the board.')
+        : ('Personal-best rates, shared across every computer. ' +
+           (total > HOF_TOP ? ('Showing the top ' + HOF_TOP + ' of ' + total + ' associates.')
+                            : ('' + total + ' associate' + (total === 1 ? '' : 's') + ' on the board.')));
     }
   }
 
@@ -2915,6 +2938,7 @@
           '<div id="cbt-names-empty" style="display:none;text-align:center;color:#aaa;padding:9px 0;font-size:13px;font-style:italic;line-height:1.2;">No names saved yet</div>' +
         '</div>' +
         '<div id="cbt-hof-view" style="display:none">' +
+          '<div id="cbt-hof-search"><input id="cbt-hof-search-input" style="flex:1;" type="text" placeholder="Search the board..."/><button id="cbt-hof-search-clear">\u2715</button></div>' +
           '<table id="cbt-hof-table"><thead><tr>' +
             '<th>#\u2003Name</th>' +
             '<th>Batch</th>' +
@@ -3152,6 +3176,8 @@
         if (hsi) { hsi.value = ''; historySearchTerm = ''; }
         if (wsi) { wsi.value = ''; weeklySearchTerm = ''; }
         if (nsi) { nsi.value = ''; namesSearchTerm = ''; }
+        var hsi2 = document.getElementById('cbt-hof-search-input');
+        if (hsi2) { hsi2.value = ''; hofSearchTerm = ''; }
         var lr = document.getElementById('cbt-live-results');
         if (lr) lr.innerHTML = '';
         document.getElementById('cbt-live-view').style.display    = activeTab==='live'    ? '' : 'none';
@@ -3294,6 +3320,10 @@
         var inp4 = document.getElementById('cbt-names-search-input');
         if (inp4) { inp4.value = ''; namesSearchTerm = ''; renderNames(); }
       }
+      if (e.target.id === 'cbt-hof-search-clear') {
+        var inp5 = document.getElementById('cbt-hof-search-input');
+        if (inp5) { inp5.value = ''; hofSearchTerm = ''; renderHallOfFame(); }
+      }
       var nameCell = e.target.closest('.cbt-name-cell');
       if (nameCell) {
         var oldTag3 = nameCell.querySelector('.cbt-copied-tag');
@@ -3308,6 +3338,7 @@
       if (e.target.id==='cbt-hist-search-input') { historySearchTerm=e.target.value; renderHistory(); }
       if (e.target.id==='cbt-live-search-input') { liveSearchTerm=e.target.value; renderLive(); renderLiveSearch(e.target.value); }
       if (e.target.id==='cbt-names-search-input') { namesSearchTerm=e.target.value; renderNames(); }
+      if (e.target.id==='cbt-hof-search-input') { hofSearchTerm=e.target.value; renderHallOfFame(); }
     });
 
     document.addEventListener('click', function(e) {
