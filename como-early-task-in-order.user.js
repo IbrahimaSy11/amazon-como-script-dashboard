@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.5.0
+// @version      23.8.6
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -16,6 +16,12 @@
 
 (function () {
   'use strict';
+
+  /* Hidden Auto Complete eligibility probes load a real job-details page in
+     a same-origin iframe. Do not run this userscript inside that probe frame;
+     the site itself still loads normally so its own Complete Task button state
+     can be inspected without opening a visible cart page. */
+  if (window.top !== window.self && /[?&]cbtAfaProbe=1(?:&|$)/.test(window.location.search)) return;
 
   var STORE_ID  = (window.location.href.split('store/')[1] || '').split('/')[0];
   var DRIVE_URL = 'https://drive.corp.amazon.com/view/jsermar@/COMO_Dashboard_BatchRate_NA.json?download=true';
@@ -234,7 +240,15 @@
     .cbt-hist-rate {
       font-family: var(--cb-mono); font-size: 15px; font-weight: 800;
       font-variant-numeric: tabular-nums;
-      padding: 2px 8px; border-radius: 4px; display: inline-block;
+      /* Fixed badge geometry: every green/amber/red rate uses the exact same
+         box, and flex centering keeps the digits optically centered at every
+         dashboard zoom level. */
+      width: 38px; min-width: 38px; height: 24px;
+      padding: 0 !important; border-radius: 4px;
+      display: inline-flex !important;
+      align-items: center; justify-content: center;
+      line-height: 1 !important; text-align: center;
+      box-sizing: border-box; vertical-align: middle;
     }
     .cbt-hist-rate.good  { color: #0a6e2e; background: rgba(0,200,83,0.1); }
     .cbt-hist-rate.warn  { color: #7a4f00; background: rgba(255,171,0,0.12); }
@@ -346,6 +360,50 @@
     #cbt-hof-search-clear:hover,
     #cbt-names-search-clear:hover { color: var(--cb-red); background: rgba(255,61,61,0.1); }
 
+
+    /* ── One shared associate-name search for every dashboard tab ── */
+    #cbt-unified-search {
+      width: 100%; height: 50px; box-sizing: border-box;
+      padding: 7px 9px; background: #f8fafc;
+      border-bottom: 1px solid var(--cb-border);
+      display: flex; align-items: center;
+    }
+    #cbt-unified-search-box {
+      position: relative; width: 100%; height: 36px;
+      display: flex; align-items: center; box-sizing: border-box;
+    }
+    #cbt-unified-search-input {
+      width: 100%; height: 36px; box-sizing: border-box;
+      padding: 7px 94px 7px 34px;
+      background-color: var(--cb-surface);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238896a8' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: 11px center;
+      border: 1.5px solid var(--cb-border); border-radius: 8px;
+      color: var(--cb-text); font-size: 13px; outline: none;
+      font-family: var(--cb-sans);
+      transition: border-color .15s, box-shadow .15s;
+    }
+    #cbt-unified-search-input:focus {
+      border-color: var(--cb-blue);
+      box-shadow: 0 0 0 3px rgba(41,121,255,.14);
+    }
+    #cbt-unified-search-count {
+      position: absolute; right: 35px; top: 50%; transform: translateY(-50%);
+      display: none; max-width: 58px; overflow: hidden; text-overflow: ellipsis;
+      white-space: nowrap; pointer-events: none;
+      color: var(--cb-text3); font-size: 10px; font-weight: 700;
+      font-family: var(--cb-mono); font-variant-numeric: tabular-nums;
+    }
+    #cbt-unified-search-clear {
+      position: absolute; right: 5px; top: 50%; transform: translateY(-50%);
+      width: 25px; height: 25px; padding: 0; border: none; border-radius: 50%;
+      background: transparent; color: var(--cb-text3); cursor: pointer;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 13px; line-height: 1;
+      transition: color .15s, background .15s;
+    }
+    #cbt-unified-search-clear:hover { color: var(--cb-red); background: rgba(255,61,61,.1); }
+
     /* ── Search result sections ── */
     .cbt-search-result-section {
       font-size: 9px; font-weight: 800; color: var(--cb-text2);
@@ -378,7 +436,14 @@
       text-align: right; vertical-align: middle;
       padding: 5px 12px 5px 4px; font-family: var(--cb-mono);
     }
-    .cbt-search-row .cbt-hist-rate { font-size: 14px !important; display: inline; }
+    .cbt-search-row .cbt-hist-rate {
+      font-size: 14px !important;
+      display: inline-flex !important;
+      align-items: center; justify-content: center;
+      width: 38px; min-width: 38px; height: 24px;
+      padding: 0 !important; line-height: 1 !important;
+      text-align: center;
+    }
 
     /* ── Sort headers ── */
     .cbt-sortable, .cbt-sortable-live, .cbt-sortable-hist {
@@ -679,6 +744,16 @@
       border-color: #58a6ff !important;
       box-shadow: 0 0 0 3px rgba(88,166,255,0.14) !important;
     }
+    #cbt-panel.dark #cbt-unified-search { background: #161b22 !important; border-bottom-color: #21262d !important; }
+    #cbt-panel.dark #cbt-unified-search-input {
+      background-color: #0d1117 !important; color: #c9d1d9 !important; border-color: #30363d !important;
+    }
+    #cbt-panel.dark #cbt-unified-search-input:focus {
+      border-color: #58a6ff !important; box-shadow: 0 0 0 3px rgba(88,166,255,.14) !important;
+    }
+    #cbt-panel.dark #cbt-unified-search-count,
+    #cbt-panel.dark #cbt-unified-search-clear { color: #7a8fa3 !important; }
+    #cbt-panel.dark #cbt-unified-search-clear:hover { color: #f85149 !important; background: rgba(248,81,73,.1) !important; }
     #cbt-panel.dark .cbt-search-result-section {
       background: linear-gradient(180deg,#1a2233,#161b22) !important;
       border-top-color: #58a6ff !important; border-bottom-color: #21262d !important; color: #8faac0 !important;
@@ -947,6 +1022,71 @@
     #cbt-hof-table tbody td .cbt-hist-meta, #cbt-hof-table tbody td .cbt-hist-rate {
       line-height: 1.3 !important; vertical-align: middle !important;
     }
+
+    /* Search-result rows and Names use the same physical row height as the
+       four data tables. This keeps a filtered/cross-tab result from looking
+       shorter, taller or offset when it appears underneath the main table. */
+    #cbt-names-table tbody tr, .cbt-search-row {
+      height: 48px !important; min-height: 48px !important; box-sizing: border-box;
+    }
+    #cbt-names-table tbody td {
+      height: 48px !important; padding: 0 10px !important;
+      vertical-align: middle !important; line-height: 1.3 !important; box-sizing: border-box;
+    }
+    .cbt-search-row {
+      display: grid !important; grid-template-columns: 40% 40% 20%;
+      width: 100% !important; margin: 0 !important; padding: 0 !important;
+      align-items: stretch; overflow: hidden;
+    }
+    .cbt-search-row-name, .cbt-search-row-mid, .cbt-search-row-rate {
+      display: flex !important; align-items: center; height: 48px !important;
+      box-sizing: border-box; min-width: 0; overflow: hidden;
+    }
+    .cbt-search-row-name { width: auto !important; padding: 0 10px !important; text-overflow: ellipsis; white-space: nowrap; }
+    .cbt-search-row-mid  { width: auto !important; padding: 0 6px !important; justify-content: center; text-overflow: ellipsis; white-space: nowrap; }
+    .cbt-search-row-rate {
+      width: auto !important; padding: 0 10px !important;
+      justify-content: center; white-space: nowrap;
+      background: transparent !important; color: inherit;
+    }
+    .cbt-search-row-rate > .cbt-hist-rate {
+      flex: 0 0 38px;
+      width: 38px; min-width: 38px; height: 24px;
+      display: inline-flex !important;
+      align-items: center; justify-content: center;
+      padding: 0 !important; line-height: 1 !important;
+      text-align: center;
+    }
+
+
+    /* Red alert numerals sit about one device-pixel low in the dashboard's
+       mono font even though the badge box itself is mathematically centered.
+       Keep the green/amber badges untouched and optically nudge only the red
+       numeral upward inside the SAME fixed 38x24 box. The bottom padding is
+       inside border-box, so the badge background/position never moves. */
+    #cbt-panel .cbt-hist-rate.alert {
+      box-sizing: border-box !important;
+      height: 24px !important;
+      line-height: 1 !important;
+      padding: 0 0 2px 0 !important;
+      align-items: center !important;
+      justify-content: center !important;
+      text-align: center !important;
+    }
+
+    /* Stable column geometry on every summary table. Filtering now changes
+       only which rows are visible; it cannot change column width or row width. */
+    #cbt-hist-table, #cbt-weekly-table, #cbt-names-table { width: 100%; table-layout: fixed; }
+    #cbt-hist-table th:nth-child(1), #cbt-hist-table td:nth-child(1) { width: 40%; }
+    #cbt-hist-table th:nth-child(2), #cbt-hist-table td:nth-child(2) { width: 20%; }
+    #cbt-hist-table th:nth-child(3), #cbt-hist-table td:nth-child(3) { width: 20%; }
+    #cbt-hist-table th:nth-child(4), #cbt-hist-table td:nth-child(4) { width: 20%; }
+    #cbt-weekly-table th:nth-child(1), #cbt-weekly-table td:nth-child(1) { width: 34%; }
+    #cbt-weekly-table th:nth-child(2), #cbt-weekly-table td:nth-child(2) { width: 11%; }
+    #cbt-weekly-table th:nth-child(3), #cbt-weekly-table td:nth-child(3) { width: 12%; }
+    #cbt-weekly-table th:nth-child(4), #cbt-weekly-table td:nth-child(4) { width: 15%; }
+    #cbt-weekly-table th:nth-child(5), #cbt-weekly-table td:nth-child(5) { width: 16%; }
+    #cbt-weekly-table th:nth-child(6), #cbt-weekly-table td:nth-child(6) { width: 12%; }
 
     /* ══════════════════════════════════════
        HALL OF FAME
@@ -1578,6 +1718,9 @@
   var historySortKey = 'avgRate', historySortAsc = false, historySearchTerm = '';
   var namesSearchTerm = '';
   var hofSearchTerm = '';
+  /* One name-only search term is shared across every Batcher Timers tab.
+     Switching tabs keeps the same associate query instead of clearing it. */
+  var dashboardSearchTerm = '';
   var _allNamesCache = null;
 
   function todayStr() { return new Date().toLocaleDateString('en-US'); }
@@ -1718,12 +1861,12 @@
     var z = _uiScale;
     var panel = document.getElementById('cbt-panel');
     if (panel) {
-      /* The header bar is pinned at 150% and deliberately ignores A- / A+,
+      /* The header bar is pinned at 130% and deliberately ignores A- / A+,
          so it stays a constant anchor while the content below resizes. */
       var hdr = panel.querySelector('#cbt-header');
       if (hdr) hdr.style.zoom = HEADER_FIXED_SCALE;
       /* Everything below the header follows the scale controls. */
-      ['#cbt-stats-bar', '#cbt-tabs', '#cbt-body', '#cbt-drag-bottom'].forEach(function(sel){
+      ['#cbt-stats-bar', '#cbt-tabs', '#cbt-unified-search', '#cbt-body', '#cbt-drag-bottom'].forEach(function(sel){
         var el = panel.querySelector(sel);
         if (el) el.style.zoom = z;
       });
@@ -2654,7 +2797,77 @@
     for (var ri = 0; ri < rows.length; ri++) rows[ri].rank = ri + 1;
     var hofTerm = (hofSearchTerm || '').toLowerCase().trim();
     if (hofTerm) {
-      rows = rows.filter(function(x){ return x.assoc.toLowerCase().indexOf(hofTerm) !== -1; });
+      /* Fastest search must work like Today / Weekly: a person can be found
+         even when they have never set a qualifying Fastest peak. Real Fastest
+         ranks are stamped above from the complete peak board and are NEVER
+         recomputed after filtering. Search-only people stay unranked (—). */
+      var seenKey = Object.create(null), extraByKey = Object.create(null);
+      for (var rk2 = 0; rk2 < rows.length; rk2++) seenKey[rows[rk2].key] = true;
+
+      function addSearchOnly(key, assoc, runs, pkgs, priority) {
+        key = key || hofKey(assoc || '');
+        if (!key || seenKey[key]) return;
+        var cur = extraByKey[key];
+        if (!cur) {
+          cur = extraByKey[key] = { key:key, assoc:assoc||key, rate:null, at:null, rank:null, runs:0, pkgs:0, _priority:-1 };
+        }
+        if (assoc) cur.assoc = assoc;
+        /* Prefer Hall-of-Fame totals, then Weekly, then Today, then a saved
+           name with no numeric history. This avoids double-counting the same
+           person's data across the different history stores. */
+        if (priority > cur._priority) {
+          cur._priority = priority;
+          cur.runs = Number(runs) || 0;
+          cur.pkgs = Number(pkgs) || 0;
+        }
+      }
+
+      /* Native Fastest totals (best source when present). */
+      var totalKeys = Object.create(null), kk;
+      for (kk in own) totalKeys[kk] = true;
+      for (kk in remote) totalKeys[kk] = true;
+      for (kk in totalKeys) {
+        var oo = own[kk] || {}, rr = remote[kk] || {};
+        addSearchOnly(kk, oo.assoc || rr.assoc || kk,
+          (oo.runs || 0) + (rr.runs || 0),
+          (oo.pkgs || 0) + (rr.pkgs || 0), 3);
+      }
+
+      /* Weekly history catches associates who existed before Fastest totals
+         began recording, or who have not met the peak threshold yet. */
+      var weeklySearchData = sanitizeWeekly(getDisplayWeekly()), weeklyAgg = Object.create(null);
+      for (var wday in weeklySearchData) {
+        for (var wa in weeklySearchData[wday]) {
+          var wd = weeklySearchData[wday][wa] || {};
+          var wk = hofKey(wa);
+          if (!wk) continue;
+          if (!weeklyAgg[wk]) weeklyAgg[wk] = { assoc:wa, runs:0, pkgs:0 };
+          weeklyAgg[wk].runs += Number(wd.runs) || 0;
+          weeklyAgg[wk].pkgs += Number(wd.totalPkgs) || 0;
+        }
+      }
+      for (kk in weeklyAgg) addSearchOnly(kk, weeklyAgg[kk].assoc, weeklyAgg[kk].runs, weeklyAgg[kk].pkgs, 2);
+
+      /* Today's history is another fallback for a brand-new associate. */
+      var todaySearchData = getDisplayHistory();
+      for (kk in todaySearchData) {
+        var td = todaySearchData[kk] || {};
+        addSearchOnly(hofKey(td.assoc || kk), td.assoc || kk, td.runs, td.totalPkgs, 1);
+      }
+
+      /* Finally make every permanently saved name searchable, even with no
+         batch data yet. */
+      var savedSearchNames = loadAllNames();
+      for (kk in savedSearchNames) {
+        var sn = savedSearchNames[kk];
+        addSearchOnly(hofKey(sn), sn, 0, 0, 0);
+      }
+
+      var extra = Object.keys(extraByKey).map(function(kx){ return extraByKey[kx]; });
+      rows = rows.concat(extra).filter(function(x){
+        return (x.assoc || '').toLowerCase().indexOf(hofTerm) !== -1;
+      });
+      rows = prioritizeNameMatches(rows, hofTerm, function(x){ return x.assoc; });
     }
     rows = rows.slice(0, HOF_TOP);
 
@@ -2669,6 +2882,7 @@
              ' minutes, so the board fills in as shifts complete.');
       }
       if (noteEl) noteEl.textContent = '';
+      requestUnifiedSearchCount();
       return;
     }
     if (emptyEl) emptyEl.style.display = 'none';
@@ -2676,27 +2890,31 @@
     var html = '';
     for (var i = 0; i < rows.length; i++) {
       var e = rows[i];
-      var rk = e.rank || (i + 1);
+      var rk = (typeof e.rank === 'number') ? e.rank : null;   /* null = no peak yet */
+      var rankTxt = rk ? rk : '\u2013';
       var rankCls = rk === 1 ? 'gold' : rk === 2 ? 'silver' : rk === 3 ? 'bronze' : '';
-      var rowCls  = rk <= 3 ? (' class="cbt-hof-' + rk + '"') : '';
+      var rowCls  = (rk && rk <= 3) ? (' class="cbt-hof-' + rk + '"') : '';
       html += '<tr' + rowCls + '>' +
         '<td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-assoc">' +
-          '<span class="cbt-rank ' + rankCls + '">' + rk + '</span>' + e.assoc +
+          '<span class="cbt-rank ' + rankCls + '">' + rankTxt + '</span>' + e.assoc +
           '</span></span></span></td>' +
         '<td><span class="cbt-hist-meta">' + e.runs + '</span></td>' +
         '<td><span class="cbt-hist-meta">' + e.pkgs + '</span></td>' +
-        '<td><span class="cbt-hof-peak">' + e.rate.toFixed(1) + '</span></td>' +
+        '<td>' + (typeof e.rate === 'number'
+          ? ('<span class="cbt-hof-peak">' + e.rate.toFixed(1) + '</span>')
+          : '<span class="cbt-hist-meta">\u2014</span>') + '</td>' +
         '<td><span class="cbt-hof-when">' + hofWhen(e.at) + '</span></td>' +
       '</tr>';
     }
     setHTML(tbody, html);
     if (noteEl) {
       noteEl.textContent = hofTerm
-        ? (rows.length + ' match' + (rows.length === 1 ? '' : 'es') + ' of ' + total + ' on the board.')
+        ? 'Ranked positions stay unchanged while searching.'
         : ('Personal-best rates, shared across every computer. ' +
            (total > HOF_TOP ? ('Showing the top ' + HOF_TOP + ' of ' + total + ' associates.')
                             : ('' + total + ' associate' + (total === 1 ? '' : 's') + ' on the board.')));
     }
+    requestUnifiedSearchCount();
   }
 
   /* ══════════════════════════════════════
@@ -2891,9 +3109,15 @@
         '<span class="cbt-tab" data-tab="hof" title="Top 30 fastest batchers of all time">Fastest</span>' +
         '<span class="cbt-tab" data-tab="names">Names</span>' +
       '</div>' +
+      '<div id="cbt-unified-search">' +
+        '<div id="cbt-unified-search-box">' +
+          '<input id="cbt-unified-search-input" type="text" autocomplete="off" spellcheck="false" placeholder="Find associate by name..."/>' +
+          '<span id="cbt-unified-search-count"></span>' +
+          '<button id="cbt-unified-search-clear" type="button" title="Clear search">✕</button>' +
+        '</div>' +
+      '</div>' +
       '<div id="cbt-body">' +
         '<div id="cbt-live-view">' +
-          '<div id="cbt-live-search"><input id="cbt-live-search-input" type="text" placeholder="Search any associate..."/><button id="cbt-live-search-clear">✕</button></div>' +
           '<table id="cbt-table" style="table-layout:fixed;width:100%;"><thead><tr>' +
             '<th class="cbt-sortable-live" data-sort="assoc" style="width:40%;text-align:left;">Associate</th>' +
             '<th class="cbt-sortable-live" data-sort="elapsed" style="width:30%;text-align:center;">Elapsed</th>' +
@@ -2904,7 +3128,6 @@
           '<div id="cbt-updated"></div>' +
         '</div>' +
         '<div id="cbt-history-view" style="display:none">' +
-          '<div id="cbt-hist-search"><input id="cbt-hist-search-input" type="text" placeholder="Search associate..."/><button id="cbt-hist-search-clear">✕</button></div>' +
           '<div id="cbt-hist-summary"></div>' +
           '<table id="cbt-hist-table"><thead><tr>' +
             '<th class="cbt-sortable-hist" data-sort="assoc">Associate</th>' +
@@ -2916,7 +3139,6 @@
           '<div id="cbt-hist-cross"></div>' +
         '</div>' +
         '<div id="cbt-weekly-view" style="display:none">' +
-          '<div id="cbt-weekly-search"><input id="cbt-search-input" style="flex:1;" type="text" placeholder="Search associate..."/><button id="cbt-weekly-search-clear">✕</button></div>' +
           '<div id="cbt-weekly-summary"></div>' +
           '<table id="cbt-weekly-table"><thead><tr>' +
             '<th class="cbt-sortable" data-sort="assoc">Associate</th>' +
@@ -2930,15 +3152,13 @@
           '<div id="cbt-weekly-cross"></div>' +
         '</div>' +
         '<div id="cbt-names-view" style="display:none">' +
-          '<div id="cbt-names-search"><input id="cbt-names-search-input" style="flex:1;" type="text" placeholder="Search saved names..."/><button id="cbt-names-search-clear">✕</button></div>' +
           '<div id="cbt-names-count" style="text-align:center;font-size:12px;color:#5a7a96;padding:2px 0 4px;font-weight:600;"></div>' +
           '<table id="cbt-names-table"><thead><tr>' +
-            '<th style="text-align:left;">Associate (saved permanently)</th>' +
+            '<th style="text-align:left;">Associate</th>' +
           '</tr></thead><tbody id="cbt-names-tbody"></tbody></table>' +
           '<div id="cbt-names-empty" style="display:none;text-align:center;color:#aaa;padding:9px 0;font-size:13px;font-style:italic;line-height:1.2;">No names saved yet</div>' +
         '</div>' +
         '<div id="cbt-hof-view" style="display:none">' +
-          '<div id="cbt-hof-search"><input id="cbt-hof-search-input" style="flex:1;" type="text" placeholder="Search the board..."/><button id="cbt-hof-search-clear">\u2715</button></div>' +
           '<table id="cbt-hof-table"><thead><tr>' +
             '<th>#\u2003Name</th>' +
             '<th>Batch</th>' +
@@ -3162,35 +3382,83 @@
     }
   }
 
+  function setDashboardSearchTerm(value) {
+    dashboardSearchTerm = value == null ? '' : String(value);
+    liveSearchTerm = dashboardSearchTerm;
+    historySearchTerm = dashboardSearchTerm;
+    weeklySearchTerm = dashboardSearchTerm;
+    namesSearchTerm = dashboardSearchTerm;
+    hofSearchTerm = dashboardSearchTerm;
+  }
+
+  /* Name-only search: exact match first, then prefix matches, then contains.
+     Rank badges are stamped before filtering and are never renumbered here. */
+  function prioritizeNameMatches(list, term, getName) {
+    term = (term || '').toLowerCase().trim();
+    if (!term || !Array.isArray(list) || list.length < 2) return list;
+    return list.map(function(item, idx){
+      var name = String(getName(item) || '').toLowerCase();
+      var score = name === term ? 0 : (name.indexOf(term) === 0 ? 1 : 2);
+      return { item:item, idx:idx, score:score };
+    }).sort(function(a,b){ return a.score - b.score || a.idx - b.idx; })
+      .map(function(x){ return x.item; });
+  }
+
+  var _unifiedCountTimer = null;
+  function requestUnifiedSearchCount() {
+    clearTimeout(_unifiedCountTimer);
+    _unifiedCountTimer = setTimeout(updateUnifiedSearchCount, 0);
+  }
+
+  function updateUnifiedSearchCount() {
+    var badge = document.getElementById('cbt-unified-search-count');
+    if (!badge) return;
+    var term = (dashboardSearchTerm || '').trim();
+    if (!term) { badge.textContent = ''; badge.style.display = 'none'; return; }
+    var ids = { live:'cbt-live-view', history:'cbt-history-view', weekly:'cbt-weekly-view', hof:'cbt-hof-view', names:'cbt-names-view' };
+    var view = document.getElementById(ids[activeTab] || 'cbt-live-view');
+    if (!view) { badge.textContent = ''; badge.style.display = 'none'; return; }
+    var seen = Object.create(null);
+    var nodes = view.querySelectorAll('.cbt-assoc, .cbt-search-row-name, .cbt-name-cell');
+    for (var i=0; i<nodes.length; i++) {
+      var clone = nodes[i].cloneNode(true);
+      var junk = clone.querySelectorAll('.cbt-rank, .cbt-slow-alert, .cbt-copied-tag');
+      for (var j=0; j<junk.length; j++) junk[j].remove();
+      var name = (clone.textContent || '').trim().toLowerCase();
+      if (name && name !== '—') seen[name] = true;
+    }
+    var count = Object.keys(seen).length;
+    badge.textContent = count + ' found';
+    badge.style.display = 'block';
+  }
+
+  function renderActiveSearchTab() {
+    if (activeTab === 'live') { renderLive(); renderLiveSearch(dashboardSearchTerm); }
+    else if (activeTab === 'history') renderHistory();
+    else if (activeTab === 'weekly') renderWeekly();
+    else if (activeTab === 'names') renderNames();
+    else if (activeTab === 'hof') renderHallOfFame();
+    requestUnifiedSearchCount();
+  }
+
   function attachPanelEvents(panel2) {
+    var unifiedSearch = panel2.querySelector('#cbt-unified-search-input');
+    if (unifiedSearch) unifiedSearch.value = dashboardSearchTerm;
     panel2.querySelectorAll('.cbt-tab').forEach(function(tab) {
       tab.addEventListener('click', function() {
         panel2.querySelectorAll('.cbt-tab').forEach(function(t){t.classList.remove('active');});
         tab.classList.add('active');
         activeTab = tab.dataset.tab;
-        var lsi = document.getElementById('cbt-live-search-input');
-        var hsi = document.getElementById('cbt-hist-search-input');
-        var wsi = document.getElementById('cbt-search-input');
-        var nsi = document.getElementById('cbt-names-search-input');
-        if (lsi) { lsi.value = ''; liveSearchTerm = ''; }
-        if (hsi) { hsi.value = ''; historySearchTerm = ''; }
-        if (wsi) { wsi.value = ''; weeklySearchTerm = ''; }
-        if (nsi) { nsi.value = ''; namesSearchTerm = ''; }
-        var hsi2 = document.getElementById('cbt-hof-search-input');
-        if (hsi2) { hsi2.value = ''; hofSearchTerm = ''; }
-        var lr = document.getElementById('cbt-live-results');
-        if (lr) lr.innerHTML = '';
+        /* Keep the same associate query while switching tabs. */
+        setDashboardSearchTerm(dashboardSearchTerm);
         document.getElementById('cbt-live-view').style.display    = activeTab==='live'    ? '' : 'none';
         document.getElementById('cbt-history-view').style.display = activeTab==='history' ? '' : 'none';
         document.getElementById('cbt-weekly-view').style.display  = activeTab==='weekly'  ? '' : 'none';
         document.getElementById('cbt-names-view').style.display   = activeTab==='names'   ? '' : 'none';
         var hofView = document.getElementById('cbt-hof-view');
         if (hofView) hofView.style.display = activeTab==='hof' ? '' : 'none';
-        if (activeTab==='history') renderHistory();
-        if (activeTab==='weekly')  renderWeekly();
-        if (activeTab==='live')    renderLive();
-        if (activeTab==='names')   renderNames();
-        if (activeTab==='hof')     { try { hofPull(); } catch(e) {} renderHallOfFame(); }
+        if (activeTab==='hof') { try { hofPull(); } catch(e) {} }
+        renderActiveSearchTab();
       });
     });
 
@@ -3205,6 +3473,7 @@
     collapseBtn.addEventListener('click', function() {
       var body = panel2.querySelector('#cbt-body');
       var tabs = panel2.querySelector('#cbt-tabs');
+      var searchBar = panel2.querySelector('#cbt-unified-search');
       var drag = panel2.querySelector('#cbt-drag-bottom');
       var savedH = parseFloat(localStorage.getItem('cbt_body_h') || '350');
 
@@ -3212,6 +3481,7 @@
         isCollapsed = false;
         if (body) { body.style.display = ''; body.style.height = '350px'; body.style.maxHeight = '350px'; body.style.minHeight = '350px'; }
         if (tabs) tabs.style.display = '';
+        if (searchBar) searchBar.style.display = '';
         if (drag) drag.style.display = '';
         collapseBtn.textContent = '🔼';
         try { localStorage.setItem('cbt_body_h', 350); } catch(ex) {}
@@ -3223,6 +3493,7 @@
         isCollapsed = true;
         if (body) { body.style.display = 'none'; body.style.minHeight = '0'; }
         if (tabs) tabs.style.display = 'none';
+        if (searchBar) searchBar.style.display = 'none';
         if (drag) drag.style.display = 'none';
         collapseBtn.textContent = '🔽';
       }
@@ -3270,6 +3541,8 @@
       body.style.maxHeight = newH + 'px';
       body.style.minHeight = newH + 'px';
       if (tabs) tabs.style.display = '';
+      var searchBar2 = panel2.querySelector('#cbt-unified-search');
+      if (searchBar2) searchBar2.style.display = '';
       try { localStorage.setItem('cbt_body_h', newH); } catch(ex) {}
     });
     document.addEventListener('mouseup', function() { isDragging = false; });
@@ -3279,9 +3552,11 @@
       if (savedH) {
         var body = panel2.querySelector('#cbt-body');
         var tabs = panel2.querySelector('#cbt-tabs');
+        var searchBar3 = panel2.querySelector('#cbt-unified-search');
         var h = parseFloat(savedH);
         if (body) { body.style.height = h + 'px'; body.style.maxHeight = h + 'px'; }
         if (tabs) tabs.style.display = h === 0 ? 'none' : '';
+        if (searchBar3) searchBar3.style.display = h === 0 ? 'none' : '';
       }
     } catch(ex) {}
 
@@ -3304,25 +3579,12 @@
     });
 
     document.addEventListener('click', function(e) {
-      if (e.target.id === 'cbt-live-search-clear') {
-        var inp = document.getElementById('cbt-live-search-input');
-        if (inp) { inp.value = ''; liveSearchTerm = ''; renderLive(); renderLiveSearch(''); }
-      }
-      if (e.target.id === 'cbt-hist-search-clear') {
-        var inp2 = document.getElementById('cbt-hist-search-input');
-        if (inp2) { inp2.value = ''; historySearchTerm = ''; renderHistory(); }
-      }
-      if (e.target.id === 'cbt-weekly-search-clear') {
-        var inp3 = document.getElementById('cbt-search-input');
-        if (inp3) { inp3.value = ''; weeklySearchTerm = ''; renderWeekly(); }
-      }
-      if (e.target.id === 'cbt-names-search-clear') {
-        var inp4 = document.getElementById('cbt-names-search-input');
-        if (inp4) { inp4.value = ''; namesSearchTerm = ''; renderNames(); }
-      }
-      if (e.target.id === 'cbt-hof-search-clear') {
-        var inp5 = document.getElementById('cbt-hof-search-input');
-        if (inp5) { inp5.value = ''; hofSearchTerm = ''; renderHallOfFame(); }
+      if (e.target.id === 'cbt-unified-search-clear') {
+        var inp = document.getElementById('cbt-unified-search-input');
+        if (inp) inp.value = '';
+        setDashboardSearchTerm('');
+        renderActiveSearchTab();
+        if (inp) inp.focus();
       }
       var nameCell = e.target.closest('.cbt-name-cell');
       if (nameCell) {
@@ -3334,11 +3596,10 @@
     });
 
     document.addEventListener('input', function(e) {
-      if (e.target.id==='cbt-search-input') { weeklySearchTerm=e.target.value; renderWeekly(); }
-      if (e.target.id==='cbt-hist-search-input') { historySearchTerm=e.target.value; renderHistory(); }
-      if (e.target.id==='cbt-live-search-input') { liveSearchTerm=e.target.value; renderLive(); renderLiveSearch(e.target.value); }
-      if (e.target.id==='cbt-names-search-input') { namesSearchTerm=e.target.value; renderNames(); }
-      if (e.target.id==='cbt-hof-search-input') { hofSearchTerm=e.target.value; renderHallOfFame(); }
+      if (e.target.id === 'cbt-unified-search-input') {
+        setDashboardSearchTerm(e.target.value);
+        renderActiveSearchTab();
+      }
     });
 
     document.addEventListener('click', function(e) {
@@ -3371,20 +3632,21 @@
   function renderLiveSearch(term) {
     var resultsEl = document.getElementById('cbt-live-results');
     if (!resultsEl) return;
-    if (!term || term.trim() === '') { resultsEl.innerHTML = ''; return; }
+    if (!term || term.trim() === '') { resultsEl.innerHTML = ''; requestUnifiedSearchCount(); return; }
     term = term.toLowerCase().trim();
     var html = '';
     var shown = new Set();
 
     var history = getDisplayHistory(), histEntries = Object.values(history).filter(function(e){ return e.assoc && e.assoc.toLowerCase().indexOf(term) !== -1; });
+    histEntries = prioritizeNameMatches(histEntries, term, function(e){ return e.assoc; });
     if (histEntries.length > 0) {
-      html += '<div class="cbt-search-result-section">📅 Today</div>';
+      html += '<div class="cbt-search-result-section">TODAY</div>';
       histEntries.forEach(function(e) {
         shown.add(e.assoc.toLowerCase());
         var rateCls = e.avgRate >= WARN_RATE ? 'good' : e.avgRate >= ALERT_RATE ? 'warn' : 'alert';
         html += '<div class="cbt-search-row"><span class="cbt-search-row-name">' + e.assoc + '</span>' +
         '<span class="cbt-search-row-mid"><span style="display:inline-block;width:45px;text-align:right;">' + e.runs + '</span> runs | <span style="display:inline-block;width:50px;text-align:left;">' + e.totalPkgs + '</span> pkgs</span>' +
-        '<span class="cbt-search-row-rate cbt-hist-rate ' + rateCls + '">' + e.avgRate.toFixed(1) + '</span></div>';
+        '<span class="cbt-search-row-rate"><span class="cbt-hist-rate ' + rateCls + '">' + e.avgRate.toFixed(1) + '</span></span></div>';
       });
     }
 
@@ -3399,16 +3661,16 @@
         agg[a].daysSet.add(dk);
       }
     }
-    var weeklyEntries = Object.values(agg);
+    var weeklyEntries = prioritizeNameMatches(Object.values(agg), term, function(e){ return e.assoc; });
     if (weeklyEntries.length > 0) {
-      html += '<div class="cbt-search-result-section">📆 Weekly</div>';
+      html += '<div class="cbt-search-result-section">WEEKLY</div>';
       weeklyEntries.forEach(function(e) {
         shown.add(e.assoc.toLowerCase());
         var avgRate = e.totalPkgs / (e.totalSec / 60);
         var rateCls = avgRate >= WARN_RATE ? 'good' : avgRate >= ALERT_RATE ? 'warn' : 'alert';
         html += '<div class="cbt-search-row"><span class="cbt-search-row-name">' + e.assoc + '</span>' +
         '<span class="cbt-search-row-mid"><span style="display:inline-block;width:45px;text-align:right;">' + e.daysSet.size + '</span> days | <span style="display:inline-block;width:50px;text-align:left;">' + e.totalPkgs + '</span> pkgs</span>' +
-        '<span class="cbt-search-row-rate cbt-hist-rate ' + rateCls + '">' + avgRate.toFixed(1) + '</span></div>';
+        '<span class="cbt-search-row-rate"><span class="cbt-hist-rate ' + rateCls + '">' + avgRate.toFixed(1) + '</span></span></div>';
       });
     }
 
@@ -3416,6 +3678,7 @@
 
     if (html === '') html = '<div style="text-align:center;color:#aaa;padding:10px;font-style:italic;font-size:14px;">No results found for "' + term + '"</div>';
     setHTML(resultsEl, html);
+    requestUnifiedSearchCount();
   }
 
   /* The arrow was baked into the header markup and never moved. Redraw it
@@ -3503,6 +3766,7 @@
     setHTML(tbody, html);
     var upd=document.querySelector('#cbt-updated');
     if(upd) upd.textContent='updated '+new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    requestUnifiedSearchCount();
   }
 
   function renderHistory() {
@@ -3523,9 +3787,12 @@
         '<div class="cbt-ws-stat"><span class="cbt-ws-val">'+oR.toFixed(1)+'</span><span class="cbt-ws-label">Avg Rate</span></div>'+
         '<div class="cbt-ws-stat"><span class="cbt-ws-val">'+avgMissPct.toFixed(1)+'%</span><span class="cbt-ws-label">Avg Miss %</span></div>';
     }
-    var filtered=entries;
-    if(historySearchTerm){var term=historySearchTerm.toLowerCase();filtered=entries.filter(function(e){return e.assoc.toLowerCase().indexOf(term)!==-1;});}
-    filtered.sort(function(a,b){
+
+    /* Sort the FULL Today list first and stamp each associate's real display
+       position. Search is applied only after that, so searching one person can
+       never renumber that person to #1 just because they are the only match. */
+    var ranked=entries.slice();
+    ranked.sort(function(a,b){
       var va,vb;
       if(historySortKey==='assoc'){va=a.assoc.toLowerCase();vb=b.assoc.toLowerCase();return historySortAsc?va.localeCompare(vb):vb.localeCompare(va);}
       else if(historySortKey==='runs'){va=a.runs;vb=b.runs;}
@@ -3533,11 +3800,16 @@
       else{va=a.avgRate;vb=b.avgRate;}
       return historySortAsc?va-vb:vb-va;
     });
+    for(var ri=0;ri<ranked.length;ri++) ranked[ri]._displayRank=ri+1;
+
+    var filtered=ranked;
+    if(historySearchTerm){var term=historySearchTerm.toLowerCase();filtered=ranked.filter(function(e){return e.assoc.toLowerCase().indexOf(term)!==-1;});filtered=prioritizeNameMatches(filtered,term,function(e){return e.assoc;});}
     var html='';
     for(var i=0;i<filtered.length;i++){
       var e=filtered[i],rateCls=e.avgRate>=WARN_RATE?'good':e.avgRate>=ALERT_RATE?'warn':'alert';
-      var rankCls=i===0?'gold':i===1?'silver':i===2?'bronze':'';
-      html+='<tr><td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-assoc"><span class="cbt-rank '+rankCls+'">'+(i+1)+'</span>'+e.assoc+'</span></span></span></td>';
+      var rk=e._displayRank||0;
+      var rankCls=rk===1?'gold':rk===2?'silver':rk===3?'bronze':'';
+      html+='<tr><td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-assoc"><span class="cbt-rank '+rankCls+'">'+rk+'</span>'+e.assoc+'</span></span></span></td>';
       html+='<td><span class="cbt-hist-meta">'+e.runs+'</span></td><td><span class="cbt-hist-meta">'+e.totalPkgs+'</span></td>';
       html+='<td><span class="cbt-hist-rate '+rateCls+'">'+e.avgRate.toFixed(1)+'</span></td></tr>';
     }
@@ -3548,6 +3820,7 @@
       var cross = document.getElementById('cbt-hist-cross');
       if(cross) cross.innerHTML='';
     }
+    requestUnifiedSearchCount();
   }
 
   function renderHistoryCrossSearch(term) {
@@ -3566,20 +3839,20 @@
         agg[a].daysSet.add(dk);
       }
     }
-    var entries = Object.values(agg);
+    var entries = prioritizeNameMatches(Object.values(agg), term, function(e){ return e.assoc; });
     var shown = new Set();
     var todayHist = getDisplayHistory();
     Object.values(todayHist).forEach(function(e){ if(e.assoc.toLowerCase().indexOf(term)!==-1) shown.add(e.assoc.toLowerCase()); });
     var html='';
     if(entries.length>0){
-      html+='<div class="cbt-search-result-section">📆 Also in Weekly</div>';
+      html+='<div class="cbt-search-result-section">WEEKLY</div>';
       entries.forEach(function(e){
         shown.add(e.assoc.toLowerCase());
         var avgRate=e.totalPkgs/(e.totalSec/60);
         var rateCls=avgRate>=WARN_RATE?'good':avgRate>=ALERT_RATE?'warn':'alert';
         html+='<div class="cbt-search-row"><span class="cbt-search-row-name">'+e.assoc+'</span>' +
         '<span class="cbt-search-row-mid"><span style="display:inline-block;width:45px;text-align:right;">'+e.daysSet.size+'</span> days | <span style="display:inline-block;width:50px;text-align:left;">'+e.totalPkgs+'</span> pkgs</span>' +
-        '<span class="cbt-search-row-rate cbt-hist-rate '+rateCls+'">'+avgRate.toFixed(1)+'</span></div>';
+        '<span class="cbt-search-row-rate"><span class="cbt-hist-rate '+rateCls+'">'+avgRate.toFixed(1)+'</span></span></div>';
       });
     }
     html += savedNamesSearchHTML(term, shown);
@@ -3615,7 +3888,6 @@
       }
     }
     var all=Object.values(agg).map(function(a){
-      // Sanity cap: real-world max ~2000 pkgs/run, ~500 runs/week, ~100000 pkgs total
       var pkgs = Math.min(a.totalPkgs, 100000);
       var sec  = Math.min(a.totalSec,  500*3600);
       var runs = Math.min(a.runs, 500);
@@ -3633,9 +3905,11 @@
         '<div class="cbt-ws-stat"><span class="cbt-ws-val">'+oR.toFixed(1)+'</span><span class="cbt-ws-label">Avg Rate</span></div>'+
         '<div class="cbt-ws-stat"><span class="cbt-ws-val">'+tM.toFixed(1)+'%</span><span class="cbt-ws-label">Avg Miss %</span></div>';
     }
-    var filtered=all;
-    if(weeklySearchTerm){var term=weeklySearchTerm.toLowerCase();filtered=all.filter(function(e){return e.assoc.toLowerCase().indexOf(term)!==-1;});}
-    filtered.sort(function(a,b){
+
+    /* Same rule as Today: rank/position comes from the complete Weekly table,
+       then search hides non-matches without changing anybody's true position. */
+    var ranked=all.slice();
+    ranked.sort(function(a,b){
       var va,vb;
       if(weeklySortKey==='assoc'){va=a.assoc.toLowerCase();vb=b.assoc.toLowerCase();return weeklySortAsc?va.localeCompare(vb):vb.localeCompare(va);}
       else if(weeklySortKey==='days'){va=a.days;vb=b.days;}else if(weeklySortKey==='runs'){va=a.runs;vb=b.runs;}
@@ -3643,11 +3917,16 @@
       else if(weeklySortKey==='hrs'){va=a.hrs;vb=b.hrs;}else{va=a.avgRate;vb=b.avgRate;}
       return weeklySortAsc?va-vb:vb-va;
     });
+    for(var ri=0;ri<ranked.length;ri++) ranked[ri]._displayRank=ri+1;
+
+    var filtered=ranked;
+    if(weeklySearchTerm){var term=weeklySearchTerm.toLowerCase();filtered=ranked.filter(function(e){return e.assoc.toLowerCase().indexOf(term)!==-1;});filtered=prioritizeNameMatches(filtered,term,function(e){return e.assoc;});}
     var html='';
     for(var i=0;i<filtered.length;i++){
       var e=filtered[i],rateCls=e.avgRate>=WARN_RATE?'good':e.avgRate>=ALERT_RATE?'warn':'alert';
-      var rankCls=i===0?'gold':i===1?'silver':i===2?'bronze':'';
-      html+='<tr><td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-assoc"><span class="cbt-rank '+rankCls+'">'+(i+1)+'</span>'+e.assoc+'</span></span></span></td>';
+      var rk=e._displayRank||0;
+      var rankCls=rk===1?'gold':rk===2?'silver':rk===3?'bronze':'';
+      html+='<tr><td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-assoc"><span class="cbt-rank '+rankCls+'">'+rk+'</span>'+e.assoc+'</span></span></span></td>';
       html+='<td><span class="cbt-hist-meta">'+e.days+'</span></td><td><span class="cbt-hist-meta">'+e.runs+'</span></td>';
       html+='<td><span class="cbt-hist-meta">'+e.totalPkgs+'</span></td><td><span class="cbt-hist-rate '+rateCls+'">'+e.avgRate.toFixed(1)+'</span></td>';
       html+='<td><span class="cbt-hist-meta">'+fmtHours(e.totalSec)+'</span></td></tr>';
@@ -3659,6 +3938,7 @@
       var cross2 = document.getElementById('cbt-weekly-cross');
       if(cross2) cross2.innerHTML='';
     }
+    requestUnifiedSearchCount();
   }
 
   function savedNamesSearchHTML(term, excludeSet) {
@@ -3671,7 +3951,8 @@
     }
     if (!matches.length) return '';
     matches.sort(function(a,b){ return a.toLowerCase().localeCompare(b.toLowerCase()); });
-    var html = '<div class="cbt-search-result-section">📋 Saved Names</div>';
+    matches = prioritizeNameMatches(matches, term, function(n){ return n; });
+    var html = '<div class="cbt-search-result-section">SAVED NAMES</div>';
     matches.slice(0, 50).forEach(function(n){
       html += '<div class="cbt-search-row"><span class="cbt-search-row-name cbt-name-cell">' + n + '</span>' +
         '<span class="cbt-search-row-mid"></span>' +
@@ -3700,11 +3981,14 @@
     names.sort(function(a,b){ return a.toLowerCase().localeCompare(b.toLowerCase()); });
 
     var term = (namesSearchTerm||'').toLowerCase().trim();
-    if (term) names = names.filter(function(n){ return n.toLowerCase().indexOf(term) !== -1; });
+    if (term) {
+      names = names.filter(function(n){ return n.toLowerCase().indexOf(term) !== -1; });
+      names = prioritizeNameMatches(names, term, function(n){ return n; });
+    }
 
     var countEl = document.getElementById('cbt-names-count');
     if (countEl) {
-      countEl.textContent = term ? (names.length + ' of ' + totalCount + ' names') : (totalCount + ' names saved');
+      countEl.textContent = totalCount + ' names saved';
       // Respect dark mode
       var isDarkMode = document.getElementById('cbt-panel') && document.getElementById('cbt-panel').classList.contains('dark');
       countEl.style.color = isDarkMode ? '#8faac0' : '#5a7a96';
@@ -3723,6 +4007,7 @@
       html += '<tr><td style="text-align:left;"><span class="cbt-name-cell">' + n + '</span></td></tr>';
     });
     setHTML(tbody, html);
+    requestUnifiedSearchCount();
   }
 
   function renderWeeklyCrossSearch(term) {
@@ -3732,6 +4017,7 @@
     term = term.toLowerCase();
     var history = loadHistory();
     var entries = Object.values(history).filter(function(e){ return e.assoc.toLowerCase().indexOf(term)!==-1; });
+    entries = prioritizeNameMatches(entries, term, function(e){ return e.assoc; });
     var shown = new Set();
     pruneWeeklyOlderThan(WEEKLY_DAYS);        /* side effect kept as-is */
     /* This used to iterate pruneWeeklyOlderThan's return value, but that
@@ -3745,13 +4031,13 @@
     }
     var html='';
     if(entries.length>0){
-      html+='<div class="cbt-search-result-section">📅 Also in Today</div>';
+      html+='<div class="cbt-search-result-section">TODAY</div>';
       entries.forEach(function(e){
         shown.add(e.assoc.toLowerCase());
         var rateCls=e.avgRate>=WARN_RATE?'good':e.avgRate>=ALERT_RATE?'warn':'alert';
         html+='<div class="cbt-search-row"><span class="cbt-search-row-name">'+e.assoc+'</span>' +
         '<span class="cbt-search-row-mid"><span style="display:inline-block;width:45px;text-align:right;">'+e.runs+'</span> runs | <span style="display:inline-block;width:50px;text-align:left;">'+e.totalPkgs+'</span> pkgs</span>' +
-        '<span class="cbt-search-row-rate cbt-hist-rate '+rateCls+'">'+e.avgRate.toFixed(1)+'</span></div>';
+        '<span class="cbt-search-row-rate"><span class="cbt-hist-rate '+rateCls+'">'+e.avgRate.toFixed(1)+'</span></span></div>';
       });
     }
     html += savedNamesSearchHTML(term, shown);
@@ -4456,9 +4742,252 @@
       var key = id || ('ref:' + ref + ':' + i);
       if (seen[key]) continue;
       seen[key] = true;
-      found.push({ ref: ref || '(unknown)', id: id });
+      found.push({ ref: ref || '(unknown)', id: id, unassignable: true });
     }
     return found;
+  }
+
+  /* ── Complete Task eligibility — NO time rule ──
+     The old AM/PM / Batch Target heuristic is intentionally gone. When Auto
+     Complete is enabled, the script asks the site itself whether Complete Task
+     is available for that cart by loading the real job-details route in a
+     hidden same-origin iframe and reading the actual Complete Task button state.
+
+     This is read-only. No completeJob POST is sent unless the site's own button
+     has settled into an enabled state. If the site cannot be checked, the cart
+     is skipped for completion rather than guessed. */
+  var AFA_COMPLETE_PROBE_TIMEOUT_MS = 7000;
+
+  function afaFindCompleteButton(doc) {
+    if (!doc) return null;
+    var buttons;
+    try { buttons = doc.querySelectorAll('button'); } catch(e) { return null; }
+    for (var i = 0; i < buttons.length; i++) {
+      var b = buttons[i];
+      var label = ((b.getAttribute('title') || '') + ' ' + (b.textContent || '')).replace(/\s+/g, ' ').trim();
+      if (/complete\s*task/i.test(label)) return b;
+    }
+    return null;
+  }
+
+  /* If the job-details JSON exposes a clearly named boolean capability flag,
+     trust that first. This is deliberately strict: unrelated "complete"
+     counters/statuses are ignored, and only boolean keys that explicitly mean
+     can/enable/allow/eligible/completable are accepted. */
+  function afaCompleteCapabilityFlag(obj, depth) {
+    if (obj == null || depth > 7) return null;
+    if (Array.isArray(obj)) {
+      for (var i = 0; i < obj.length && i < 600; i++) {
+        var ar = afaCompleteCapabilityFlag(obj[i], depth + 1);
+        if (ar !== null) return ar;
+      }
+      return null;
+    }
+    if (typeof obj !== 'object') return null;
+    for (var k in obj) {
+      var v = obj[k];
+      if (typeof v !== 'boolean') continue;
+      var key = String(k).replace(/[_\-\s]/g, '').toLowerCase();
+      var explicit =
+        /^(can|should|is)?(enable|enabled|allow|allowed|eligible|completable).*complete/.test(key) ||
+        /^complete.*(enable|enabled|allow|allowed|eligible|completable)$/.test(key) ||
+        /^(can|should)complete(job|task)?$/.test(key) ||
+        /^(is)?completable(job|task)?$/.test(key);
+      if (explicit) return v;
+    }
+    for (var k2 in obj) {
+      var child = obj[k2];
+      if (child && typeof child === 'object') {
+        var r = afaCompleteCapabilityFlag(child, depth + 1);
+        if (r !== null) return r;
+      }
+    }
+    return null;
+  }
+
+  function afaProbeCompleteButtonState(jobId) {
+    return new Promise(function(resolve){
+      if (!jobId || !document.body) {
+        resolve({ eligible: false, verified: false, reason: 'Complete Task eligibility could not be checked' });
+        return;
+      }
+
+      var frame = document.createElement('iframe');
+      var done = false, started = Date.now(), firstSeen = 0;
+      var lastDisabled = null, stable = 0;
+      frame.setAttribute('aria-hidden', 'true');
+      frame.tabIndex = -1;
+      frame.style.cssText = 'position:fixed!important;left:-10000px!important;top:-10000px!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important;border:0!important;';
+
+      function finish(result) {
+        if (done) return;
+        done = true;
+        try { frame.remove(); } catch(e) { try { frame.parentNode && frame.parentNode.removeChild(frame); } catch(e2) {} }
+        resolve(result);
+      }
+
+      function poll() {
+        if (done) return;
+        if (Date.now() - started > AFA_COMPLETE_PROBE_TIMEOUT_MS) {
+          finish({ eligible: false, verified: false, reason: 'Complete Task eligibility could not be verified' });
+          return;
+        }
+
+        var doc = null, btn = null;
+        try { doc = frame.contentDocument || (frame.contentWindow && frame.contentWindow.document); } catch(e) {}
+        try { btn = afaFindCompleteButton(doc); } catch(e2) {}
+
+        if (btn) {
+          if (!firstSeen) firstSeen = Date.now();
+          var aria = String(btn.getAttribute('aria-disabled') || '').toLowerCase();
+          var disabled = !!btn.disabled || btn.hasAttribute('disabled') || aria === 'true' || btn.classList.contains('disabled');
+          if (disabled === lastDisabled) stable++; else { lastDisabled = disabled; stable = 1; }
+
+          /* Wait long enough for Angular's ng-disabled expression to settle.
+             Enabled gets the longer dwell because a button can briefly render
+             enabled before the controller finishes applying its state. */
+          var dwell = disabled ? 400 : 900;
+          if (stable >= 3 && Date.now() - firstSeen >= dwell) {
+            finish({
+              eligible: !disabled,
+              verified: true,
+              reason: disabled ? 'Complete Task is disabled by the site' : 'Complete Task is enabled by the site'
+            });
+            return;
+          }
+        }
+        setTimeout(poll, 120);
+      }
+
+      var src = COMO_BASE + '/store/' + encodeURIComponent(STORE_ID) + '/jobdetails?jobId=' + encodeURIComponent(jobId) + '&cbtAfaProbe=1';
+      frame.src = src;
+      document.body.appendChild(frame);
+      setTimeout(poll, 120);
+    });
+  }
+
+  function afaProbeCompletable(jobId) {
+    return afaFetchJobInfo(jobId).then(function(info){
+      var flag = info ? afaCompleteCapabilityFlag(info, 0) : null;
+      if (flag !== null) {
+        return {
+          eligible: !!flag,
+          verified: true,
+          reason: flag ? 'Complete Task is enabled by job data' : 'Complete Task is disabled by job data'
+        };
+      }
+      /* No explicit capability flag in the JSON: fall back to the exact UI
+         control that the user would see on the real job-details page. */
+      return afaProbeCompleteButtonState(jobId);
+    }, function(){
+      return afaProbeCompleteButtonState(jobId);
+    });
+  }
+
+  /* Every regular task on the main dashboard is only a completion CANDIDATE.
+     No write is made from this scan. The hidden probe above decides whether
+     the site's own Complete Task control is actually enabled. Problem rows and
+     the side sections are deliberately excluded. */
+  function afaScanCompletionCandidates() {
+    var found = [], seen = Object.create(null);
+    var cards = document.querySelectorAll('job-card');
+    for (var i = 0; i < cards.length; i++) {
+      var card = cards[i];
+      try { if (isInExcludedSection(card)) continue; } catch(e) {}
+      var txt = card.innerText || card.textContent || '';
+      if (/problem\s*solve|\bproblem\b/i.test(txt)) continue;
+      var a = card.querySelector('a');
+      var ref = a ? (a.textContent || '').trim() : '';
+      var id = null;
+      if (a) {
+        var href = a.getAttribute('href') || '';
+        var m = href.match(/jobId=([^&#]+)/i);
+        if (m) { try { id = decodeURIComponent(m[1]); } catch(e2) { id = m[1]; } }
+      }
+      if (!id && ref && _afaJobIndex[ref]) id = _afaJobIndex[ref];
+      var key = id || ('ref:' + ref + ':' + i);
+      if (seen[key]) continue;
+      seen[key] = true;
+      found.push({ ref: ref || '(unknown)', id: id, completeCandidate: true });
+    }
+    return found;
+  }
+
+  /* Merge candidate sources by cart identity. A cart can be both UNASSIGNABLE
+     and completion-eligible; merging preserves both flags so an unavailable
+     Complete Task falls back to the normal Force Assign path. */
+  function afaMergeQueue(base, extra) {
+    var out = [];
+    function same(a, b) {
+      if (a.id && b.id && a.id === b.id) return true;
+      return !!(a.ref && b.ref && a.ref === b.ref);
+    }
+    function add(it) {
+      if (!it) return;
+      var hit = null;
+      for (var i = 0; i < out.length; i++) { if (same(out[i], it)) { hit = out[i]; break; } }
+      if (!hit) {
+        out.push({
+          ref: it.ref, id: it.id,
+          partial: !!it.partial,
+          unassignable: !!it.unassignable,
+          completeCandidate: !!it.completeCandidate
+        });
+        return;
+      }
+      if (!hit.id && it.id) hit.id = it.id;
+      hit.partial = hit.partial || !!it.partial;
+      hit.unassignable = hit.unassignable || !!it.unassignable;
+      hit.completeCandidate = hit.completeCandidate || !!it.completeCandidate;
+    }
+    (base || []).forEach(add);
+    (extra || []).forEach(add);
+    return out;
+  }
+
+  /* Complete Task — the same call the site's own Complete Task button makes,
+     captured from DevTools: POST with an empty JSON body, answering 200 with
+     the literal `true`. Store and job ids are substituted per cart, and the
+     browser attaches the existing session exactly as it does for a manual
+     click. Nothing here is requested that the account cannot already do. */
+  var AFA_COMPLETE_PATH = '/api/store/{storeId}/job/{jobId}/completeJob';
+  var AFA_COMPLETE_BODY = {};
+
+  /* The server answers a real completion with the literal `true`. A 200
+     carrying anything else is NOT treated as success — better to report the
+     odd response than to claim a cart was completed when it may not be. */
+  function afaCompletedOk(r) {
+    if (!r || !r.ok) return false;
+    var body = String(r.body == null ? '' : r.body).trim().replace(/^"|"$/g, '');
+    return /^true$/i.test(body);
+  }
+
+  function afaCompleteTask(jobId) {
+    if (!AFA_COMPLETE_PATH) {
+      return Promise.resolve({ ok: false, status: 0, body: 'Complete Task endpoint not configured' });
+    }
+    var url = COMO_BASE + AFA_COMPLETE_PATH
+      .replace('{storeId}', encodeURIComponent(STORE_ID))
+      .replace('{jobId}', encodeURIComponent(jobId));
+    var ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
+    var timer = setTimeout(function(){ if (ctrl) ctrl.abort(); }, AFA_TIMEOUT_MS);
+    var opts = {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify(AFA_COMPLETE_BODY)
+    };
+    if (ctrl) opts.signal = ctrl.signal;
+    return _origFetch(url, opts).then(function(res){
+      clearTimeout(timer);
+      return res.text().then(
+        function(t){ return { ok: res.ok, status: res.status, body: t }; },
+        function(){  return { ok: res.ok, status: res.status, body: '' }; }
+      );
+    }, function(err){
+      clearTimeout(timer);
+      return { ok: false, status: 0, body: (err && err.message) ? String(err.message) : 'network error' };
+    });
   }
 
   /* The one write this feature makes — the same call the Yes button makes. */
@@ -4576,6 +5105,7 @@
     var ready = list.filter(function(x){ return x.id; });
     var noId  = list.filter(function(x){ return !x.id; });
     var already = [];
+    var completionCandidates = afaScanCompletionCandidates();
 
     var pbBox =
       '<label class="cbt-afa-opt' + (pbReady.length ? '' : ' off') + '">' +
@@ -4591,15 +5121,26 @@
         ? '<div class="cbt-afa-note">That section shows no assignability column, so each cart is checked individually first. Any cart that is already assignable, or whose status cannot be confirmed, is skipped with a reason. Problem Solve is never touched.</div>'
         : '');
 
-    if (!list.length && !pbReady.length) {
+    var acBox =
+      '<label class="cbt-afa-opt' + (AFA_COMPLETE_PATH ? '' : ' off') + '">' +
+        '<input type="checkbox" id="cbt-afa-oldcart"' + (AFA_COMPLETE_PATH ? '' : ' disabled') + '/>' +
+        '<span>Auto Complete Old Cart' +
+        (AFA_COMPLETE_PATH
+          ? ' \u2014 asks the server whether Complete Task is allowed; no time rule is used'
+          : ' \u2014 unavailable: the Complete Task request has not been captured yet') +
+        '</span>' +
+      '</label>';
+
+    if (!list.length && !pbReady.length && !completionCandidates.length) {
       afaShell('Auto Force Assign',
-        '<div id="cbt-afa-lead">No <b>UNASSIGNABLE</b> carts and no <b>Partially Batched</b> carts are available right now.</div>' +
+        '<div id="cbt-afa-lead">No <b>UNASSIGNABLE</b>, <b>Partially Batched</b>, or completion-candidate carts are available right now.</div>' +
         '<div style="color:var(--cb-text2)">Nothing to do. Close this and try again when some appear.</div>',
         '<button class="cbt-afa-act" data-afa="close">Close</button>');
     } else if (!list.length) {
       afaShell('Auto Force Assign',
-        '<div id="cbt-afa-lead">No <b>UNASSIGNABLE</b> carts on the dashboard right now.</div>' +
-        pbBox,
+        '<div id="cbt-afa-lead">No <b>UNASSIGNABLE</b> carts on the dashboard right now.' +
+        (completionCandidates.length ? ' Auto Complete can still check the site\'s Complete Task eligibility for the current carts.' : '') + '</div>' +
+        pbBox + acBox,
         '<button class="cbt-afa-act" data-afa="close">Cancel</button>' +
         '<button class="cbt-afa-act go" data-afa="go">Continue</button>');
     } else {
@@ -4609,7 +5150,7 @@
       afaShell('Auto Force Assign',
         '<div id="cbt-afa-lead">This will force-assign <b>' + ready.length + '</b> cart' + (ready.length === 1 ? '' : 's') +
         ' marked UNASSIGNABLE, one at a time.</div>' +
-        afaRowsHtml(list) + warn + pbBox,
+        afaRowsHtml(list) + warn + pbBox + acBox,
         '<button class="cbt-afa-act" data-afa="close">Cancel</button>' +
         '<button class="cbt-afa-act go" data-afa="go">Start</button>');
     }
@@ -4620,11 +5161,16 @@
       if (b.getAttribute('data-afa') === 'close') afaClose();
       if (b.getAttribute('data-afa') === 'go') {
         var cb = document.getElementById('cbt-afa-pb');
-        var queue = (typeof ready !== 'undefined' ? ready : []).slice();
+        var ac = document.getElementById('cbt-afa-oldcart');
+        var queue = afaMergeQueue((typeof ready !== 'undefined' ? ready : []), []);
         /* Partially Batched only ever runs when this box is ticked. */
-        if (cb && cb.checked) queue = queue.concat(pbReady);
+        if (cb && cb.checked) queue = afaMergeQueue(queue, pbReady);
+        /* Auto Complete may also check regular carts that are not UNASSIGNABLE.
+           They are completion-only candidates: if the site's own Complete Task
+           button is disabled, they are skipped rather than force-assigned. */
+        if (ac && ac.checked) queue = afaMergeQueue(queue, completionCandidates);
         if (!queue.length) { afaClose(); return; }
-        afaRun(queue);
+        afaRun(queue, { autoComplete: !!(ac && ac.checked) });
       }
     });
   }
@@ -4676,7 +5222,9 @@
   }
 
   /* Step 2: one cart at a time, re-checked immediately before each send. */
-  function afaRun(list) {
+  function afaRun(list, opts) {
+    opts = opts || {};
+    var autoComplete = !!opts.autoComplete;
     _afaRunning = true; _afaStop = false;
     _afaDone = Object.create(null);        /* fresh claim map for this run only */
     var partialRefs = Object.create(null);
@@ -4717,52 +5265,120 @@
       if (!item.id) { results.push({ ref: item.ref, ok: false, msg: 'task ID not found' }); return next(60); }
       if (_afaDone[item.id]) { results.push({ ref: item.ref, skip: true, ok: false, msg: 'already handled in this run' }); return next(60); }
 
-      function send(noteWhy) {
-        _afaDone[item.id] = true;   /* claim it before sending: never twice */
-        return afaForceAssign(item.id).then(function(r){
-          if (r.ok) {
-            results.push({ ref: item.ref, ok: true, msg: 'assigned (HTTP ' + r.status + ')' + (noteWhy ? ' \u2014 ' + noteWhy : '') });
+      function doneResult(row, delay) {
+        results.push(row);
+        afaProgress(i + 1, list.length, item.ref, results);
+        next(delay == null ? AFA_DELAY_MS : delay);
+      }
+
+      function completeNow() {
+        _afaDone[item.id] = true;   /* claim before the write: never twice in one run */
+        return afaCompleteTask(item.id).then(function(r){
+          if (afaCompletedOk(r)) {
+            doneResult({ ref: item.ref, ok: true, msg: 'Completed \u2014 Complete Task enabled by site' });
           } else {
-            var why = r.status ? ('HTTP ' + r.status) : 'no response';
-            if (r.body) why += ' \u2014 ' + String(r.body).replace(/\s+/g, ' ').slice(0, 90);
-            results.push({ ref: item.ref, ok: false, msg: why });
+            var w = r.status ? ('HTTP ' + r.status) : (r.body || 'no response');
+            if (r.ok && r.body) w += ' \u2014 unexpected response: ' + String(r.body).replace(/\s+/g, ' ').slice(0, 60);
+            doneResult({ ref: item.ref, skip: !r.status, ok: false, msg: 'Complete Task failed \u2014 ' + w });
           }
-          afaProgress(i + 1, list.length, item.ref, results);
-          next(AFA_DELAY_MS);
         });
       }
 
-      /* Partially Batched carts carry no status on screen — verify each one
-         against the server / dashboard data before sending anything. */
-      if (item.partial) {
-        afaVerifyForcible(item).then(function(v){
-          if (!v.eligible) {
-            results.push({ ref: item.ref, skip: true, ok: false, msg: 'partially batched \u2014 ' + v.reason });
-            afaProgress(i + 1, list.length, item.ref, results);
-            return next(120);
+      function forceNow(noteWhy) {
+        _afaDone[item.id] = true;
+        return afaForceAssign(item.id).then(function(r){
+          if (r.ok) {
+            doneResult({ ref: item.ref, ok: true, msg: 'Force Assigned (HTTP ' + r.status + ')' + (noteWhy ? ' \u2014 ' + noteWhy : '') });
+          } else {
+            var why = r.status ? ('HTTP ' + r.status) : 'no response';
+            if (r.body) why += ' \u2014 ' + String(r.body).replace(/\s+/g, ' ').slice(0, 90);
+            doneResult({ ref: item.ref, ok: false, msg: why });
           }
-          send('partially batched');
+        });
+      }
+
+      function continueWithoutCompletion(probeReason) {
+        /* Partially Batched carries no assignability column, so preserve its
+           existing verify-before-force behavior. */
+        if (item.partial) {
+          afaVerifyForcible(item).then(function(v){
+            if (!v.eligible) {
+              doneResult({ ref: item.ref, skip: true, ok: false, msg: 'partially batched \u2014 ' + v.reason }, 120);
+              return;
+            }
+            forceNow('partially batched' + (probeReason ? '; ' + probeReason : ''));
+          });
+          return;
+        }
+
+        /* A completion-only row was added solely because Auto Complete is on.
+           If the site's own button is not enabled, never turn it into a Force
+           Assign action. */
+        if (item.completeCandidate && !item.unassignable) {
+          doneResult({ ref: item.ref, skip: true, ok: false, msg: probeReason || 'Complete Task not available' }, 80);
+          return;
+        }
+
+        /* Ordinary Force Assign rows must still be UNASSIGNABLE right now. */
+        var live = afaScanDashboard();
+        var still = live.some(function(x){ return x.id ? x.id === item.id : x.ref === item.ref; });
+        if (!still) {
+          doneResult({ ref: item.ref, skip: true, ok: false, msg: 'no longer unassignable \u2014 skipped' }, 60);
+          return;
+        }
+        forceNow(probeReason || '');
+      }
+
+      /* Auto Complete — server-authoritative eligibility check.
+         The hidden iframe probe used in v23.8.0 can be blocked by the site's
+         frame policy, which made every cart look ineligible even when the
+         normal Complete Task button was actually available. Instead, regular
+         carts now send the SAME completeJob request as a manual Complete Task
+         click. The server is the final gate: only HTTP success + literal true
+         counts as a completion. A normal rejection means "not completable"
+         and falls back to the existing Force Assign path only when that row
+         was already an UNASSIGNABLE cart. Network/auth/server errors never
+         trigger a fallback write. Partially Batched carts keep their original
+         Force Assign-only behavior. No AM/PM, Batch Target, or age rule exists. */
+      if (autoComplete) {
+        if (item.partial) {
+          continueWithoutCompletion('');
+          return;
+        }
+
+        afaCompleteTask(item.id).then(function(r){
+          if (_afaStop) return finish();
+
+          if (afaCompletedOk(r)) {
+            _afaDone[item.id] = true;
+            doneResult({ ref: item.ref, ok: true, msg: 'Completed \u2014 server allowed Complete Task' });
+            return;
+          }
+
+          /* A missing response, auth failure, or server failure is not proof
+             that the cart is ineligible. Stop on that cart rather than risk a
+             second write through Force Assign. */
+          if (!r || !r.status || r.status === 401 || r.status === 403 || r.status >= 500) {
+            var hardWhy = (!r || !r.status)
+              ? ((r && r.body) ? String(r.body) : 'no response')
+              : ('HTTP ' + r.status + (r.body ? ' \u2014 ' + String(r.body).replace(/\s+/g, ' ').slice(0, 80) : ''));
+            doneResult({ ref: item.ref, ok: false, msg: 'Complete Task check failed \u2014 ' + hardWhy });
+            return;
+          }
+
+          /* 2xx with false/other body, or a normal 4xx conflict/validation
+             response, means the server did not allow completion right now.
+             Completion-only rows are skipped; rows that were independently
+             confirmed UNASSIGNABLE may continue through normal Force Assign. */
+          var rejectWhy = 'Complete Task not allowed';
+          if (r.status) rejectWhy += ' (HTTP ' + r.status + ')';
+          if (r.ok && r.body) rejectWhy += ' \u2014 response ' + String(r.body).replace(/\s+/g, ' ').slice(0, 50);
+          continueWithoutCompletion(rejectWhy);
         });
         return;
       }
 
-      /* still UNASSIGNABLE right now? someone may have handled it already */
-      var live = afaScanDashboard();
-      var still = live.some(function(x){ return x.id ? x.id === item.id : x.ref === item.ref; });
-      if (!still) { results.push({ ref: item.ref, skip: true, ok: false, msg: 'no longer unassignable \u2014 skipped' }); return next(60); }
-
-      _afaDone[item.id] = true;   /* claim it before sending: never twice */
-      afaForceAssign(item.id).then(function(r){
-        if (r.ok) {
-          results.push({ ref: item.ref, ok: true, msg: 'assigned (HTTP ' + r.status + ')' });
-        } else {
-          var why = r.status ? ('HTTP ' + r.status) : 'no response';
-          if (r.body) why += ' \u2014 ' + String(r.body).replace(/\s+/g, ' ').slice(0, 90);
-          results.push({ ref: item.ref, ok: false, msg: why });
-        }
-        afaProgress(i + 1, list.length, item.ref, results);
-        next(AFA_DELAY_MS);
-      });
+      continueWithoutCompletion('');
     }
     step();
   }
