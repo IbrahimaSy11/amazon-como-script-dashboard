@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.8.8
+// @version      23.9.8
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -290,13 +290,15 @@
 
     /* ── Slow batcher alert ── */
     .cbt-slow-alert {
-      /* Sits beside the name without contributing to the line box, so the
-         name keeps exactly the same size and spacing as on any other row. */
-      display: inline-block; background: var(--cb-red); color: #fff;
-      font-size: 9px; font-weight: 800; padding: 2px 6px;
-      line-height: 1; flex-shrink: 0;
-      border-radius: 6px; margin-left: 6px; vertical-align: middle;
-      letter-spacing: 0.06em; text-transform: uppercase;
+      /* Compact badge directly beside the associate name. The Live row itself
+         stays fixed-height, so this never makes a red row taller than others. */
+      width: 52px; height: 16px; padding: 0 !important; margin: 0 !important;
+      display: inline-flex; align-items: center; justify-content: center;
+      box-sizing: border-box; flex: 0 0 52px; overflow: hidden;
+      background: var(--cb-red); color: #fff;
+      font-size: 9px; font-weight: 800; line-height: 1 !important;
+      border-radius: 6px; vertical-align: middle;
+      letter-spacing: 0.04em; text-transform: uppercase;
       box-shadow: 0 0 8px rgba(255,61,61,0.45);
       animation: cbt-slow-pulse 1.2s infinite;
     }
@@ -643,6 +645,10 @@
     }
     #cbt-afa-overlay.cbt-dark .cbt-afa-act.go:hover { background: #388bfd; border-color: #388bfd; }
     #cbt-afa-overlay.cbt-dark .cbt-afa-act.stop { background: #da3633; border-color: #da3633; color: #fff; }
+    #cbt-afa-overlay.cbt-dark .cbt-afa-complete-block {
+      background: #161b22; border-color: #30363d;
+    }
+    #cbt-afa-overlay.cbt-dark .cbt-afa-complete-copy { color: #8b99aa; }
     #cbt-afa-overlay.cbt-dark .cbt-afa-opt {
       background: #161b22; border-color: #30363d; color: #c9d1d9;
     }
@@ -1023,11 +1029,35 @@
        resolve to exactly the same row geometry no matter what is inside. */
     .cbt-cw {
       display: flex; flex-direction: column; justify-content: center;
-      height: 40px; overflow: hidden; box-sizing: border-box;
+      width: 100%; min-width: 0;
+      height: 40px; min-height: 40px; max-height: 40px;
+      overflow: hidden; box-sizing: border-box;
     }
-    .cbt-cw-top { display: flex; align-items: center; min-width: 0; }
+
+    /* Live first-column geometry is identical for every rate state.
+       The SLOW badge sits immediately beside the associate name, but the
+       fixed-height wrapper keeps red/yellow/green rows exactly the same size.
+       Rows without a badge do not reserve a fake empty status column. */
+    .cbt-cw-top {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 5px;
+      width: 100%;
+      min-width: 0;
+      height: 18px;
+      box-sizing: border-box;
+      overflow: hidden;
+    }
     .cbt-cw-top .cbt-assoc {
+      flex: 0 1 auto;
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0;
+    }
+    .cbt-live-status-slot {
+      flex: 0 0 auto;
+      height: 18px;
+      display: inline-flex; align-items: center; justify-content: flex-start;
+      overflow: visible; box-sizing: border-box;
     }
     .cbt-cw .cbt-ref { display: block; margin-top: 1px !important; }
     /* consistent type sizing for every value in a row */
@@ -1301,6 +1331,24 @@
     .cbt-afa-act.go:hover { background: var(--cb-blue-dim); border-color: var(--cb-blue-dim); }
     .cbt-afa-act.stop { background: var(--cb-red); border-color: var(--cb-red); color: #fff; }
     .cbt-afa-act.stop:hover { filter: brightness(.9); }
+    .cbt-afa-act:disabled {
+      opacity: .42; cursor: not-allowed; filter: grayscale(.15);
+    }
+    .cbt-afa-act:disabled:hover {
+      background: inherit; border-color: inherit;
+    }
+    .cbt-afa-complete-block {
+      margin-top: 14px; padding: 11px 13px; border-radius: 8px;
+      border: 1.5px solid var(--cb-border); background: var(--cb-row-alt);
+      display: flex; align-items: center; gap: 10px;
+    }
+    .cbt-afa-complete-block.off { opacity: .62; }
+    .cbt-afa-complete-btn {
+      min-width: 164px; white-space: nowrap; flex-shrink: 0;
+    }
+    .cbt-afa-complete-copy {
+      font-size: 12px; line-height: 1.45; color: var(--cb-text2);
+    }
     .cbt-afa-opt {
       display: flex; align-items: flex-start; gap: 9px; cursor: pointer;
       margin-top: 14px; padding: 11px 13px; border-radius: 8px;
@@ -1617,7 +1665,7 @@
 
   function fetchAndUpdate() {
     removeFromHeader();
-    fetch(COMO_BASE + '/api/store/' + STORE_ID + '/activeJobSummary')
+    fetch(COMO_BASE + '/api/store/' + STORE_ID + '/activeJobSummary?_cbt=' + Date.now(), { cache: 'no-store', credentials: 'include' })
       .then(function (r) { return r.json(); })
       .then(function (data) {
         var inProgress = data.filter(function (j) { return j.operationState === 'IN_PROGRESS'; }).length;
@@ -1675,6 +1723,64 @@
   var POLL_MS = 2000, TICK_MS = 500;
   var WARN_ELAPSED_MIN = 15, ALERT_ELAPSED_MIN = 25;
   var WARN_RATE = 2.1, ALERT_RATE = 1.5;
+
+  /* Live mode: always calculate from the newest backend package count available
+     and the current clock. We still cache-bust the backend request and prevent
+     out-of-order responses from moving package progress backwards.
+
+     IMPORTANT: different COMO JSON responses can carry different timestamp
+     shapes for the same live task. If renderLive alternates between those
+     timestamps, ELAPSED can jump backward/forward and its color can flip too.
+     Keep one stable BATCHING start per shortClientRef. A created-time fallback
+     may be used briefly, but the first real BATCHING operation start upgrades
+     it once and is then locked for the life of that task. */
+  var _cbtBackendLastOk = 0;
+  var _cbtLiveStartByRef = Object.create(null);
+
+  function cbtRawBatchingStartMs(data) {
+    if (!data || typeof data !== 'object') return null;
+    var ops = Array.isArray(data.operationDetails) ? data.operationDetails : [];
+    var op = ops.find(function(o){ return o && o.name === 'BATCHING'; });
+    var v = op && Number(op.start);
+    return (v && isFinite(v) && v > 0) ? v * 1000 : null;
+  }
+
+  function cbtStableLiveStartMs(data) {
+    if (!data || typeof data !== 'object') return null;
+    var ref = data.shortClientRef ? String(data.shortClientRef) : '';
+    var opMs = cbtRawBatchingStartMs(data);
+    var created = Number(data.created);
+    var createdMs = (created && isFinite(created) && created > 0) ? created * 1000 : null;
+
+    /* No stable key available: use the best timestamp in this payload only. */
+    if (!ref) return opMs || createdMs;
+
+    var cur = _cbtLiveStartByRef[ref];
+
+    if (opMs) {
+      /* A real BATCHING start is authoritative. Upgrade a created fallback once,
+         then never let another endpoint move this live clock again. */
+      if (!cur || cur.source !== 'batching') {
+        cur = _cbtLiveStartByRef[ref] = { ms: opMs, source: 'batching' };
+      }
+      return cur.ms;
+    }
+
+    /* Once the authoritative start is known, partial API responses that omit
+       operationDetails must keep using it instead of falling back to created. */
+    if (cur) return cur.ms;
+
+    if (createdMs) {
+      _cbtLiveStartByRef[ref] = { ms: createdMs, source: 'created' };
+      return createdMs;
+    }
+    return null;
+  }
+
+  function cbtForgetLiveStart(ref) {
+    if (!ref) return;
+    try { delete _cbtLiveStartByRef[String(ref)]; } catch(e) {}
+  }
   var STORAGE_KEY = 'cbt_history', DATE_KEY = 'cbt_history_date';
   var WEEKLY_KEY = 'cbt_weekly_history', WEEKLY_DAYS = 7;
   var ALL_NAMES_KEY = 'cbt_all_names';
@@ -2982,10 +3088,16 @@
 
   function computeRow(data) {
     var op = (data.operationDetails||[]).find(function(o){return o.name==='BATCHING';});
-    var startMs = op&&op.start ? op.start*1000 : data.created ? data.created*1000 : null;
+    /* Use the stable per-task start instead of whichever timestamp happened to
+       arrive in the most recent API response. This makes Live ELAPSED monotonic
+       and stops its green/yellow/red state from bouncing backward. */
+    var startMs = cbtStableLiveStartMs(data);
+    var endMs = op&&op.end ? op.end*1000 : null;
     var inProg = (op&&op.state==='IN_PROGRESS')||data.state==='BATCHING';
-    var batchedN = data.packagesBatched||0;
-    var elapsedSec = startMs ? (Date.now()-startMs)/1000 : null;
+    var batchedN = Number(data.packagesBatched)||0;
+    var nowMs = Date.now();
+    var clockMs = (endMs && startMs && endMs >= startMs) ? endMs : nowMs;
+    var elapsedSec = startMs ? Math.max(0, (clockMs-startMs)/1000) : null;
     var scanRate = (batchedN>0&&elapsedSec>30) ? batchedN/(elapsedSec/60) : null;
     return { startMs:startMs, elapsedSec:elapsedSec, scanRate:scanRate, inProgress:inProg };
   }
@@ -3018,10 +3130,27 @@
     if (!item||typeof item!=='object') return false;
     var ref = item.shortClientRef; if (!ref) return false;
     var existing = taskCache.get(ref);
+
+    /* Never let an older/out-of-order API response move package progress
+       backwards. This is another common way a temporarily stale backend response
+       can make a fast associate look slower than they really are. */
+    if (existing) {
+      var oldB = Number(existing.packagesBatched)||0, newB = Number(item.packagesBatched)||0;
+      var oldC = Number(existing.packagesCollected)||0, newC = Number(item.packagesCollected)||0;
+      if (newB < oldB || newC < oldC) {
+        item = Object.assign({}, item);
+        if (newB < oldB) item.packagesBatched = oldB;
+        if (newC < oldC) item.packagesCollected = oldC;
+      }
+    }
+
     if (existing&&existing.state==='BATCHING'&&item.state!=='BATCHING'&&item.state!==undefined) {
       existing._recording=true; taskCache.set(ref,existing);
-      var merged=Object.assign({},existing,item), r=computeRow(merged);
-      recordCompletedBatch(merged,r.elapsedSec); taskCache.delete(ref); return true;
+      var merged=Object.assign({},existing,item);
+      merged.packagesBatched = Math.max(Number(existing.packagesBatched)||0, Number(item.packagesBatched)||0);
+      merged.packagesCollected = Math.max(Number(existing.packagesCollected)||0, Number(item.packagesCollected)||0);
+      var r=computeRow(merged);
+      recordCompletedBatch(merged,r.elapsedSec); taskCache.delete(ref); cbtForgetLiveStart(ref); return true;
     }
     if (item.state!=='BATCHING'&&item.operationState!=='IN_PROGRESS') return false;
     if (!item.associateId && !item.associate && item.driverAssignment) {
@@ -3055,9 +3184,13 @@
 
   async function pollActiveTasks() {
     try {
-      var res = await _origFetch(COMO_BASE+'/store/'+STORE_ID+'/activeJobsWithSiteSummary',{credentials:'include',headers:{Accept:'application/json'}});
+      /* Cache-busting matters here: this is the authoritative feed used for Live
+         speed, so do not allow a browser/proxy cache to recycle an old package count. */
+      var liveUrl = COMO_BASE+'/store/'+STORE_ID+'/activeJobsWithSiteSummary?_cbt='+Date.now();
+      var res = await _origFetch(liveUrl,{credentials:'include',cache:'no-store',headers:{Accept:'application/json'}});
       if(res.ok) {
         var freshData = await res.json();
+        _cbtBackendLastOk = Date.now();
         var activeRefs = new Set();
         var items = Array.isArray(freshData) ? freshData : [];
         ['summaries','tasks','results','items','jobs','data'].forEach(function(k){
@@ -3067,7 +3200,10 @@
           if(d.shortClientRef && d.state==='BATCHING') activeRefs.add(d.shortClientRef);
         });
         taskCache.forEach(function(val, key) {
-          if(!activeRefs.has(key)) taskCache.delete(key);
+          if(!activeRefs.has(key)) {
+            taskCache.delete(key);
+            cbtForgetLiveStart(key);
+          }
         });
         ingestData(freshData);
       }
@@ -3765,14 +3901,18 @@
       var elTxt=r.elapsedSec!=null?fmt(r.elapsedSec):'--:--';
       var rateCls=r.scanRate!=null?(r.scanRate<ALERT_RATE?'alert':r.scanRate<WARN_RATE?'warn':''):'pending';
       var rateTxt=r.scanRate!=null?r.scanRate.toFixed(1):'\u2014';
-      var slowAlert=(r.scanRate!==null&&r.scanRate<ALERT_RATE&&r.elapsedSec>120)?'<span class="cbt-slow-alert">⚠ SLOW</span>':'';
+      var slowAlert=(r.scanRate!==null&&r.scanRate<ALERT_RATE&&r.elapsedSec>120)?'<span class="cbt-live-status-slot"><span class="cbt-slow-alert">⚠ SLOW</span></span>':'';
       html+='<tr><td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-assoc">'+assoc+'</span>'+slowAlert+'</span><span class="cbt-ref">'+shortRef+'</span></span></td>';
       html+='<td><span class="cbt-elapsed '+elCls+'" data-start="'+(r.startMs||'')+'" data-live="'+(r.inProgress?'1':'0')+'">'+elTxt+'</span></td>';
       html+='<td><span class="cbt-rate '+rateCls+'">'+rateTxt+'</span></td></tr>';
     }
     setHTML(tbody, html);
     var upd=document.querySelector('#cbt-updated');
-    if(upd) upd.textContent='updated '+new Date().toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'});
+    if(upd) {
+      upd.textContent=_cbtBackendLastOk
+        ? 'live · backend '+new Date(_cbtBackendLastOk).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'})
+        : 'live';
+    }
     requestUnifiedSearchCount();
   }
 
@@ -5128,23 +5268,31 @@
         ? '<div class="cbt-afa-note">That section shows no assignability column, so each cart is checked individually first. Any cart that is already assignable, or whose status cannot be confirmed, is skipped with a reason. Problem Solve is never touched.</div>'
         : '');
 
+    var completeReady = completionCandidates.filter(function(x){ return x.id; });
+    var completeDisabled = !AFA_COMPLETE_PATH || completeReady.length === 0;
     var acBox =
-      '<label class="cbt-afa-opt' + (AFA_COMPLETE_PATH ? '' : ' off') + '">' +
-        '<input type="checkbox" id="cbt-afa-oldcart"' + (AFA_COMPLETE_PATH ? '' : ' disabled') + '/>' +
-        '<span><b>Auto Complete Eligible Carts</b>' +
-        (AFA_COMPLETE_PATH
-          ? ' \u2014 starts immediately and uses Complete Task only. It never Force Assigns.'
-          : ' \u2014 unavailable: the Complete Task request has not been captured yet') +
+      '<div class="cbt-afa-complete-block' + (completeDisabled ? ' off' : '') + '">' +
+        '<button type="button" class="cbt-afa-act go cbt-afa-complete-btn" data-afa="complete"' +
+          (completeDisabled ? ' disabled' : '') + '>' +
+          'Auto Complete' + (completeReady.length ? ' (' + completeReady.length + ')' : '') +
+        '</button>' +
+        '<span class="cbt-afa-complete-copy">' +
+          (!AFA_COMPLETE_PATH
+            ? 'Unavailable: the Complete Task request is not configured.'
+            : (completeReady.length
+                ? 'Starts immediately. Complete Task only \u2014 it never Force Assigns.'
+                : 'No regular tasks are available to Auto Complete right now.')) +
         '</span>' +
-      '</label>' +
+      '</div>' +
       (AFA_COMPLETE_PATH
-        ? '<div class="cbt-afa-note">When checked, this runs immediately with no Start button. It checks regular carts one at a time and completes only carts the server currently allows to complete. Partially Batched is automatically unchecked, and Problem Solve is never touched.</div>'
+        ? '<div class="cbt-afa-note">The button is enabled only when there is at least one regular task to check. Clicking it starts immediately, automatically unchecks Partially Batched, completes only tasks the server allows, and never touches Problem Solve.</div>'
         : '');
 
     if (!list.length && !pbReady.length && !completionCandidates.length) {
       afaShell('Auto Force Assign',
         '<div id="cbt-afa-lead">No <b>UNASSIGNABLE</b>, <b>Partially Batched</b>, or completion-candidate carts are available right now.</div>' +
-        '<div style="color:var(--cb-text2)">Nothing to do. Close this and try again when some appear.</div>',
+        '<div style="color:var(--cb-text2)">Nothing to do. Auto Complete stays disabled until a regular task appears.</div>' +
+        acBox,
         '<button class="cbt-afa-act" data-afa="close">Close</button>');
     } else if (!list.length) {
       afaShell('Auto Force Assign',
@@ -5166,29 +5314,21 @@
     }
     var card = _afaOverlay.querySelector('#cbt-afa-card');
 
-    /* Auto Complete is its own action. Checking it starts immediately, never
-       waits for Start, never includes Partially Batched, and never shares the
-       Force Assign queue. */
-    card.addEventListener('change', function(e){
-      var ac = e.target && e.target.id === 'cbt-afa-oldcart' ? e.target : null;
-      if (!ac || !ac.checked || _afaRunning) return;
-
-      var pb = document.getElementById('cbt-afa-pb');
-      if (pb) pb.checked = false;
-
-      var completeQueue = afaMergeQueue([], completionCandidates);
-      if (!completeQueue.length) {
-        ac.checked = false;
-        return;
-      }
-      afaRun(completeQueue, { autoComplete: true, completeOnly: true });
-    });
-
     card.addEventListener('click', function(e){
       var b = e.target.closest('[data-afa]');
       if (!b) return;
-      if (b.getAttribute('data-afa') === 'close') afaClose();
-      if (b.getAttribute('data-afa') === 'go') {
+      var action = b.getAttribute('data-afa');
+      if (action === 'close') { afaClose(); return; }
+      if (action === 'complete') {
+        if (b.disabled || _afaRunning) return;
+        var pb = document.getElementById('cbt-afa-pb');
+        if (pb) pb.checked = false;
+        var completeQueue = afaMergeQueue([], completeReady);
+        if (!completeQueue.length) return;
+        afaRun(completeQueue, { autoComplete: true, completeOnly: true });
+        return;
+      }
+      if (action === 'go') {
         var cb = document.getElementById('cbt-afa-pb');
         var queue = afaMergeQueue((typeof ready !== 'undefined' ? ready : []), []);
         /* The Start / Continue button is Force Assign only. Partially Batched
