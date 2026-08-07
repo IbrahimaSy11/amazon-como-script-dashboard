@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.8
+// @version      23.9.9
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -1294,7 +1294,7 @@
     #cbt-afa-lead b { color: var(--cb-navy); font-size: 17px; }
     .cbt-afa-list {
       border: 1px solid var(--cb-border); border-radius: 8px;
-      max-height: 240px; overflow-y: auto; background: var(--cb-row-alt);
+      max-height: 136px; overflow-y: auto; background: var(--cb-row-alt);
     }
     .cbt-afa-row {
       display: flex; align-items: center; gap: 10px;
