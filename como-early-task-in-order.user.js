@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.8.6
+// @version      23.8.7
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -253,6 +253,28 @@
     .cbt-hist-rate.good  { color: #0a6e2e; background: rgba(0,200,83,0.1); }
     .cbt-hist-rate.warn  { color: #7a4f00; background: rgba(255,171,0,0.12); }
     .cbt-hist-rate.alert { color: #8b0000; background: rgba(255,61,61,0.1); }
+
+    /* All three rate states use ONE identical centering rule.  The alert/red
+       state intentionally has no special padding, transform, line-height or
+       positioning; only its color/background differ from green and amber. */
+    #cbt-panel .cbt-hist-rate.good,
+    #cbt-panel .cbt-hist-rate.warn,
+    #cbt-panel .cbt-hist-rate.alert {
+      width: 38px !important;
+      min-width: 38px !important;
+      height: 24px !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      text-align: center !important;
+      line-height: 1 !important;
+      box-sizing: border-box !important;
+      vertical-align: middle !important;
+      transform: none !important;
+      position: static !important;
+    }
     .cbt-hist-meta { font-size: 14px; font-weight: 600; color: var(--cb-text); font-variant-numeric: tabular-nums; }
 
     /* ── Rank badges ── */
@@ -1058,21 +1080,6 @@
       text-align: center;
     }
 
-
-    /* Red alert numerals sit about one device-pixel low in the dashboard's
-       mono font even though the badge box itself is mathematically centered.
-       Keep the green/amber badges untouched and optically nudge only the red
-       numeral upward inside the SAME fixed 38x24 box. The bottom padding is
-       inside border-box, so the badge background/position never moves. */
-    #cbt-panel .cbt-hist-rate.alert {
-      box-sizing: border-box !important;
-      height: 24px !important;
-      line-height: 1 !important;
-      padding: 0 0 2px 0 !important;
-      align-items: center !important;
-      justify-content: center !important;
-      text-align: center !important;
-    }
 
     /* Stable column geometry on every summary table. Filtering now changes
        only which rows are visible; it cannot change column width or row width. */
