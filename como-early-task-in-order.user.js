@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.11
+// @version      23.9.12
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -1724,18 +1724,32 @@
   var WARN_ELAPSED_MIN = 15, ALERT_ELAPSED_MIN = 25;
   var WARN_RATE = 2.1, ALERT_RATE = 1.5;
 
-  /* Live mode: always calculate from the newest backend package count available
-     and the current clock. We still cache-bust the backend request and prevent
-     out-of-order responses from moving package progress backwards.
+  /* LIVE ELAPSED STABILITY
+     ----------------------
+     The COMO backend does not always return operationDetails on every response.
+     A live batch can therefore alternate between:
+       - a response with the real BATCHING start,
+       - a response with operationDetails missing/empty,
+       - or even one poll where the task is absent.
 
-     IMPORTANT: different COMO JSON responses can carry different timestamp
-     shapes for the same live task. If renderLive alternates between those
-     timestamps, ELAPSED can jump backward/forward and its color can flip too.
-     Keep one stable BATCHING start per shortClientRef. A created-time fallback
-     may be used briefly, but the first real BATCHING operation start upgrades
-     it once and is then locked for the life of that task. */
+     Elapsed must never switch to `created` during those gaps. We wait for the
+     first real BATCHING start, lock it to shortClientRef, and keep that exact
+     start for the life of the batch.
+
+     Result:
+       no BATCHING start yet -> --:--
+       real BATCHING start arrives -> clock begins from that start
+       later partial/missing responses -> same locked start
+       temporary dropped poll -> row/start survive a short grace period
+       completed batch -> locked start is used for final history, then cleared
+
+     Bags/Min still uses the same formula; only the source of elapsed time is
+     stabilized. */
   var _cbtBackendLastOk = 0;
   var _cbtLiveStartByRef = Object.create(null);
+  var _cbtMissingPollsByRef = Object.create(null);
+  var CBT_MISSING_POLL_GRACE = 3;          // 3 x 2s polls = ~6s transient-gap protection
+  var CBT_START_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
 
   function cbtRawBatchingStartMs(data) {
     if (!data || typeof data !== 'object') return null;
@@ -1745,42 +1759,70 @@
     return (v && isFinite(v) && v > 0) ? v * 1000 : null;
   }
 
-  function cbtStableLiveStartMs(data) {
+  function cbtStableLiveStartMs(data, isLive) {
     if (!data || typeof data !== 'object') return null;
+
     var ref = data.shortClientRef ? String(data.shortClientRef) : '';
     var opMs = cbtRawBatchingStartMs(data);
     var created = Number(data.created);
     var createdMs = (created && isFinite(created) && created > 0) ? created * 1000 : null;
+    var now = Date.now();
 
-    /* No stable key available: use the best timestamp in this payload only. */
-    if (!ref) return opMs || createdMs;
+    /* Without a stable task key we cannot safely lock a live clock. Never
+       invent a live start from created. For a finished record, created remains
+       a last-resort fallback so history is not discarded. */
+    if (!ref) {
+      if (opMs) return opMs;
+      return isLive ? null : createdMs;
+    }
 
     var cur = _cbtLiveStartByRef[ref];
 
+    /* The FIRST real BATCHING start wins permanently for this active task.
+       If another endpoint later reports a different start, ignore it. */
     if (opMs) {
-      /* A real BATCHING start is authoritative. Upgrade a created fallback once,
-         then never let another endpoint move this live clock again. */
-      if (!cur || cur.source !== 'batching') {
-        cur = _cbtLiveStartByRef[ref] = { ms: opMs, source: 'batching' };
+      if (!cur) {
+        cur = _cbtLiveStartByRef[ref] = { ms: opMs, lastSeen: now };
+      } else {
+        cur.lastSeen = now;
       }
       return cur.ms;
     }
 
-    /* Once the authoritative start is known, partial API responses that omit
-       operationDetails must keep using it instead of falling back to created. */
-    if (cur) return cur.ms;
-
-    if (createdMs) {
-      _cbtLiveStartByRef[ref] = { ms: createdMs, source: 'created' };
-      return createdMs;
+    /* Partial responses are common. Once locked, keep the exact same start. */
+    if (cur) {
+      cur.lastSeen = now;
+      return cur.ms;
     }
-    return null;
+
+    /* Critical behavior change: a LIVE task with no BATCHING operation start
+       shows --:-- briefly instead of falling back to `created` and later
+       snapping to a different elapsed time. */
+    if (isLive) return null;
+
+    /* Finished task with no BATCHING op and no prior lock: preserve the old
+       history behavior by using created only as a completion fallback. */
+    return createdMs;
   }
 
   function cbtForgetLiveStart(ref) {
     if (!ref) return;
-    try { delete _cbtLiveStartByRef[String(ref)]; } catch(e) {}
+    ref = String(ref);
+    try { delete _cbtLiveStartByRef[ref]; } catch(e) {}
+    try { delete _cbtMissingPollsByRef[ref]; } catch(e) {}
   }
+
+  function cbtPruneOldLiveStarts() {
+    var cutoff = Date.now() - CBT_START_CACHE_TTL_MS;
+    Object.keys(_cbtLiveStartByRef).forEach(function(ref) {
+      var e = _cbtLiveStartByRef[ref];
+      if (!e || !e.lastSeen || e.lastSeen < cutoff) {
+        try { delete _cbtLiveStartByRef[ref]; } catch(err) {}
+        try { delete _cbtMissingPollsByRef[ref]; } catch(err2) {}
+      }
+    });
+  }
+
   var STORAGE_KEY = 'cbt_history', DATE_KEY = 'cbt_history_date';
   var WEEKLY_KEY = 'cbt_weekly_history', WEEKLY_DAYS = 7;
   var ALL_NAMES_KEY = 'cbt_all_names';
@@ -3087,26 +3129,33 @@
   }
 
   function computeRow(data) {
-    var op = (data.operationDetails||[]).find(function(o){return o.name==='BATCHING';});
-    /* Use the stable per-task start instead of whichever timestamp happened to
-       arrive in the most recent API response. This makes Live ELAPSED monotonic
-       and stops its green/yellow/red state from bouncing backward. */
-    var startMs = cbtStableLiveStartMs(data);
-    var endMs = op&&op.end ? op.end*1000 : null;
-    var inProg = (op&&op.state==='IN_PROGRESS')||data.state==='BATCHING';
-    var batchedN = Number(data.packagesBatched)||0;
+    var ops = Array.isArray(data.operationDetails) ? data.operationDetails : [];
+    var op = ops.find(function(o){ return o && o.name === 'BATCHING'; });
+
+    /* Treat every backend shape that says the batch is active as live. */
+    var inProg =
+      !!(op && op.state === 'IN_PROGRESS') ||
+      data.state === 'BATCHING' ||
+      data.operationState === 'IN_PROGRESS';
+
+    /* A live row gets a start ONLY from the locked real BATCHING operation. */
+    var startMs = cbtStableLiveStartMs(data, inProg);
+    var endMs = op && Number(op.end) ? Number(op.end) * 1000 : null;
+    var batchedN = Number(data.packagesBatched) || 0;
     var nowMs = Date.now();
 
-    /* LIVE tasks must ALWAYS use the current clock.
-       Some COMO responses include an `end` value even while BATCHING is still
-       IN_PROGRESS. Other responses for the same task omit it. Using that
-       temporary end value made elapsed jump backward/forward, which also made
-       bags/min jump and flip red/green. Only trust op.end after the batch is
-       actually finished. */
+    /* While live, elapsed always advances from Date.now(). An `end` value is
+       trusted only after the batch is actually finished. */
     var clockMs = (!inProg && endMs && startMs && endMs >= startMs) ? endMs : nowMs;
-    var elapsedSec = startMs ? Math.max(0, (clockMs-startMs)/1000) : null;
-    var scanRate = (batchedN>0&&elapsedSec>30) ? batchedN/(elapsedSec/60) : null;
-    return { startMs:startMs, elapsedSec:elapsedSec, scanRate:scanRate, inProgress:inProg };
+    var elapsedSec = startMs ? Math.max(0, (clockMs - startMs) / 1000) : null;
+    var scanRate = (batchedN > 0 && elapsedSec > 30) ? batchedN / (elapsedSec / 60) : null;
+
+    return {
+      startMs: startMs,
+      elapsedSec: elapsedSec,
+      scanRate: scanRate,
+      inProgress: inProg
+    };
   }
 
   function recordCompletedBatch(data, elapsedSec) {
@@ -3213,12 +3262,37 @@
             (batchingOp && batchingOp.state === 'IN_PROGRESS');
           if (isLiveBatch) activeRefs.add(d.shortClientRef);
         });
+        /* One incomplete backend poll must not destroy a live timer. COMO can
+           temporarily omit a task and return it again on the next response.
+           Keep the row for a short grace period and, importantly, keep the
+           locked BATCHING start even if the row is eventually removed. */
+        activeRefs.forEach(function(ref) {
+          _cbtMissingPollsByRef[String(ref)] = 0;
+          var locked = _cbtLiveStartByRef[String(ref)];
+          if (locked) locked.lastSeen = Date.now();
+        });
+
         taskCache.forEach(function(val, key) {
-          if(!activeRefs.has(key)) {
+          key = String(key);
+          if (activeRefs.has(key)) {
+            _cbtMissingPollsByRef[key] = 0;
+            return;
+          }
+
+          var misses = (_cbtMissingPollsByRef[key] || 0) + 1;
+          _cbtMissingPollsByRef[key] = misses;
+
+          if (misses >= CBT_MISSING_POLL_GRACE) {
             taskCache.delete(key);
-            cbtForgetLiveStart(key);
+            delete _cbtMissingPollsByRef[key];
+            /* Do NOT clear _cbtLiveStartByRef here. If this was only a longer
+               API gap and the same task comes back, it must resume from the
+               exact same elapsed start instead of jumping. Completion handling
+               still clears the lock normally. */
           }
         });
+
+        cbtPruneOldLiveStarts();
         ingestData(freshData);
       }
     } catch(e){}
