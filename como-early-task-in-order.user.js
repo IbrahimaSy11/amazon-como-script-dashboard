@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.12
+// @version      23.9.21
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -224,8 +224,26 @@
     .cbt-elapsed {
       font-family: var(--cb-mono); font-size: 14px; font-weight: 700;
       font-variant-numeric: tabular-nums; color: var(--cb-green);
-      background: rgba(0,200,83,0.08); padding: 2px 7px; border-radius: 4px;
-      display: inline-block;
+      background: rgba(0,200,83,0.08); border-radius: 4px;
+
+      /* ONE identical geometry for green / yellow / red.
+         Color is the only thing that changes between states. */
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      width: 58px !important;
+      min-width: 58px !important;
+      max-width: 58px !important;
+      height: 22px !important;
+      min-height: 22px !important;
+      max-height: 22px !important;
+      padding: 0 !important;
+      margin: 0 auto !important;
+      text-align: center !important;
+      line-height: 22px !important;
+      box-sizing: border-box !important;
+      position: static !important;
+      transform: none !important;
     }
     .cbt-elapsed.warn { color: var(--cb-amber); background: rgba(255,171,0,0.1); }
     .cbt-elapsed.alert { color: var(--cb-red); background: rgba(255,61,61,0.1); }
@@ -645,10 +663,10 @@
     }
     #cbt-afa-overlay.cbt-dark .cbt-afa-act.go:hover { background: #388bfd; border-color: #388bfd; }
     #cbt-afa-overlay.cbt-dark .cbt-afa-act.stop { background: #da3633; border-color: #da3633; color: #fff; }
-    #cbt-afa-overlay.cbt-dark .cbt-afa-complete-block {
+    #cbt-afa-overlay.cbt-dark .cbt-afa-action-block {
       background: #161b22; border-color: #30363d;
     }
-    #cbt-afa-overlay.cbt-dark .cbt-afa-complete-copy { color: #8b99aa; }
+    #cbt-afa-overlay.cbt-dark .cbt-afa-action-copy { color: #8b99aa; }
     #cbt-afa-overlay.cbt-dark .cbt-afa-opt {
       background: #161b22; border-color: #30363d; color: #c9d1d9;
     }
@@ -1034,6 +1052,151 @@
       overflow: hidden; box-sizing: border-box;
     }
 
+    /* ═══════════════════════════════════════════════════════════════
+       LIVE TAB — HARD UNIFORM ROW GEOMETRY
+       ---------------------------------------------------------------
+       A native HTML table row can grow beyond its requested height when
+       content needs more room. That is why SLOW rows could become taller than
+       normal rows even though both requested 48px.
+
+       Live now uses one strict 3-column grid for BOTH its header and every
+       body row. Every body row is exactly 48px high and exactly 100% wide.
+       Badge/color/text content is contained INSIDE that geometry and cannot
+       resize the row.
+    ═══════════════════════════════════════════════════════════════ */
+    #cbt-table {
+      display: block !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      table-layout: fixed !important;
+      border-collapse: collapse !important;
+      box-sizing: border-box !important;
+    }
+    #cbt-table thead,
+    #cbt-table tbody {
+      display: block !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      box-sizing: border-box !important;
+    }
+    #cbt-table thead tr,
+    #cbt-table tbody tr {
+      display: grid !important;
+      grid-template-columns: minmax(0,40%) minmax(0,30%) minmax(0,30%) !important;
+      width: 100% !important;
+      max-width: 100% !important;
+      box-sizing: border-box !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+    #cbt-table tbody tr {
+      height: 48px !important;
+      min-height: 48px !important;
+      max-height: 48px !important;
+      overflow: hidden !important;
+    }
+    #cbt-table thead th,
+    #cbt-table tbody td {
+      width: auto !important;
+      min-width: 0 !important;
+      max-width: none !important;
+      box-sizing: border-box !important;
+      margin: 0 !important;
+    }
+    #cbt-table tbody td {
+      height: 48px !important;
+      min-height: 48px !important;
+      max-height: 48px !important;
+      padding: 0 10px !important;
+      display: flex !important;
+      align-items: center !important;
+      overflow: hidden !important;
+      line-height: 1.3 !important;
+    }
+    #cbt-table tbody td:first-child {
+      justify-content: flex-start !important;
+      text-align: left !important;
+    }
+    #cbt-table tbody td:nth-child(2),
+    #cbt-table tbody td:nth-child(3) {
+      justify-content: center !important;
+      text-align: center !important;
+    }
+    #cbt-table tbody td:nth-child(2) {
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      text-align: center !important;
+    }
+    #cbt-table tbody td:nth-child(2) .cbt-elapsed,
+    #cbt-table tbody td:nth-child(2) .cbt-elapsed.warn,
+    #cbt-table tbody td:nth-child(2) .cbt-elapsed.alert {
+      margin-left: auto !important;
+      margin-right: auto !important;
+      transform: none !important;
+      left: auto !important;
+      right: auto !important;
+    }
+    #cbt-table .cbt-cw {
+      width: 100% !important;
+      height: 40px !important;
+      min-height: 40px !important;
+      max-height: 40px !important;
+      overflow: hidden !important;
+      box-sizing: border-box !important;
+      flex: 0 1 auto !important;
+    }
+    #cbt-table .cbt-cw-top {
+      width: 100% !important;
+      height: 18px !important;
+      min-height: 18px !important;
+      max-height: 18px !important;
+      overflow: hidden !important;
+      box-sizing: border-box !important;
+    }
+    #cbt-table .cbt-live-status-slot {
+      height: 16px !important;
+      min-height: 16px !important;
+      max-height: 16px !important;
+      overflow: hidden !important;
+      flex: 0 0 auto !important;
+    }
+    #cbt-table .cbt-slow-alert {
+      height: 16px !important;
+      min-height: 16px !important;
+      max-height: 16px !important;
+      line-height: 16px !important;
+      padding: 0 !important;
+      margin: 0 !important;
+      box-sizing: border-box !important;
+      transform: none !important;
+      position: static !important;
+    }
+    #cbt-table .cbt-assoc,
+    #cbt-table .cbt-ref,
+    #cbt-table .cbt-rate {
+      max-height: 18px !important;
+      box-sizing: border-box !important;
+    }
+    #cbt-table .cbt-elapsed {
+      width: 58px !important;
+      min-width: 58px !important;
+      max-width: 58px !important;
+      height: 22px !important;
+      min-height: 22px !important;
+      max-height: 22px !important;
+      margin-left: auto !important;
+      margin-right: auto !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      text-align: center !important;
+      padding: 0 !important;
+      line-height: 22px !important;
+      box-sizing: border-box !important;
+      transform: none !important;
+    }
+
     /* Live first-column geometry is identical for every rate state.
        The SLOW badge sits immediately beside the associate name, but the
        fixed-height wrapper keeps red/yellow/green rows exactly the same size.
@@ -1337,16 +1500,37 @@
     .cbt-afa-act:disabled:hover {
       background: inherit; border-color: inherit;
     }
-    .cbt-afa-complete-block {
-      margin-top: 14px; padding: 11px 13px; border-radius: 8px;
+    .cbt-afa-action-block {
+      margin-top: 10px; padding: 11px 13px; border-radius: 8px;
       border: 1.5px solid var(--cb-border); background: var(--cb-row-alt);
-      display: flex; align-items: center; gap: 10px;
+      display: grid;
+      grid-template-columns: 175px minmax(0, 1fr);
+      align-items: center;
+      column-gap: 10px;
     }
-    .cbt-afa-complete-block.off { opacity: .62; }
-    .cbt-afa-complete-btn {
-      min-width: 164px; white-space: nowrap; flex-shrink: 0;
+    .cbt-afa-action-block:first-of-type { margin-top: 12px; }
+    .cbt-afa-action-block.off { opacity: .55; }
+    .cbt-afa-action-btn {
+      width: 175px !important;
+      min-width: 175px !important;
+      max-width: 175px !important;
+      height: 40px !important;
+      min-height: 40px !important;
+      max-height: 40px !important;
+      padding: 0 10px !important;
+      margin: 0 !important;
+      display: inline-flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      text-align: center !important;
+      white-space: nowrap;
+      flex-shrink: 0;
+      box-sizing: border-box !important;
+      line-height: 1 !important;
     }
-    .cbt-afa-complete-copy {
+    .cbt-afa-action-copy {
+      min-width: 0;
+      align-self: center;
       font-size: 12px; line-height: 1.45; color: var(--cb-text2);
     }
     .cbt-afa-opt {
@@ -1689,7 +1873,7 @@
 
         var liveRates = [];
         taskCache.forEach(function(d) {
-          if (d.state === 'BATCHING') {
+          if (cbtIsLiveBatch(d)) {
             var r = computeRow(d);
             if (r.scanRate && r.scanRate > 0) liveRates.push(r.scanRate);
           }
@@ -1724,99 +1908,311 @@
   var WARN_ELAPSED_MIN = 15, ALERT_ELAPSED_MIN = 25;
   var WARN_RATE = 2.1, ALERT_RATE = 1.5;
 
-  /* LIVE ELAPSED STABILITY
-     ----------------------
-     The COMO backend does not always return operationDetails on every response.
-     A live batch can therefore alternate between:
-       - a response with the real BATCHING start,
-       - a response with operationDetails missing/empty,
-       - or even one poll where the task is absent.
+  /* LIVE ELAPSED / CLOCK STABILITY
+     --------------------------------
+     Live time is derived from the CURRENT BATCHING operation returned by the
+     authoritative active-jobs feed.  Passive page/API responses are still
+     useful for names/package counts, but they are not allowed to choose or
+     replace a live timer start.
 
-     Elapsed must never switch to `created` during those gaps. We wait for the
-     first real BATCHING start, lock it to shortClientRef, and keep that exact
-     start for the life of the batch.
-
-     Result:
-       no BATCHING start yet -> --:--
-       real BATCHING start arrives -> clock begins from that start
-       later partial/missing responses -> same locked start
-       temporary dropped poll -> row/start survive a short grace period
-       completed batch -> locked start is used for final history, then cleared
-
-     Bags/Min still uses the same formula; only the source of elapsed time is
-     stabilized. */
+     Important protections:
+       - timestamps are normalized whether COMO sends seconds, milliseconds,
+         microseconds, or an ISO timestamp;
+       - when operationDetails contains more than one BATCHING operation, the
+         current/latest active one is selected (never simply the first one);
+       - the first authoritative start for a job is locked for that job;
+       - a reused cart/shortClientRef is recognized as a NEW job by job id,
+         task id, created time, or a changed start after a missing-data gap;
+       - removed carts keep their lock only briefly, not for hours;
+       - when the response exposes an HTTP Date header, elapsed time runs from
+         a monotonic server-calibrated clock, so a bad/changing workstation
+         clock cannot make the timer jump or show the wrong duration. */
   var _cbtBackendLastOk = 0;
   var _cbtLiveStartByRef = Object.create(null);
   var _cbtMissingPollsByRef = Object.create(null);
-  var CBT_MISSING_POLL_GRACE = 3;          // 3 x 2s polls = ~6s transient-gap protection
-  var CBT_START_CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+  var CBT_MISSING_POLL_GRACE = 3;                 // ~6s at the 2s poll rate
+  var CBT_START_RETAIN_AFTER_MISSING_MS = 30000;  // enough for a transient API gap
+  var CBT_START_CACHE_TTL_MS = 15 * 60 * 1000;
+  var CBT_MAX_LIVE_AGE_MS = 12 * 60 * 60 * 1000;
 
-  function cbtRawBatchingStartMs(data) {
+  var _cbtClockAnchorServerMs = null;
+  var _cbtClockAnchorPerfMs = null;
+  var _cbtClockLastNowMs = 0;
+
+  function cbtPerfNow() {
+    try {
+      if (typeof performance !== 'undefined' && performance && typeof performance.now === 'function') {
+        return performance.now();
+      }
+    } catch(e) {}
+    return Date.now();
+  }
+
+  function cbtNowMs() {
+    var now;
+    if (_cbtClockAnchorServerMs != null && _cbtClockAnchorPerfMs != null) {
+      now = _cbtClockAnchorServerMs + (cbtPerfNow() - _cbtClockAnchorPerfMs);
+    } else {
+      now = Date.now();
+    }
+    if (!isFinite(now)) now = Date.now();
+    /* A clock used for an elapsed timer must never go backwards, even if the
+       device clock is corrected while the page is open. */
+    if (now < _cbtClockLastNowMs) now = _cbtClockLastNowMs;
+    else _cbtClockLastNowMs = now;
+    return now;
+  }
+
+  function cbtCalibrateServerClock(response, requestPerfMs) {
+    try {
+      if (!response || !response.headers || typeof response.headers.get !== 'function') return;
+      var raw = response.headers.get('date') || response.headers.get('Date');
+      if (!raw) return;
+      var serverMs = Date.parse(raw);
+      if (!isFinite(serverMs)) return;
+      var receivePerf = cbtPerfNow();
+      var halfRtt = Math.max(0, Math.min(2000, (receivePerf - requestPerfMs) / 2));
+      var candidateNow = serverMs + halfRtt;
+
+      if (_cbtClockAnchorServerMs == null || _cbtClockAnchorPerfMs == null) {
+        _cbtClockAnchorServerMs = candidateNow;
+        _cbtClockAnchorPerfMs = receivePerf;
+        _cbtClockLastNowMs = candidateNow;
+        return;
+      }
+
+      /* HTTP Date is normally whole-second precision. Do not re-anchor for
+         sub-second rounding noise. Only correct a material (>5s) drift, such
+         as the workstation clock being changed while the page is open. */
+      var anchoredNow = _cbtClockAnchorServerMs + (receivePerf - _cbtClockAnchorPerfMs);
+      if (Math.abs(candidateNow - anchoredNow) > 5000) {
+        _cbtClockAnchorServerMs = candidateNow;
+        _cbtClockAnchorPerfMs = receivePerf;
+        if (candidateNow > _cbtClockLastNowMs) _cbtClockLastNowMs = candidateNow;
+      }
+    } catch(e) {}
+  }
+
+  function cbtNormalizeEpochMs(value) {
+    if (value == null || value === '') return null;
+
+    if (typeof value === 'string' && !/^[-+]?\d+(?:\.\d+)?$/.test(value.trim())) {
+      var parsed = Date.parse(value);
+      return isFinite(parsed) && parsed > 0 ? parsed : null;
+    }
+
+    var n = Number(value);
+    if (!isFinite(n) || n <= 0) return null;
+
+    /* Current epoch values are roughly:
+         seconds      1.7e9
+         milliseconds 1.7e12
+         microseconds 1.7e15
+         nanoseconds  1.7e18 */
+    if (n >= 1e17) n = n / 1000000;
+    else if (n >= 1e14) n = n / 1000;
+    else if (n < 1e11) n = n * 1000;
+
+    return isFinite(n) && n > 0 ? n : null;
+  }
+
+  function cbtTaskGeneration(data) {
+    if (!data || typeof data !== 'object') return '';
+
+    /* Only use fields that actually identify the job/task. A plain `id` is
+       intentionally NOT used here because different COMO response shapes can
+       put unrelated IDs in that field for the same cart. That was capable of
+       invalidating an otherwise-correct elapsed-time lock. */
+    var fields = ['jobId','jobID','taskId','taskID','jobUuid','jobUUID','taskUuid','taskUUID'];
+    for (var i = 0; i < fields.length; i++) {
+      var v = data[fields[i]];
+      if (v != null && String(v).trim()) return 'job:' + String(v).trim();
+    }
+
+    /* When no strong ID is available, the real BATCHING start is the safest
+       generation identity. Missing operationDetails simply returns empty,
+       which means an existing lock is preserved rather than reset. */
+    var ops = Array.isArray(data.operationDetails) ? data.operationDetails : [];
+    var latest = 0;
+    for (var j = 0; j < ops.length; j++) {
+      var op = ops[j];
+      if (!op || String(op.name || '').toUpperCase() !== 'BATCHING') continue;
+      var ms = cbtNormalizeEpochMs(op.start);
+      if (ms && ms > latest) latest = ms;
+    }
+    return latest ? 'batch:' + Math.round(latest) : '';
+  }
+
+  function cbtBatchingOpInfo(data, liveOnly) {
     if (!data || typeof data !== 'object') return null;
     var ops = Array.isArray(data.operationDetails) ? data.operationDetails : [];
-    var op = ops.find(function(o){ return o && o.name === 'BATCHING'; });
-    var v = op && Number(op.start);
-    return (v && isFinite(v) && v > 0) ? v * 1000 : null;
+    var wholeState = String(data.state || '').toUpperCase();
+    var candidates = [];
+
+    for (var i = 0; i < ops.length; i++) {
+      var op = ops[i];
+      if (!op || String(op.name || '').toUpperCase() !== 'BATCHING') continue;
+      var startMs = cbtNormalizeEpochMs(op.start);
+      if (!startMs) continue;
+      var endMs = cbtNormalizeEpochMs(op.end);
+      var opState = String(op.state || op.operationState || '').toUpperCase();
+      var explicitActive = opState === 'IN_PROGRESS' || opState === 'STARTED' || opState === 'ACTIVE';
+      var explicitDone = opState === 'COMPLETED' || opState === 'COMPLETE' || opState === 'FINISHED' || opState === 'DONE';
+      /* COMO can include an `end` value on a response that is STILL actively
+         BATCHING. Therefore an end timestamp alone must never disqualify a
+         live operation. The explicit task state is authoritative here. */
+      var live = explicitActive || (wholeState === 'BATCHING' && !explicitDone);
+
+      /* If a trustworthy server clock is available, reject obviously stale or
+         future operations from the LIVE candidate set. Completed-history
+         selection intentionally remains unrestricted. */
+      if (liveOnly && _cbtClockAnchorServerMs != null) {
+        var nowMs = cbtNowMs();
+        if (startMs > nowMs + 5 * 60 * 1000) live = false;
+        if (startMs < nowMs - CBT_MAX_LIVE_AGE_MS) live = false;
+      }
+
+      if (liveOnly && !live) continue;
+      candidates.push({ op:op, startMs:startMs, endMs:endMs, live:live, state:opState });
+    }
+
+    if (!candidates.length) return null;
+    /* If the payload contains historical + current BATCHING operations, the
+       current operation is the one with the latest start. */
+    candidates.sort(function(a,b){ return b.startMs - a.startMs; });
+    return candidates[0];
+  }
+
+  function cbtRawBatchingStartMs(data, liveOnly) {
+    var info = cbtBatchingOpInfo(data, !!liveOnly);
+    return info ? info.startMs : null;
+  }
+
+  function cbtIsLiveBatch(data) {
+    if (!data || typeof data !== 'object') return false;
+    if (String(data.state || '').toUpperCase() === 'BATCHING') return true;
+    var ops = Array.isArray(data.operationDetails) ? data.operationDetails : [];
+    for (var i = 0; i < ops.length; i++) {
+      var op = ops[i];
+      if (!op || String(op.name || '').toUpperCase() !== 'BATCHING') continue;
+      var st = String(op.state || op.operationState || '').toUpperCase();
+      if (st === 'IN_PROGRESS' || st === 'STARTED' || st === 'ACTIVE') return true;
+    }
+    return false;
+  }
+
+  function cbtObserveAuthoritativeLive(data) {
+    if (!cbtIsLiveBatch(data) || !data.shortClientRef) return null;
+    var ref = String(data.shortClientRef);
+    var info = cbtBatchingOpInfo(data, true);
+    if (!info || !info.startMs) return null;
+
+    var now = cbtNowMs();
+    var generation = cbtTaskGeneration(data);
+    var cur = _cbtLiveStartByRef[ref];
+    var replace = !cur;
+
+    if (cur) {
+      /* A full job/task/created identity change means the same physical cart
+         has been reused for a new batch. Never carry the old elapsed start. */
+      if (generation && cur.generation && generation !== cur.generation) {
+        replace = true;
+      /* If the task disappeared and later returned with a genuinely different
+         BATCHING start, treat it as a new generation even when no job id was
+         present in the payload. */
+      } else if (cur.missingSince && Math.abs(info.startMs - cur.ms) > 1000) {
+        replace = true;
+      }
+    }
+
+    if (replace) {
+      cur = _cbtLiveStartByRef[ref] = {
+        ms: info.startMs,
+        generation: generation,
+        lastSeen: now,
+        missingSince: 0
+      };
+    } else {
+      if (!cur.generation && generation) cur.generation = generation;
+      cur.lastSeen = now;
+      cur.missingSince = 0;
+    }
+    return cur.ms;
   }
 
   function cbtStableLiveStartMs(data, isLive) {
     if (!data || typeof data !== 'object') return null;
+    var ref = data.shortClientRef != null ? String(data.shortClientRef) : '';
+    var generation = cbtTaskGeneration(data);
+    var cur = ref ? _cbtLiveStartByRef[ref] : null;
 
-    var ref = data.shortClientRef ? String(data.shortClientRef) : '';
-    var opMs = cbtRawBatchingStartMs(data);
-    var created = Number(data.created);
-    var createdMs = (created && isFinite(created) && created > 0) ? created * 1000 : null;
-    var now = Date.now();
-
-    /* Without a stable task key we cannot safely lock a live clock. Never
-       invent a live start from created. For a finished record, created remains
-       a last-resort fallback so history is not discarded. */
-    if (!ref) {
-      if (opMs) return opMs;
-      return isLive ? null : createdMs;
-    }
-
-    var cur = _cbtLiveStartByRef[ref];
-
-    /* The FIRST real BATCHING start wins permanently for this active task.
-       If another endpoint later reports a different start, ignore it. */
-    if (opMs) {
-      if (!cur) {
-        cur = _cbtLiveStartByRef[ref] = { ms: opMs, lastSeen: now };
-      } else {
-        cur.lastSeen = now;
-      }
-      return cur.ms;
-    }
-
-    /* Partial responses are common. Once locked, keep the exact same start. */
     if (cur) {
-      cur.lastSeen = now;
-      return cur.ms;
+      /* Missing identity on a partial response is NOT a reason to reject the
+         existing lock. If an actual new job generation is present, wait for
+         that new task's own BATCHING start instead of borrowing the old one. */
+      if (!generation || !cur.generation || generation === cur.generation) return cur.ms;
     }
 
-    /* Critical behavior change: a LIVE task with no BATCHING operation start
-       shows --:-- briefly instead of falling back to `created` and later
-       snapping to a different elapsed time. */
-    if (isLive) return null;
+    if (isLive) {
+      /* Important fallback: activeJobsWithSiteSummary does not always carry
+         operationDetails in every deployment/response. If another current COMO
+         response contains the real BATCHING operation, allow it to seed the
+         clock ONCE. We never use `created` for a live timer and never replace a
+         same-generation lock after it has been chosen. */
+      var info = cbtBatchingOpInfo(data, true);
+      if (info && info.startMs) {
+        if (!ref) return info.startMs;
 
-    /* Finished task with no BATCHING op and no prior lock: preserve the old
-       history behavior by using created only as a completion fallback. */
-    return createdMs;
+        var now = cbtNowMs();
+        var fresh = {
+          ms: info.startMs,
+          generation: generation,
+          lastSeen: now,
+          missingSince: 0,
+          source: 'observed-live'
+        };
+
+        /* Different generation = the cart has a new batch, so a new start is
+           correct. Otherwise only fill a missing lock; do not twitch between
+           multiple timestamps. */
+        if (!cur || (generation && cur.generation && generation !== cur.generation)) {
+          _cbtLiveStartByRef[ref] = fresh;
+          return fresh.ms;
+        }
+
+        return cur.ms;
+      }
+
+      return null;
+    }
+
+    /* For a finished batch, use the latest BATCHING operation if the live lock
+       is unavailable, then fall back to created so history is not discarded. */
+    var opMs = cbtRawBatchingStartMs(data, false);
+    if (opMs) return opMs;
+    return cbtNormalizeEpochMs(data.created);
   }
 
   function cbtForgetLiveStart(ref) {
-    if (!ref) return;
+    if (ref == null) return;
     ref = String(ref);
     try { delete _cbtLiveStartByRef[ref]; } catch(e) {}
     try { delete _cbtMissingPollsByRef[ref]; } catch(e) {}
   }
 
+  function cbtMarkLiveMissing(ref) {
+    ref = String(ref);
+    var cur = _cbtLiveStartByRef[ref];
+    if (cur && !cur.missingSince) cur.missingSince = cbtNowMs();
+  }
+
   function cbtPruneOldLiveStarts() {
-    var cutoff = Date.now() - CBT_START_CACHE_TTL_MS;
+    var now = cbtNowMs();
     Object.keys(_cbtLiveStartByRef).forEach(function(ref) {
       var e = _cbtLiveStartByRef[ref];
-      if (!e || !e.lastSeen || e.lastSeen < cutoff) {
+      var expiredMissing = e && e.missingSince && (now - e.missingSince > CBT_START_RETAIN_AFTER_MISSING_MS);
+      var expiredIdle = !e || !e.lastSeen || (now - e.lastSeen > CBT_START_CACHE_TTL_MS);
+      if (expiredMissing || expiredIdle) {
         try { delete _cbtLiveStartByRef[ref]; } catch(err) {}
         try { delete _cbtMissingPollsByRef[ref]; } catch(err2) {}
       }
@@ -3128,24 +3524,18 @@
     if (el && el._cbtLastHTML !== html) { el._cbtLastHTML = html; el.innerHTML = html; }
   }
 
-  function computeRow(data) {
-    var ops = Array.isArray(data.operationDetails) ? data.operationDetails : [];
-    var op = ops.find(function(o){ return o && o.name === 'BATCHING'; });
+  function computeRow(data, forceFinished) {
+    var inProg = forceFinished ? false : cbtIsLiveBatch(data);
+    var info = cbtBatchingOpInfo(data, inProg);
+    if (!info && !inProg) info = cbtBatchingOpInfo(data, false);
 
-    /* Treat every backend shape that says the batch is active as live. */
-    var inProg =
-      !!(op && op.state === 'IN_PROGRESS') ||
-      data.state === 'BATCHING' ||
-      data.operationState === 'IN_PROGRESS';
-
-    /* A live row gets a start ONLY from the locked real BATCHING operation. */
     var startMs = cbtStableLiveStartMs(data, inProg);
-    var endMs = op && Number(op.end) ? Number(op.end) * 1000 : null;
+    var endMs = info && info.endMs ? info.endMs : null;
     var batchedN = Number(data.packagesBatched) || 0;
-    var nowMs = Date.now();
+    var nowMs = cbtNowMs();
 
-    /* While live, elapsed always advances from Date.now(). An `end` value is
-       trusted only after the batch is actually finished. */
+    /* Active batches always advance from the same monotonic/server-calibrated
+       clock. An operation end timestamp is used only after completion. */
     var clockMs = (!inProg && endMs && startMs && endMs >= startMs) ? endMs : nowMs;
     var elapsedSec = startMs ? Math.max(0, (clockMs - startMs) / 1000) : null;
     var scanRate = (batchedN > 0 && elapsedSec > 30) ? batchedN / (elapsedSec / 60) : null;
@@ -3182,47 +3572,91 @@
     if (activeTab==='history') renderHistory();
   }
 
-  function ingestItem(item) {
-    if (!item||typeof item!=='object') return false;
-    var ref = item.shortClientRef; if (!ref) return false;
+  function ingestItem(item, authoritative) {
+    if (!item || typeof item !== 'object' || item.shortClientRef == null) return false;
+    var ref = String(item.shortClientRef);
+    var incoming = Object.assign({}, item, { shortClientRef: ref });
     var existing = taskCache.get(ref);
+    var incomingGen = cbtTaskGeneration(incoming);
+    var existingGen = existing ? cbtTaskGeneration(existing) : '';
 
-    /* Never let an older/out-of-order API response move package progress
-       backwards. This is another common way a temporarily stale backend response
-       can make a fast associate look slower than they really are. */
+    /* The same CART_x reference can be reused by a later job. If the job/task
+       identity changes, do not merge the new task with the old task's state. */
+    if (existing && incomingGen && existingGen && incomingGen !== existingGen) {
+      taskCache.delete(ref);
+      cbtForgetLiveStart(ref);
+      existing = null;
+    }
+
+    var incomingLive = cbtIsLiveBatch(incoming);
+    if (authoritative && incomingLive) cbtObserveAuthoritativeLive(incoming);
+
+    /* Never let an older/out-of-order response move package progress backward. */
     if (existing) {
-      var oldB = Number(existing.packagesBatched)||0, newB = Number(item.packagesBatched)||0;
-      var oldC = Number(existing.packagesCollected)||0, newC = Number(item.packagesCollected)||0;
+      var oldB = Number(existing.packagesBatched) || 0, newB = Number(incoming.packagesBatched) || 0;
+      var oldC = Number(existing.packagesCollected) || 0, newC = Number(incoming.packagesCollected) || 0;
       if (newB < oldB || newC < oldC) {
-        item = Object.assign({}, item);
-        if (newB < oldB) item.packagesBatched = oldB;
-        if (newC < oldC) item.packagesCollected = oldC;
+        if (newB < oldB) incoming.packagesBatched = oldB;
+        if (newC < oldC) incoming.packagesCollected = oldC;
       }
     }
 
-    if (existing&&existing.state==='BATCHING'&&item.state!=='BATCHING'&&item.state!==undefined) {
-      existing._recording=true; taskCache.set(ref,existing);
-      var merged=Object.assign({},existing,item);
-      merged.packagesBatched = Math.max(Number(existing.packagesBatched)||0, Number(item.packagesBatched)||0);
-      merged.packagesCollected = Math.max(Number(existing.packagesCollected)||0, Number(item.packagesCollected)||0);
-      var r=computeRow(merged);
-      recordCompletedBatch(merged,r.elapsedSec); taskCache.delete(ref); cbtForgetLiveStart(ref); return true;
+    /* Completion is recognized from an explicit non-BATCHING state. A partial
+       response that merely omits operationDetails is not treated as finished. */
+    if (existing && cbtIsLiveBatch(existing) && incoming.state !== undefined &&
+        String(incoming.state).toUpperCase() !== 'BATCHING') {
+      var mergedDone = Object.assign({}, existing, incoming);
+      mergedDone.packagesBatched = Math.max(Number(existing.packagesBatched)||0, Number(incoming.packagesBatched)||0);
+      mergedDone.packagesCollected = Math.max(Number(existing.packagesCollected)||0, Number(incoming.packagesCollected)||0);
+      var finishedRow = computeRow(mergedDone, true);
+      recordCompletedBatch(mergedDone, finishedRow.elapsedSec);
+      taskCache.delete(ref);
+      cbtForgetLiveStart(ref);
+      return true;
     }
-    if (item.state!=='BATCHING'&&item.operationState!=='IN_PROGRESS') return false;
-    if (!item.associateId && !item.associate && item.driverAssignment) {
-      item.associate = item.driverAssignment;
+
+    /* Only actual BATCHING work belongs on the Live tab. Generic IN_PROGRESS
+       jobs from another operation are intentionally ignored. */
+    if (!incomingLive) return false;
+
+    var merged = existing ? Object.assign({}, existing, incoming) : incoming;
+    /* Some endpoints omit operationDetails on alternating responses. Preserve
+       the last operation details for display metadata; the timer itself still
+       comes only from the authoritative lock above. */
+    if (existing && (!Array.isArray(incoming.operationDetails) || !incoming.operationDetails.length) &&
+        Array.isArray(existing.operationDetails) && existing.operationDetails.length) {
+      merged.operationDetails = existing.operationDetails;
     }
-    taskCache.set(ref,item); return true;
+    merged.packagesBatched = Math.max(Number(existing && existing.packagesBatched)||0, Number(incoming.packagesBatched)||0);
+    merged.packagesCollected = Math.max(Number(existing && existing.packagesCollected)||0, Number(incoming.packagesCollected)||0);
+    if (!merged.associateId && !merged.associate && merged.driverAssignment) merged.associate = merged.driverAssignment;
+
+    taskCache.set(ref, merged);
+    return true;
   }
 
-  function ingestData(d) {
-    if (!d) return; var changed=false;
+  function ingestData(d, authoritative) {
+    if (!d) return;
+    var changed = false;
     deepCaptureNames(d, 0);
     try { afaRecordJobs(d, 0); } catch(e) {}
-    if (Array.isArray(d)) { d.forEach(function(i){if(ingestItem(i))changed=true;}); }
-    else if (d.shortClientRef) { if(ingestItem(d))changed=true; }
-    else { for(var k of ['summaries','tasks','results','items','jobs','data']) { if(Array.isArray(d[k])){d[k].forEach(function(i){if(ingestItem(i))changed=true;});if(changed)break;}}}
-    if (changed) renderLive();
+
+    function take(i) { if (ingestItem(i, !!authoritative)) changed = true; }
+
+    if (Array.isArray(d)) {
+      d.forEach(take);
+    } else if (d.shortClientRef != null) {
+      take(d);
+    } else {
+      /* Do not stop at the first populated array. Some dashboard responses
+         carry complementary records in summaries/tasks/results/items/jobs/data.
+         Ingesting all of them prevents partial records from winning by accident. */
+      ['summaries','tasks','results','items','jobs','data'].forEach(function(k) {
+        if (Array.isArray(d[k])) d[k].forEach(take);
+      });
+    }
+
+    if (changed && !authoritative) renderLive();
   }
 
   var _origFetch = window.fetch;
@@ -3240,36 +3674,52 @@
 
   async function pollActiveTasks() {
     try {
-      /* Cache-busting matters here: this is the authoritative feed used for Live
-         speed, so do not allow a browser/proxy cache to recycle an old package count. */
-      var liveUrl = COMO_BASE+'/store/'+STORE_ID+'/activeJobsWithSiteSummary?_cbt='+Date.now();
-      var res = await _origFetch(liveUrl,{credentials:'include',cache:'no-store',headers:{Accept:'application/json'}});
-      if(res.ok) {
+      var liveUrl = COMO_BASE + '/store/' + STORE_ID + '/activeJobsWithSiteSummary?_cbt=' + Date.now();
+      var requestPerf = cbtPerfNow();
+      var res = await _origFetch(liveUrl, {
+        credentials:'include', cache:'no-store', headers:{Accept:'application/json'}
+      });
+
+      if (res.ok) {
+        /* Use the server/proxy clock when available. This is specifically for
+           elapsed-time correctness; the visible backend-updated timestamp below
+           remains the user's local display time. */
+        cbtCalibrateServerClock(res, requestPerf);
+
         var freshData = await res.json();
         _cbtBackendLastOk = Date.now();
         var activeRefs = new Set();
-        var items = Array.isArray(freshData) ? freshData : [];
-        ['summaries','tasks','results','items','jobs','data'].forEach(function(k){
-          if(Array.isArray(freshData[k])) items = items.concat(freshData[k]);
+        var items = Array.isArray(freshData) ? freshData.slice() : [];
+        ['summaries','tasks','results','items','jobs','data'].forEach(function(k) {
+          if (freshData && Array.isArray(freshData[k])) items = items.concat(freshData[k]);
         });
-        items.forEach(function(d){
-          if (!d || !d.shortClientRef) return;
-          var ops = Array.isArray(d.operationDetails) ? d.operationDetails : [];
-          var batchingOp = ops.find(function(o){ return o && o.name === 'BATCHING'; });
-          var isLiveBatch =
-            d.state === 'BATCHING' ||
-            d.operationState === 'IN_PROGRESS' ||
-            (batchingOp && batchingOp.state === 'IN_PROGRESS');
-          if (isLiveBatch) activeRefs.add(d.shortClientRef);
+
+        /* Select one authoritative timing record per cart. If multiple payload
+           sections describe the same cart, prefer the record with the latest
+           current BATCHING start rather than whichever array happened to appear
+           first in the JSON. */
+        var bestByRef = Object.create(null);
+        items.forEach(function(d) {
+          if (!d || d.shortClientRef == null || !cbtIsLiveBatch(d)) return;
+          var ref = String(d.shortClientRef);
+          activeRefs.add(ref);
+          var info = cbtBatchingOpInfo(d, true);
+          var score = info && info.startMs ? info.startMs : -1;
+          var prev = bestByRef[ref];
+          if (!prev || score > prev.score) bestByRef[ref] = { data:d, score:score };
         });
-        /* One incomplete backend poll must not destroy a live timer. COMO can
-           temporarily omit a task and return it again on the next response.
-           Keep the row for a short grace period and, importantly, keep the
-           locked BATCHING start even if the row is eventually removed. */
+
+        Object.keys(bestByRef).forEach(function(ref) {
+          cbtObserveAuthoritativeLive(bestByRef[ref].data);
+        });
+
         activeRefs.forEach(function(ref) {
-          _cbtMissingPollsByRef[String(ref)] = 0;
-          var locked = _cbtLiveStartByRef[String(ref)];
-          if (locked) locked.lastSeen = Date.now();
+          _cbtMissingPollsByRef[ref] = 0;
+          var locked = _cbtLiveStartByRef[ref];
+          if (locked) {
+            locked.lastSeen = cbtNowMs();
+            locked.missingSince = 0;
+          }
         });
 
         taskCache.forEach(function(val, key) {
@@ -3279,23 +3729,30 @@
             return;
           }
 
+          cbtMarkLiveMissing(key);
           var misses = (_cbtMissingPollsByRef[key] || 0) + 1;
           _cbtMissingPollsByRef[key] = misses;
-
           if (misses >= CBT_MISSING_POLL_GRACE) {
             taskCache.delete(key);
             delete _cbtMissingPollsByRef[key];
-            /* Do NOT clear _cbtLiveStartByRef here. If this was only a longer
-               API gap and the same task comes back, it must resume from the
-               exact same elapsed start instead of jumping. Completion handling
-               still clears the lock normally. */
           }
         });
 
+        /* Ingest every complementary array, but suppress intermediate renders.
+           Re-apply the canonical timer observation afterward in case a stale
+           duplicate record for the same cart appeared in another payload array. */
+        ingestData(freshData, true);
+        Object.keys(bestByRef).forEach(function(ref) {
+          /* Make the canonical current-job record the final cache merge too.
+             This prevents a stale duplicate from another payload array from
+             being the last writer for the same cart. */
+          ingestItem(bestByRef[ref].data, true);
+          cbtObserveAuthoritativeLive(bestByRef[ref].data);
+        });
+
         cbtPruneOldLiveStarts();
-        ingestData(freshData);
       }
-    } catch(e){}
+    } catch(e) {}
     renderLive();
   }
 
@@ -3310,8 +3767,8 @@
           '<span id="cbt-scale-reset" title="Reset size to 100%">100%</span>' +
           '<span id="cbt-font-inc" title="Larger (A+)">A+</span>' +
           '<span id="cbt-theme-btn" title="Toggle Dark/Light">🌙</span>' +
-          '<span id="cbt-afa-btn" title="Force-assign every UNASSIGNABLE cart">' +
-            '<span class="cbt-afa-lbl">Force Assign</span>' +
+          '<span id="cbt-afa-btn" title="Open cart actions">' +
+            '<span class="cbt-afa-lbl">▶ Run</span>' +
           '</span>' +
           '<span id="cbt-collapse-btn" title="Collapse/Expand">🔼</span>' +
         '</div>' +
@@ -3696,6 +4153,22 @@
     var afaBtn = panel2.querySelector('#cbt-afa-btn');
     if (afaBtn) afaBtn.addEventListener('click', function(e){
       e.stopPropagation();
+
+      /* Code-editor style Run / Stop control:
+         idle    -> ▶ Run opens the independent Cart Actions menu
+         running -> ⏹ Stop requests the current action to stop */
+      if (_afaRunning) {
+        _afaStop = true;
+        afaSetBtn('⏹ Stopping…', true);
+
+        var modalStop = document.querySelector('#cbt-afa-card [data-afa="stop"]');
+        if (modalStop) {
+          modalStop.textContent = '⏹ Stopping…';
+          modalStop.disabled = true;
+        }
+        return;
+      }
+
       try { afaConfirm(); } catch(err) {}
     });
 
@@ -3930,6 +4403,78 @@
     }
   }
 
+  function lockLiveRowGeometry() {
+    var table = document.getElementById('cbt-table');
+    if (!table) return;
+
+    var header = table.querySelector('thead tr');
+    if (header) {
+      header.style.setProperty('display', 'grid', 'important');
+      header.style.setProperty('grid-template-columns',
+        'minmax(0,40%) minmax(0,30%) minmax(0,30%)', 'important');
+      header.style.setProperty('width', '100%', 'important');
+      header.style.setProperty('max-width', '100%', 'important');
+      header.style.setProperty('box-sizing', 'border-box', 'important');
+    }
+
+    var rows = table.querySelectorAll('tbody tr');
+    for (var i = 0; i < rows.length; i++) {
+      var tr = rows[i];
+
+      tr.style.setProperty('display', 'grid', 'important');
+      tr.style.setProperty('grid-template-columns',
+        'minmax(0,40%) minmax(0,30%) minmax(0,30%)', 'important');
+      tr.style.setProperty('width', '100%', 'important');
+      tr.style.setProperty('max-width', '100%', 'important');
+      tr.style.setProperty('height', '48px', 'important');
+      tr.style.setProperty('min-height', '48px', 'important');
+      tr.style.setProperty('max-height', '48px', 'important');
+      tr.style.setProperty('margin', '0', 'important');
+      tr.style.setProperty('padding', '0', 'important');
+      tr.style.setProperty('overflow', 'hidden', 'important');
+      tr.style.setProperty('box-sizing', 'border-box', 'important');
+
+      var cells = tr.children;
+      for (var c = 0; c < cells.length; c++) {
+        var td = cells[c];
+        td.style.setProperty('width', 'auto', 'important');
+        td.style.setProperty('min-width', '0', 'important');
+        td.style.setProperty('height', '48px', 'important');
+        td.style.setProperty('min-height', '48px', 'important');
+        td.style.setProperty('max-height', '48px', 'important');
+        td.style.setProperty('padding', '0 10px', 'important');
+        td.style.setProperty('margin', '0', 'important');
+        td.style.setProperty('display', 'flex', 'important');
+        td.style.setProperty('align-items', 'center', 'important');
+        td.style.setProperty('justify-content', c === 0 ? 'flex-start' : 'center', 'important');
+        td.style.setProperty('overflow', 'hidden', 'important');
+        td.style.setProperty('box-sizing', 'border-box', 'important');
+
+        if (c === 1) {
+          var elapsed = td.querySelector('.cbt-elapsed');
+          if (elapsed) {
+            elapsed.style.setProperty('display', 'inline-flex', 'important');
+            elapsed.style.setProperty('align-items', 'center', 'important');
+            elapsed.style.setProperty('justify-content', 'center', 'important');
+            elapsed.style.setProperty('width', '58px', 'important');
+            elapsed.style.setProperty('min-width', '58px', 'important');
+            elapsed.style.setProperty('max-width', '58px', 'important');
+            elapsed.style.setProperty('height', '22px', 'important');
+            elapsed.style.setProperty('min-height', '22px', 'important');
+            elapsed.style.setProperty('max-height', '22px', 'important');
+            elapsed.style.setProperty('padding', '0', 'important');
+            elapsed.style.setProperty('margin-left', 'auto', 'important');
+            elapsed.style.setProperty('margin-right', 'auto', 'important');
+            elapsed.style.setProperty('text-align', 'center', 'important');
+            elapsed.style.setProperty('line-height', '22px', 'important');
+            elapsed.style.setProperty('transform', 'none', 'important');
+            elapsed.style.setProperty('box-sizing', 'border-box', 'important');
+          }
+        }
+      }
+    }
+  }
+
   function renderLive() {
     var tbody=document.querySelector('#cbt-tbody'), empty=document.querySelector('#cbt-empty');
     if (!tbody||!empty) return;
@@ -3937,7 +4482,7 @@
     // Compute each row's stats once — previously computeRow ran inside the sort
     // comparator (O(n log n) calls) and again in the render loop.
     var rows=[]; taskCache.forEach(function(d){
-      if(d.state==='BATCHING') {
+      if(cbtIsLiveBatch(d)) {
         if (lowerTerm) {
           var name = (d.associateId||d.associate||d.driverAssignment||d.shortClientRef||'').toLowerCase();
           if (name.indexOf(lowerTerm) === -1) return;
@@ -3995,6 +4540,7 @@
       html+='<td><span class="cbt-rate '+rateCls+'">'+rateTxt+'</span></td></tr>';
     }
     setHTML(tbody, html);
+    lockLiveRowGeometry();
     var upd=document.querySelector('#cbt-updated');
     if(upd) {
       upd.textContent=_cbtBackendLastOk
@@ -4014,7 +4560,7 @@
     empty.style.display='none';
     if(summary){
       var tA=entries.length,tS=entries.reduce(function(s,e){return s+e.totalSec;},0);
-      var oR=entries.reduce(function(s,e){return s+e.totalPkgs;},0)/(tS/60);
+      var oR=tS>0?entries.reduce(function(s,e){return s+e.totalPkgs;},0)/(tS/60):0;
       var tMissing=entries.reduce(function(s,e){return s+(e.totalMissing||0);},0);
       var tExpected=entries.reduce(function(s,e){return s+(e.totalExpected||0);},0);
       var avgMissPct=tExpected>0?(tMissing/tExpected*100):0;
@@ -4083,7 +4629,7 @@
       html+='<div class="cbt-search-result-section">WEEKLY</div>';
       entries.forEach(function(e){
         shown.add(e.assoc.toLowerCase());
-        var avgRate=e.totalPkgs/(e.totalSec/60);
+        var avgRate=e.totalSec>0?e.totalPkgs/(e.totalSec/60):0;
         var rateCls=avgRate>=WARN_RATE?'good':avgRate>=ALERT_RATE?'warn':'alert';
         html+='<div class="cbt-search-row"><span class="cbt-search-row-name">'+e.assoc+'</span>' +
         '<span class="cbt-search-row-mid"><span style="display:inline-block;width:45px;text-align:right;">'+e.daysSet.size+'</span> days | <span style="display:inline-block;width:50px;text-align:left;">'+e.totalPkgs+'</span> pkgs</span>' +
@@ -4134,7 +4680,7 @@
     empty.style.display='none';
     if(summary){
       var tA=all.length,tS=all.reduce(function(s,e){return s+e.totalSec;},0);
-      var oR=all.reduce(function(s,e){return s+e.totalPkgs;},0)/(tS/60);
+      var oR=tS>0?all.reduce(function(s,e){return s+e.totalPkgs;},0)/(tS/60):0;
       var tM=all.reduce(function(s,e){return s+e.missPct;},0)/tA;
       summary.innerHTML='<div class="cbt-ws-stat"><span class="cbt-ws-val">'+tA+'</span><span class="cbt-ws-label">Batchers</span></div>'+
         '<div class="cbt-ws-stat"><span class="cbt-ws-val">'+oR.toFixed(1)+'</span><span class="cbt-ws-label">Avg Rate</span></div>'+
@@ -4280,9 +4826,10 @@
   }
 
   function tickLive() {
+    var nowMs = cbtNowMs();
     document.querySelectorAll('.cbt-elapsed[data-live="1"]').forEach(function(el){
       var startMs=parseFloat(el.dataset.start); if(!startMs) return;
-      var sec=(Date.now()-startMs)/1000, min=sec/60;
+      var sec=Math.max(0,(nowMs-startMs)/1000), min=sec/60;
       el.className='cbt-elapsed '+(min>=ALERT_ELAPSED_MIN?'alert':min>=WARN_ELAPSED_MIN?'warn':'');
       el.textContent=fmt(sec);
     });
@@ -4327,7 +4874,7 @@
     var seen = new Set();
 
     taskCache.forEach(function(d){
-      if (d.state === 'BATCHING') {
+      if (cbtIsLiveBatch(d)) {
         var name = (d.associateId||d.associate||d.driverAssignment||d.shortClientRef||'').toLowerCase();
         if (name.indexOf(term) !== -1 && !seen.has(name)) {
           seen.add(name);
@@ -5262,7 +5809,7 @@
     if (_afaRunning) return;                    /* never vanish mid-run */
     if (_afaOverlay && _afaOverlay.parentNode) _afaOverlay.parentNode.removeChild(_afaOverlay);
     _afaOverlay = null;
-    afaSetBtn('Force Assign', false);
+    afaSetBtn('▶ Run', false);
   }
   function afaShell(title, bodyHtml, footHtml) {
     if (!_afaOverlay) {
@@ -5304,143 +5851,215 @@
      This is what stopped the popup showing a stale 5-of-9. */
   function afaConfirm() {
     if (_afaRunning) { afaProgressView(); return; }
-    afaShell('Auto Force Assign',
-      '<div id="cbt-afa-lead">Checking the dashboard\u2026</div>' +
-      '<div id="cbt-afa-bar"><div id="cbt-afa-fill" style="width:35%"></div></div>' +
-      '<div style="color:var(--cb-text2);font-size:12px">Reading the current cart list.</div>',
-      '<button class="cbt-afa-act" data-afa="close">Cancel</button>');
-    var card0 = _afaOverlay.querySelector('#cbt-afa-card');
-    if (card0) card0.addEventListener('click', function(e){
-      var b = e.target.closest('[data-afa]');
-      if (b && b.getAttribute('data-afa') === 'close') afaClose();
-    });
 
-    var attempt = 0;
-    (function settle(){
-      afaRefreshJobData().then(function(){
-        if (!_afaOverlay) return;                    /* user closed it */
-        var pbNow    = afaScanPartiallyBatched();
-        var expected = afaSectionCount(/^Partially\s+Batched(\s*\(\d+\))?$/i);
-        var resolved = pbNow.filter(function(x){ return x.id; }).length;
-        /* keep trying while the dashboard says there are more than we can
-           currently identify — it is usually still filling in */
-        var short = (expected != null && (pbNow.length < expected || resolved < expected));
-        if (short && ++attempt < 5) { setTimeout(settle, 450); return; }
-        afaConfirmRender(afaScanDashboard(), pbNow, expected);
-      });
-    })();
+    /* Opening ▶ Run must be instant. Do NOT show the old animated
+       "Checking the dashboard..." screen. Render the current action menu from
+       the DOM immediately. Each individual action performs a fresh backend
+       refresh right before execution, so removing this opening loader does not
+       make Force Assign / Partial / Auto Complete stale. */
+    var pbNow = afaScanPartiallyBatched();
+    var expected = afaSectionCount(/^Partially\s+Batched(\s*\(\d+\))?$/i);
+    afaConfirmRender(afaScanDashboard(), pbNow, expected);
   }
 
-  function afaConfirmRender(list, pbAll, pbExpected) {
-    /* every cart still shown under Partially Batched is eligible, whatever
-       happened on a previous run */
+  function afaConfirmRender(list, pbAll, pbExpected, suppress) {
+    /* Three completely independent actions:
+         1) Force Assign         -> UNASSIGNABLE only
+         2) Partially Batched    -> Partially Batched only
+         3) Auto Complete        -> regular completion candidates only
+       No checkbox can mix one queue into another. */
+
+    suppress = suppress || {
+      force: Object.create(null),
+      partial: Object.create(null),
+      complete: Object.create(null)
+    };
+
+    function isSuppressed(action, item) {
+      var bucket = suppress[action];
+      if (!bucket || !item) return false;
+      if (item.id && bucket['id:' + String(item.id)]) return true;
+      if (item.ref && bucket['ref:' + String(item.ref)]) return true;
+      return false;
+    }
+
+    /* The page's own DOM can lag behind a successful Force Assign/Complete
+       request. When returning with ← Back, hide tasks that THIS run already
+       succeeded on so the menu immediately reflects the completed action
+       instead of offering the same cart again. */
+    list = (list || []).filter(function(x){ return !isSuppressed('force', x); });
+    pbAll = (pbAll || []).filter(function(x){ return !isSuppressed('partial', x); });
+
+    var ready = list.filter(function(x){ return x.id; });
+    var noId  = list.filter(function(x){ return !x.id; });
+
     var pbReady = pbAll.filter(function(x){ return x.id; });
     var pbFound = (pbExpected != null) ? Math.max(pbExpected, pbAll.length) : pbAll.length;
     var pbUnresolved = Math.max(0, pbFound - pbReady.length);
-    var ready = list.filter(function(x){ return x.id; });
-    var noId  = list.filter(function(x){ return !x.id; });
-    var already = [];
-    var completionCandidates = afaScanCompletionCandidates();
 
-    var pbBox =
-      '<label class="cbt-afa-opt' + (pbReady.length ? '' : ' off') + '">' +
-        '<input type="checkbox" id="cbt-afa-pb"' + (pbReady.length ? '' : ' disabled') + '/>' +
-        '<span>Also include <b>Partially Batched</b> carts \u2014 <b>' + pbFound + '</b> found' +
-        (pbReady.length && pbReady.length !== pbFound ? ', <b>' + pbReady.length + '</b> ready to process' : '') +
-        (pbReady.length ? '' : ' (none available)') + '</span>' +
-      '</label>' +
-      (pbUnresolved && pbReady.length
-        ? '<div class="cbt-afa-warn">' + pbUnresolved + ' of them have no readable task ID yet and will be skipped. Give the dashboard a moment and reopen this window to pick them up.</div>'
-        : '') +
-      (pbReady.length
-        ? '<div class="cbt-afa-note">That section shows no assignability column, so each cart is checked individually first. Any cart that is already assignable, or whose status cannot be confirmed, is skipped with a reason. Problem Solve is never touched.</div>'
-        : '');
-
+    var completionCandidates = afaScanCompletionCandidates()
+      .filter(function(x){ return !isSuppressed('complete', x); });
     var completeReady = completionCandidates.filter(function(x){ return x.id; });
-    var completeDisabled = !AFA_COMPLETE_PATH || completeReady.length === 0;
-    var acBox =
-      '<div class="cbt-afa-complete-block' + (completeDisabled ? ' off' : '') + '">' +
-        '<button type="button" class="cbt-afa-act go cbt-afa-complete-btn" data-afa="complete"' +
-          (completeDisabled ? ' disabled' : '') + '>' +
-          'Auto Complete' + (completeReady.length ? ' (' + completeReady.length + ')' : '') +
-        '</button>' +
-        '<span class="cbt-afa-complete-copy">' +
-          (!AFA_COMPLETE_PATH
-            ? 'Unavailable: the Complete Task request is not configured.'
-            : (completeReady.length
-                ? 'Starts immediately. Complete Task only \u2014 it never Force Assigns.'
-                : 'No regular tasks are available to Auto Complete right now.')) +
-        '</span>' +
-      '</div>' +
-      (AFA_COMPLETE_PATH
-        ? '<div class="cbt-afa-note">The button is enabled only when there is at least one regular task to check. Clicking it starts immediately, automatically unchecks Partially Batched, completes only tasks the server allows, and never touches Problem Solve.</div>'
-        : '');
 
-    if (!list.length && !pbReady.length && !completionCandidates.length) {
-      afaShell('Auto Force Assign',
-        '<div id="cbt-afa-lead">No <b>UNASSIGNABLE</b>, <b>Partially Batched</b>, or completion-candidate carts are available right now.</div>' +
-        '<div style="color:var(--cb-text2)">Nothing to do. Auto Complete stays disabled until a regular task appears.</div>' +
-        acBox,
-        '<button class="cbt-afa-act" data-afa="close">Close</button>');
-    } else if (!list.length) {
-      afaShell('Auto Force Assign',
-        '<div id="cbt-afa-lead">No <b>UNASSIGNABLE</b> carts on the dashboard right now.' +
-        (completionCandidates.length ? ' Auto Complete can still check the site\'s Complete Task eligibility for the current carts.' : '') + '</div>' +
-        pbBox + acBox,
-        '<button class="cbt-afa-act" data-afa="close">Cancel</button>' +
-        '<button class="cbt-afa-act go" data-afa="go">Continue</button>');
-    } else {
-      var warn = '';
-      if (noId.length)   warn += '<div class="cbt-afa-warn">' + noId.length + ' cart(s) below have no readable task ID and will be skipped. Let the dashboard finish loading, then reopen this window.</div>';
-      if (already.length) warn += '<div class="cbt-afa-warn">' + already.length + ' cart(s) were already processed in this session and will not be sent again.</div>';
-      afaShell('Auto Force Assign',
-        '<div id="cbt-afa-lead">This will force-assign <b>' + ready.length + '</b> cart' + (ready.length === 1 ? '' : 's') +
-        ' marked UNASSIGNABLE, one at a time.</div>' +
-        afaRowsHtml(list) + warn + pbBox + acBox,
-        '<button class="cbt-afa-act" data-afa="close">Cancel</button>' +
-        '<button class="cbt-afa-act go" data-afa="go">Start</button>');
+    var forceDisabled   = ready.length === 0;
+    var partialDisabled = pbReady.length === 0;
+    var completeDisabled = !AFA_COMPLETE_PATH || completeReady.length === 0;
+
+    function actionBlock(action, label, count, disabled, copy) {
+      return '<div class="cbt-afa-action-block' + (disabled ? ' off' : '') + '">' +
+        '<button type="button" class="cbt-afa-act go cbt-afa-action-btn" data-afa="' + action + '"' +
+          (disabled ? ' disabled' : '') + '>' +
+          label + (count != null ? ' (' + count + ')' : '') +
+        '</button>' +
+        '<span class="cbt-afa-action-copy">' + copy + '</span>' +
+      '</div>';
     }
+
+    var forceBlock = actionBlock(
+      'force',
+      '▶ Force Assign',
+      ready.length,
+      forceDisabled,
+      forceDisabled
+        ? 'No UNASSIGNABLE carts are available right now.'
+        : 'Runs only the UNASSIGNABLE carts. Partially Batched is not included.'
+    );
+
+    var partialBlock = actionBlock(
+      'partial',
+      '▶ Partially Batched',
+      pbReady.length,
+      partialDisabled,
+      partialDisabled
+        ? (pbFound
+            ? 'No Partially Batched cart has a readable task ID yet.'
+            : 'No Partially Batched carts are available right now.')
+        : 'Runs only Partially Batched carts. Each one is verified before Force Assign.'
+    );
+
+    var completeBlock = actionBlock(
+      'complete',
+      '▶ Auto Complete',
+      completeReady.length,
+      completeDisabled,
+      !AFA_COMPLETE_PATH
+        ? 'Unavailable: the Complete Task request is not configured.'
+        : (completeDisabled
+            ? 'No regular tasks are available to Auto Complete right now.'
+            : 'Runs Complete Task only. It never Force Assigns and never includes Partially Batched.')
+    );
+
+    var warnings = '';
+    if (noId.length) {
+      warnings += '<div class="cbt-afa-warn">' + noId.length +
+        ' UNASSIGNABLE cart(s) have no readable task ID yet and are not included.</div>';
+    }
+    if (pbUnresolved) {
+      warnings += '<div class="cbt-afa-warn">' + pbUnresolved +
+        ' Partially Batched cart(s) have no readable task ID yet and are not included.</div>';
+    }
+
+    var listHtml = '';
+    if (list.length) {
+      listHtml =
+        '<div style="margin-top:12px;color:var(--cb-text2);font-size:12px;font-weight:700;">UNASSIGNABLE CARTS</div>' +
+        afaRowsHtml(list);
+    }
+
+    afaShell(
+      'Cart Actions',
+      '<div id="cbt-afa-lead">Choose one action. Each button runs <b>only its own cart group</b>.</div>' +
+      forceBlock +
+      partialBlock +
+      completeBlock +
+      warnings +
+      listHtml +
+      '<div class="cbt-afa-note">Problem Solve is never touched. Button counts are refreshed again when you click an action, so switching Batcher tabs does not leave the action using an old list.</div>',
+      '<button class="cbt-afa-act" data-afa="close">Close</button>'
+    );
+
     var card = _afaOverlay.querySelector('#cbt-afa-card');
+    if (!card) return;
+
+    /* Refresh immediately before every run. This avoids stale closures after
+       changing Live/Today/Weekly/Fastest/Names tabs or leaving the popup open
+       while the dashboard itself changes. */
+    function runFresh(action, button) {
+      if (!button || button.disabled || _afaRunning) return;
+
+      var original = button.textContent;
+      button.disabled = true;
+
+      /* Refresh silently. The old visible "Checking..." state looked like a
+         second loader after the user had already chosen an action. */
+      afaRefreshJobData().then(function(){
+        if (!_afaOverlay || _afaRunning) return;
+
+        var queue = [];
+        var opts = {};
+
+        if (action === 'force') {
+          queue = afaScanDashboard()
+            .filter(function(x){ return x.id && !isSuppressed('force', x); });
+          opts = { mode: 'force', autoComplete: false, completeOnly: false };
+        } else if (action === 'partial') {
+          queue = afaScanPartiallyBatched()
+            .filter(function(x){ return x.id && !isSuppressed('partial', x); });
+          opts = { mode: 'partial', autoComplete: false, completeOnly: false };
+        } else if (action === 'complete') {
+          queue = afaScanCompletionCandidates()
+            .filter(function(x){ return x.id && !isSuppressed('complete', x); });
+          opts = { mode: 'complete', autoComplete: true, completeOnly: true };
+        }
+
+        if (!queue.length) {
+          /* State changed while the menu was open. Rebuild instantly with no
+             loading screen so the now-empty action becomes disabled. */
+          var pbNow2 = afaScanPartiallyBatched();
+          var expected2 = afaSectionCount(/^Partially\s+Batched(\s*\(\d+\))?$/i);
+          afaConfirmRender(afaScanDashboard(), pbNow2, expected2, suppress);
+          return;
+        }
+
+        afaRun(queue, opts);
+      }).catch(function(){
+        if (!_afaOverlay) return;
+        button.disabled = false;
+        button.textContent = original;
+      });
+    }
 
     card.addEventListener('click', function(e){
       var b = e.target.closest('[data-afa]');
       if (!b) return;
       var action = b.getAttribute('data-afa');
-      if (action === 'close') { afaClose(); return; }
-      if (action === 'complete') {
-        if (b.disabled || _afaRunning) return;
-        var pb = document.getElementById('cbt-afa-pb');
-        if (pb) pb.checked = false;
-        var completeQueue = afaMergeQueue([], completeReady);
-        if (!completeQueue.length) return;
-        afaRun(completeQueue, { autoComplete: true, completeOnly: true });
+
+      if (action === 'close') {
+        afaClose();
         return;
       }
-      if (action === 'go') {
-        var cb = document.getElementById('cbt-afa-pb');
-        var queue = afaMergeQueue((typeof ready !== 'undefined' ? ready : []), []);
-        /* The Start / Continue button is Force Assign only. Partially Batched
-           joins this queue only when its own checkbox is selected. */
-        if (cb && cb.checked) queue = afaMergeQueue(queue, pbReady);
-        if (!queue.length) { afaClose(); return; }
-        afaRun(queue, { autoComplete: false, completeOnly: false });
+
+      if (action === 'force' || action === 'partial' || action === 'complete') {
+        runFresh(action, b);
       }
     });
   }
 
   function afaProgressView(mode) {
     var isComplete = mode === 'complete';
-    afaShell((isComplete ? 'Auto Complete' : 'Auto Force Assign') + ' \u2014 running',
+    var isPartial = mode === 'partial';
+    var title = isComplete ? 'Auto Complete' : (isPartial ? 'Partially Batched' : 'Force Assign');
+    afaShell(title + ' \u2014 running',
       '<div id="cbt-afa-lead"><span id="cbt-afa-count">Starting\u2026</span></div>' +
       '<div id="cbt-afa-bar"><div id="cbt-afa-fill"></div></div>' +
       '<div id="cbt-afa-live"></div>',
-      '<button class="cbt-afa-act stop" data-afa="stop">Stop</button>');
+      '<button class="cbt-afa-act stop" data-afa="stop">⏹ Stop</button>');
     var card = _afaOverlay.querySelector('#cbt-afa-card');
     card.addEventListener('click', function(e){
       var b = e.target.closest('[data-afa]');
       if (b && b.getAttribute('data-afa') === 'stop') {
         _afaStop = true;
-        b.textContent = 'Stopping\u2026';
+        b.textContent = '⏹ Stopping\u2026';
         b.disabled = true;
       }
     });
@@ -5456,43 +6075,89 @@
 
   function afaSummary(results, stopped, retryable, mode) {
     var isComplete = mode === 'complete';
+    var isPartial = mode === 'partial';
+    var title = isComplete ? 'Auto Complete' : (isPartial ? 'Partially Batched' : 'Force Assign');
     var okN   = results.filter(function(r){ return r.ok === true; }).length;
     var skipN = results.filter(function(r){ return r.skip; }).length;
     var badN  = results.filter(function(r){ return r.ok === false && !r.skip; }).length;
-    afaShell((isComplete ? 'Auto Complete' : 'Auto Force Assign') + ' \u2014 finished',
+    afaShell(title + ' \u2014 finished',
       '<div id="cbt-afa-lead">' + (stopped ? 'Stopped early. ' : '') +
       '<b>' + okN + '</b> ' + (isComplete ? 'completed' : 'assigned') +
       (skipN ? ', <b>' + skipN + '</b> skipped' : '') +
       (badN  ? ', <b>' + badN  + '</b> failed'  : '') + '.</div>' +
-      (!isComplete && retryable
-        ? '<div class="cbt-afa-warn">' + retryable + ' cart(s) are still listed under Partially Batched. Press Force Assign again to retry them.</div>'
+      (isPartial && retryable
+        ? '<div class="cbt-afa-warn">' + retryable + ' cart(s) are still listed under Partially Batched. Press the Partially Batched button again to retry them.</div>'
         : '') +
       (results.length ? afaRowsHtml(results) : '<div style="color:var(--cb-text2)">Nothing was processed.</div>'),
+      '<button class="cbt-afa-act" data-afa="back">← Back</button>' +
       '<button class="cbt-afa-act go" data-afa="close">Done</button>');
     var card = _afaOverlay.querySelector('#cbt-afa-card');
     card.addEventListener('click', function(e){
       var b = e.target.closest('[data-afa]');
-      if (b && b.getAttribute('data-afa') === 'close') afaClose();
+      if (!b) return;
+
+      var action = b.getAttribute('data-afa');
+      if (action === 'close') {
+        afaClose();
+        return;
+      }
+
+      if (action === 'back') {
+        /* The dashboard DOM can take a few seconds to visually remove a cart
+           after a successful write. Build a suppression map from the exact
+           successful results of THIS run, then return instantly to Cart
+           Actions. This makes counts/buttons correct immediately without any
+           loading animation and prevents the same successful cart from being
+           run again while the page catches up. */
+        var suppress = {
+          force: Object.create(null),
+          partial: Object.create(null),
+          complete: Object.create(null)
+        };
+
+        var bucketName = mode === 'complete'
+          ? 'complete'
+          : (mode === 'partial' ? 'partial' : 'force');
+
+        results.forEach(function(r){
+          if (!r || r.ok !== true) return;
+          if (r.id) suppress[bucketName]['id:' + String(r.id)] = true;
+          if (r.ref) suppress[bucketName]['ref:' + String(r.ref)] = true;
+        });
+
+        var pbNow = afaScanPartiallyBatched();
+        var expected = afaSectionCount(/^Partially\s+Batched(\s*\(\d+\))?$/i);
+
+        afaConfirmRender(afaScanDashboard(), pbNow, expected, suppress);
+
+        /* Refresh job IDs silently in the background. There is deliberately no
+           visible loader here. */
+        try { afaRefreshJobData(); } catch(e) {}
+        return;
+      }
     });
   }
 
   /* Step 2: one cart at a time, re-checked immediately before each send. */
   function afaRun(list, opts) {
     opts = opts || {};
-    var autoComplete = !!opts.autoComplete;
-    var completeOnly = !!opts.completeOnly || autoComplete;
+    var runMode = opts.mode || (opts.autoComplete ? 'complete' : 'force');
+    var autoComplete = runMode === 'complete' || !!opts.autoComplete;
+    var completeOnly = runMode === 'complete' || !!opts.completeOnly || autoComplete;
     _afaRunning = true; _afaStop = false;
     _afaDone = Object.create(null);        /* fresh claim map for this run only */
     var partialRefs = Object.create(null);
     list.forEach(function(it){ if (it.partial) partialRefs[it.ref] = true; });
     var btn = document.getElementById('cbt-afa-btn');
-    afaSetBtn(autoComplete ? 'Completing\u2026' : 'Running\u2026', true);
-    afaProgressView(autoComplete ? 'complete' : 'force');
+    /* The dashboard header behaves like a coding playground:
+       ▶ Run while idle, ⏹ Stop while an action is executing. */
+    afaSetBtn('⏹ Stop', true);
+    afaProgressView(runMode);
     var results = [], i = 0;
 
     function finish() {
       _afaRunning = false;
-      afaSetBtn('Force Assign', false);
+      afaSetBtn('▶ Run', false);
       var stopped = _afaStop;
       /* Re-read the dashboard: any cart still sitting under Partially
          Batched can simply be run again next time. */
@@ -5508,7 +6173,7 @@
           if (partialRefs[r.ref] && stillThere[r.ref]) { r.retry = true; retryable++; }
         });
         _afaDone = Object.create(null);     /* nothing carries into the next run */
-        afaSummary(results, stopped, retryable, autoComplete ? 'complete' : 'force');
+        afaSummary(results, stopped, retryable, runMode);
       });
     }
     function next(delay) { i++; setTimeout(step, delay); }
@@ -5544,7 +6209,7 @@
         _afaDone[item.id] = true;
         return afaForceAssign(item.id).then(function(r){
           if (r.ok) {
-            doneResult({ ref: item.ref, ok: true, msg: 'Force Assigned (HTTP ' + r.status + ')' + (noteWhy ? ' \u2014 ' + noteWhy : '') });
+            doneResult({ ref: item.ref, id: item.id, ok: true, msg: 'Force Assigned (HTTP ' + r.status + ')' + (noteWhy ? ' \u2014 ' + noteWhy : '') });
           } else {
             var why = r.status ? ('HTTP ' + r.status) : 'no response';
             if (r.body) why += ' \u2014 ' + String(r.body).replace(/\s+/g, ' ').slice(0, 90);
@@ -5585,6 +6250,20 @@
         forceNow(probeReason || '');
       }
 
+      /* Independent Partially Batched mode: never let a regular
+         UNASSIGNABLE/completion candidate leak into this run. */
+      if (runMode === 'partial' && !item.partial) {
+        doneResult({ ref: item.ref, skip: true, ok: false, msg: 'Skipped \u2014 not a Partially Batched cart' }, 60);
+        return;
+      }
+
+      /* Independent Force Assign mode: never process a Partially Batched row.
+         Partial carts have their own button and their own run. */
+      if (runMode === 'force' && item.partial) {
+        doneResult({ ref: item.ref, skip: true, ok: false, msg: 'Skipped \u2014 use Partially Batched button' }, 60);
+        return;
+      }
+
       /* Auto Complete is deliberately COMPLETE-ONLY.
          It never calls Force Assign, even when the same cart is UNASSIGNABLE.
          The server remains the eligibility gate: literal true means completed;
@@ -5601,7 +6280,7 @@
           if (_afaStop) return finish();
 
           if (afaCompletedOk(r)) {
-            doneResult({ ref: item.ref, ok: true, msg: 'Completed \u2014 server allowed Complete Task' });
+            doneResult({ ref: item.ref, id: item.id, ok: true, msg: 'Completed \u2014 server allowed Complete Task' });
             return;
           }
 
