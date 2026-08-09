@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.21
+// @version      23.9.25
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -1609,6 +1609,36 @@
     };
   }
 
+  /* Run non-visual/background work when the browser has breathing room.
+     The timeout guarantees the work still happens even on a constantly busy
+     dashboard. This is used for duplicated passive API processing and startup
+     background syncs, never for the visible Live clock itself. */
+  function cbtIdle(fn, timeout) {
+    timeout = timeout == null ? 700 : timeout;
+    try {
+      if (typeof requestIdleCallback === 'function') {
+        requestIdleCallback(function(){ try { fn(); } catch(e) {} }, { timeout: timeout });
+        return;
+      }
+    } catch(e) {}
+    setTimeout(function(){ try { fn(); } catch(e2) {} }, Math.min(timeout, 120));
+  }
+
+  /* Let COMO paint its own first frame before this userscript mounts the
+     heavier dashboard UI. This removes the small "website freezes, then loads"
+     feeling without removing or changing any feature. */
+  function cbtAfterFirstPaint(fn, delay) {
+    delay = delay == null ? 140 : delay;
+    var raf = (typeof requestAnimationFrame === 'function')
+      ? requestAnimationFrame
+      : function(cb){ return setTimeout(cb, 16); };
+    raf(function(){
+      raf(function(){
+        setTimeout(function(){ try { fn(); } catch(e) {} }, delay);
+      });
+    });
+  }
+
   /* Same idea, but scheduled for the next animation frame instead of a
      timer. Used where a delay would be SEEN: the Time Left column is
      destroyed by the page's own re-render, and anything slower than a frame
@@ -1628,16 +1658,36 @@
     };
   }
 
+  var _storeTimezoneCache = null;
+  var _storeTimezoneCacheAt = 0;
+  var _parseTimeMemo = Object.create(null);
+  var _parseTimeMemoDay = '';
+
   function getStoreTimezone() {
+    var nowMs = Date.now();
+    if (_storeTimezoneCache && nowMs - _storeTimezoneCacheAt < 10 * 60 * 1000) {
+      return _storeTimezoneCache;
+    }
+
+    var tz = null;
     var tzEl = document.querySelector('[class*="timezone"], [class*="time-zone"], .store-time, .current-time');
     if (tzEl) {
-      var match = tzEl.textContent.match(/([A-Za-z]+\/[A-Za-z_]+)/);
-      if (match) return match[1];
+      var match = (tzEl.textContent || '').match(/([A-Za-z]+\/[A-Za-z_]+)/);
+      if (match) tz = match[1];
     }
-    var bodyText = document.body ? document.body.innerHTML : '';
-    var tzMatch = bodyText.match(/America\/[A-Za-z_]+/);
-    if (tzMatch) return tzMatch[0];
-    return 'America/New_York';
+
+    /* This fallback used to serialize document.body.innerHTML once for EVERY
+       row, on EVERY sort. On a large COMO dashboard that is expensive.
+       Scan it at most once per cache window instead. */
+    if (!tz) {
+      var bodyText = document.body ? document.body.innerHTML : '';
+      var tzMatch = bodyText.match(/America\/[A-Za-z_]+/);
+      if (tzMatch) tz = tzMatch[0];
+    }
+
+    _storeTimezoneCache = tz || 'America/New_York';
+    _storeTimezoneCacheAt = nowMs;
+    return _storeTimezoneCache;
   }
 
   function parseTime(raw) {
@@ -1645,30 +1695,49 @@
     var str = raw.replace(/[^\d:APMapm\s]/g, '').trim();
     var m = str.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
     if (!m) return null;
+
+    var tz = getStoreTimezone();
+    var now = new Date();
+    var dateStr;
+    try { dateStr = now.toLocaleDateString('en-CA', { timeZone: tz }); }
+    catch(e0) { dateStr = now.toLocaleDateString('en-CA'); }
+
+    if (_parseTimeMemoDay !== dateStr + '|' + tz) {
+      _parseTimeMemoDay = dateStr + '|' + tz;
+      _parseTimeMemo = Object.create(null);
+    }
+
+    var memoKey = str.toUpperCase();
+    if (Object.prototype.hasOwnProperty.call(_parseTimeMemo, memoKey)) {
+      return _parseTimeMemo[memoKey];
+    }
+
     var h = parseInt(m[1], 10), mn = parseInt(m[2], 10);
     var ap = m[3] ? m[3].toUpperCase() : null;
     if (ap === 'PM' && h < 12) h += 12;
     if (ap === 'AM' && h === 12) h = 0;
+
+    var result = null;
     try {
-      var tz = getStoreTimezone();
-      var now = new Date();
-      var dateStr = now.toLocaleDateString('en-CA', { timeZone: tz });
       var fullStr = dateStr + 'T' + String(h).padStart(2,'0') + ':' + String(mn).padStart(2,'0') + ':00';
-      var result = new Date(fullStr + ' ' + Intl.DateTimeFormat('en-US', {
+      result = new Date(fullStr + ' ' + Intl.DateTimeFormat('en-US', {
         timeZone: tz, timeZoneName: 'short'
       }).formatToParts(now).find(function(p){ return p.type === 'timeZoneName'; }).value).getTime();
       if (isNaN(result)) throw new Error('fallback');
       if (result > Date.now() + 8 * 3600000) result -= 86400000;
-      return result;
     } catch(e) {
       var d = new Date(); d.setHours(h, mn, 0, 0);
       if (d.getTime() > Date.now() + 8 * 3600000) d.setDate(d.getDate() - 1);
-      return d.getTime();
+      result = d.getTime();
     }
+
+    _parseTimeMemo[memoKey] = result;
+    return result;
   }
 
   function getBatchTarget(card) {
-    var text = card.innerText || card.textContent || '';
+    /* textContent does not force a layout flush; innerText can. */
+    var text = card.textContent || '';
     var matches = text.match(/\b(\d{1,2}:\d{2}\s*(?:AM|PM))\b/gi);
     if (!matches) return null;
     var times = matches.map(parseTime).filter(Boolean);
@@ -1706,6 +1775,13 @@
       }
     });
     _sortObserver.observe(container, { childList: true });
+
+    /* Once we have the actual job-card container, stop watching the entire
+       Angular document. The local container observer above is sufficient. */
+    try {
+      if (bodyWatcher) bodyWatcher.disconnect();
+      _bodyWatcherStarted = false;
+    } catch(e) {}
   }
 
   function getContainer() {
@@ -1715,13 +1791,33 @@
     return first ? first.parentElement : null;
   }
 
-  var bodyWatcher = new MutationObserver(coalescedFrame(function () {
-    var c = getContainer(); if (c) attach(c);
-  }));
-  /* Task sorting is COMO-only. isComoSite is hoisted, so it is safe here. */
-  if (isComoSite()) {
-    bodyWatcher.observe(document.documentElement, { childList: true, subtree: true });
-    var c = getContainer(); if (c) attach(c);
+  var _bodyWatcherStarted = false;
+  var bodyWatcher = new MutationObserver(coalesced(function () {
+    var c = getContainer();
+    if (c) attach(c);
+  }, 80));
+
+  function ensureSortAttachment() {
+    if (!isComoSite() || !isDashboardView()) {
+      try { bodyWatcher.disconnect(); } catch(e) {}
+      _bodyWatcherStarted = false;
+      return;
+    }
+
+    var c = getContainer();
+    if (c) {
+      if (_attached !== c || !_attached || !_attached.isConnected) attach(c);
+      return;
+    }
+
+    /* Only while the container does not exist do we need a document-wide
+       observer. It disconnects itself as soon as attach() succeeds. */
+    if (!_bodyWatcherStarted) {
+      try {
+        bodyWatcher.observe(document.documentElement, { childList: true, subtree: true });
+        _bodyWatcherStarted = true;
+      } catch(e2) {}
+    }
   }
 
   /* ══════════════════════════════════════════
@@ -1820,7 +1916,67 @@
     });
   }
 
-  var timerWatcher = new MutationObserver(coalescedFrame(function () { injectAllTimers(); }));
+  var _timerMutationHosts = new Set();
+  var _timerMutationPending = false;
+
+  function queueTimerHost(node) {
+    if (!node || node.nodeType !== 1) return;
+
+    var host = null;
+    try {
+      if (node.matches && node.matches('job-card, div.row.job-card-header')) host = node;
+      else if (node.closest) host = node.closest('job-card, div.row.job-card-header');
+    } catch(e) {}
+    if (host) _timerMutationHosts.add(host);
+
+    try {
+      node.querySelectorAll('job-card, div.row.job-card-header').forEach(function(h){
+        _timerMutationHosts.add(h);
+      });
+    } catch(e2) {}
+  }
+
+  function refreshTimerHost(host) {
+    if (!host || !host.isConnected) return;
+
+    if (isInExcludedSection(host)) {
+      try { host.querySelectorAll('.etf-col-cell').forEach(function(col){ col.remove(); }); } catch(e) {}
+      return;
+    }
+
+    var row = null;
+    if (host.matches && host.matches('div.row.job-card-header')) row = host;
+    else {
+      try { row = host.querySelector('div.row'); } catch(e2) {}
+    }
+    if (row) injectRowTimer(row);
+  }
+
+  function flushTimerMutationHosts() {
+    _timerMutationPending = false;
+    if (!isDashboardView()) { _timerMutationHosts.clear(); return; }
+
+    var hosts = Array.from(_timerMutationHosts);
+    _timerMutationHosts.clear();
+    for (var i = 0; i < hosts.length; i++) refreshTimerHost(hosts[i]);
+  }
+
+  var timerWatcher = new MutationObserver(function(mutations) {
+    if (!isDashboardView()) return;
+
+    for (var i = 0; i < mutations.length; i++) {
+      queueTimerHost(mutations[i].target);
+      var added = mutations[i].addedNodes || [];
+      for (var j = 0; j < added.length; j++) queueTimerHost(added[j]);
+    }
+
+    if (_timerMutationPending) return;
+    _timerMutationPending = true;
+    var raf = (typeof requestAnimationFrame === 'function')
+      ? requestAnimationFrame
+      : function(cb){ return setTimeout(cb, 16); };
+    raf(flushTimerMutationHosts);
+  });
 
   /* ══════════════════════════════════════════
      PART 3 — BATCHERS + REMAINING PACKAGES
@@ -1847,9 +2003,15 @@
     if (old) old.remove();
   }
 
+  var _statsFetchInFlight = false;
   function fetchAndUpdate() {
+    if (_statsFetchInFlight || document.hidden) return;
+    _statsFetchInFlight = true;
     removeFromHeader();
-    fetch(COMO_BASE + '/api/store/' + STORE_ID + '/activeJobSummary?_cbt=' + Date.now(), { cache: 'no-store', credentials: 'include' })
+
+    /* Use the original fetch for this script-owned stats request so our global
+       passive JSON interceptor does not parse/process the same payload twice. */
+    _origFetch(COMO_BASE + '/api/store/' + STORE_ID + '/activeJobSummary?_cbt=' + Date.now(), { cache: 'no-store', credentials: 'include' })
       .then(function (r) { return r.json(); })
       .then(function (data) {
         var inProgress = data.filter(function (j) { return j.operationState === 'IN_PROGRESS'; }).length;
@@ -1898,7 +2060,9 @@
 
         updateStats(inProgress, remaining, recommended, dotColor);
         removeFromHeader();
-      }).catch(function () {});
+      })
+      .catch(function () {})
+      .then(function(){ _statsFetchInFlight = false; });
   }
 
   /* ══════════════════════════════════════════
@@ -2261,6 +2425,31 @@
 
   var taskCache = new Map();
   var activeTab = 'live';
+
+  var _liveRenderPending = false;
+  function requestLiveRender() {
+    /* Do not rebuild a hidden/non-mounted Live table. Data still updates in
+       taskCache and renders immediately when Live becomes visible.
+
+       The Live table body is #cbt-tbody. v23.9.24 accidentally checked a
+       different/nonexistent ID, so taskCache filled but the first Live render
+       was skipped until the user switched tabs. */
+    if (activeTab !== 'live') return;
+    if (!document.getElementById('cbt-tbody')) return;
+    if (_liveRenderPending) return;
+
+    _liveRenderPending = true;
+    var raf = (typeof requestAnimationFrame === 'function')
+      ? requestAnimationFrame
+      : function(cb){ return setTimeout(cb, 16); };
+
+    raf(function(){
+      _liveRenderPending = false;
+      if (activeTab === 'live' && document.getElementById('cbt-tbody')) {
+        try { renderLive(); } catch(e) {}
+      }
+    });
+  }
   var weeklySortKey = 'avgRate', weeklySortAsc = false, weeklySearchTerm = '';
   var liveSortKey = 'rate', liveSortAsc = false, liveSearchTerm = '';
   /* Set once the user actually clicks a Live column header. Until then the
@@ -3656,23 +3845,62 @@
       });
     }
 
-    if (changed && !authoritative) renderLive();
+    if (changed && !authoritative) requestLiveRender();
   }
 
   var _origFetch = window.fetch;
   window.fetch = async function() {
-    var resp; try { resp = await _origFetch.apply(this,arguments); } catch(e){throw e;}
-    try { if((resp.headers.get('content-type')||'').includes('json')){resp.clone().json().then(function(d){ingestData(d);}).catch(function(){});} } catch(e){}
+    var resp;
+    try { resp = await _origFetch.apply(this, arguments); }
+    catch(e) { throw e; }
+
+    try {
+      if ((resp.headers.get('content-type') || '').includes('json')) {
+        /* Text extraction is cheap; JSON.parse + deepCaptureNames can be
+           expensive on large payloads. Do that duplicated passive work only
+           when the main page has yielded. */
+        resp.clone().text().then(function(raw){
+          if (!raw) return;
+          cbtIdle(function(){
+            try { ingestData(JSON.parse(raw)); } catch(e2) {}
+          }, 700);
+        }).catch(function(){});
+      }
+    } catch(e3) {}
     return resp;
   };
-  var _xhrOpen=XMLHttpRequest.prototype.open, _xhrSend=XMLHttpRequest.prototype.send;
-  XMLHttpRequest.prototype.open=function(m,url){this._cbtUrl=url;return _xhrOpen.apply(this,arguments);};
-  XMLHttpRequest.prototype.send=function(){
-    this.addEventListener('load',function(){try{if(!(this.getResponseHeader('content-type')||'').includes('json'))return;ingestData(JSON.parse(this.responseText));}catch(e){}});
-    return _xhrSend.apply(this,arguments);
+
+  var _xhrOpen = XMLHttpRequest.prototype.open, _xhrSend = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.open = function(m, url) {
+    this._cbtUrl = url;
+    return _xhrOpen.apply(this, arguments);
+  };
+  XMLHttpRequest.prototype.send = function() {
+    this.addEventListener('load', function(){
+      var xhr = this;
+      try {
+        if (!(xhr.getResponseHeader('content-type') || '').includes('json')) return;
+
+        var payload;
+        try {
+          payload = xhr.responseType === 'json' ? xhr.response : xhr.responseText;
+        } catch(e0) { return; }
+
+        cbtIdle(function(){
+          try {
+            var d = (typeof payload === 'string') ? JSON.parse(payload) : payload;
+            if (d) ingestData(d);
+          } catch(e1) {}
+        }, 700);
+      } catch(e2) {}
+    });
+    return _xhrSend.apply(this, arguments);
   };
 
+  var _cbtPollInFlight = false;
   async function pollActiveTasks() {
+    if (_cbtPollInFlight || document.hidden) return;
+    _cbtPollInFlight = true;
     try {
       var liveUrl = COMO_BASE + '/store/' + STORE_ID + '/activeJobsWithSiteSummary?_cbt=' + Date.now();
       var requestPerf = cbtPerfNow();
@@ -3753,7 +3981,10 @@
         cbtPruneOldLiveStarts();
       }
     } catch(e) {}
-    renderLive();
+    finally {
+      _cbtPollInFlight = false;
+      requestLiveRender();
+    }
   }
 
   function buildPanel() {
@@ -4033,11 +4264,15 @@
     _mountFails = 0;              /* mounted successfully */
     clearAutoReloadCount();       /* board is up — reset the reload budget */
     try { applyUiScale(); } catch(ex) {}   /* restore the saved size */
-    renderLive();
-    renderHistory();
-    renderWeekly();
-    renderNames();
-    try { renderHallOfFame(); } catch(ex) {}
+
+    /* Only render the tab the user can actually see. Hidden tabs keep their
+       data in storage/cache and render normally the moment the user clicks
+       them. This removes a large burst of unnecessary DOM creation at startup. */
+    try { renderActiveSearchTab(); } catch(ex) { try { renderLive(); } catch(ex2) {} }
+
+    /* If the backend answered during the short mount window, make sure the
+       freshly mounted Live table receives that cached data immediately. */
+    if (activeTab === 'live' && taskCache.size) requestLiveRender();
   }
 
   /* Runs on an interval: if the panel is gone or was detached by an
@@ -5137,6 +5372,7 @@
        cart/task detail page -> Associate Search only
        dashboard view        -> Batcher Timers only                */
   var panelWatcher = new MutationObserver(coalesced(function() {
+    try { ensureSortAttachment(); } catch(e0) {}
     if (shouldShowSearchPanel()) {
       /* cart/task detail, or any Outbound page -> Associate Search only */
       detachMainPanel();
@@ -6862,167 +7098,245 @@
   window.addEventListener('resize', function(){ try { applyUiScale(); } catch(e) {} });
   window.addEventListener('resize', function(){ if (_acDrop) acPlace(); });
   window.addEventListener('scroll', function(){ if (_acDrop) acPlace(); }, true);
-  try {
-    new MutationObserver(coalesced(function(){ acScanForFields(); }, 120))
-      .observe(document.documentElement, {
+  var _acObserver = null;
+
+  function acWatchRelevant() {
+    if (isOutboundSite() || isTaskDetailPage()) return true;
+    return !!document.querySelector('kat-modal, [role="dialog"], .modal');
+  }
+
+  function startAutocompleteWatch() {
+    if (_acObserver || _acWatch) return;
+
+    try {
+      _acObserver = new MutationObserver(coalesced(function(){
+        if (!acWatchRelevant() && !_acDrop) return;
+        acScanForFields();
+      }, 140));
+      _acObserver.observe(document.documentElement, {
         childList: true, subtree: true,
         attributes: true, attributeFilter: ['visible', 'aria-hidden', 'open', 'class', 'style']
       });
-  } catch(e) {}
-  _acWatch = setInterval(function(){
-    try { acScanForFields(); acTick(); } catch(e) {}
-  }, 300);
+    } catch(e) {}
 
-  function start() {
-    MY_DEVICE_ID = getDeviceId(); // initialize once at startup
+    _acWatch = setInterval(function(){
+      try {
+        if (_acDrop) acTick();
+        if (!document.hidden && acWatchRelevant()) acScanForFields();
+      } catch(e2) {}
+    }, 450);
 
-    /* ── Self-heal FIRST ──
-       These loops are what put the panels back whenever they are missing.
-       They used to be registered at the very end of start(), so any error
-       earlier in startup silently skipped them and the panels never came
-       back after a page reload. Registering them up front, before anything
-       that can fail, guarantees the panels always return.
-       The style sheet goes in first so panels mount already styled. */
-    try { document.head.appendChild(style); } catch(e) {}
-    try { _uiScale = loadUiScale(); _uiScaleLoaded = true; } catch(e) { _uiScale = UI_SCALE_DEFAULT; }
+    try { if (acWatchRelevant()) acScanForFields(); } catch(e3) {}
+  }
+
+  var _cbtStartupDone = false;
+
+  function runLegacyDataMigration() {
+    /* One-time migration kept exactly for compatibility with older installs. */
+    var CLEAN_KEY = 'cbt_cleaned_v21_9';
+    if (gmGet(CLEAN_KEY, null)) return;
+
+    try {
+      var oldWeekly = null;
+      try {
+        var gv = gmGet(WEEKLY_KEY, null);
+        if (gv) oldWeekly = (typeof gv === 'string') ? JSON.parse(gv) : gv;
+      } catch(e) {}
+      if (!oldWeekly) {
+        try { oldWeekly = JSON.parse(localStorage.getItem(WEEKLY_KEY) || '{}'); } catch(e2) {}
+      }
+      if (oldWeekly && Object.keys(oldWeekly).length > 0) {
+        var cleanedOld = sanitizeWeekly(oldWeekly);
+        if (Object.keys(cleanedOld).length > 0) {
+          var json = JSON.stringify(cleanedOld);
+          gmSet(OWN_WEEKLY_KEY, json);
+          try { localStorage.setItem(OWN_WEEKLY_KEY, json); } catch(e3) {}
+        }
+      }
+    } catch(e4) {}
+
+    try {
+      var oldHistory = null;
+      try {
+        var ghv = gmGet(STORAGE_KEY, null);
+        if (ghv) oldHistory = (typeof ghv === 'string') ? JSON.parse(ghv) : ghv;
+      } catch(e5) {}
+      if (!oldHistory) {
+        try { oldHistory = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch(e6) {}
+      }
+      if (oldHistory && Object.keys(oldHistory).length > 0) {
+        var cleanedHist = sanitizeHistory(oldHistory);
+        if (Object.keys(cleanedHist).length > 0) {
+          var hjson = JSON.stringify(cleanedHist);
+          gmSet(STORAGE_KEY, hjson);
+          try { localStorage.setItem(STORAGE_KEY, hjson); } catch(e7) {}
+        }
+      }
+    } catch(e8) {}
+
+    saveRemoteHistory({});
+    saveRemoteWeekly({});
+    gmSet(CLEAN_KEY, '1');
+  }
+
+  function installRouteHealth() {
+    /* React immediately to real SPA route changes. Polling below is only a
+       slower safety net for unusual route transitions the History patch misses. */
+    function onRoute() {
+      if (!isDashboardView()) detachMainPanel();
+      _fastMountUntil = Date.now() + 15000;
+      try { ensureSortAttachment(); } catch(e0) {}
+      panelHealthCheck();
+      taskPanelHealthCheck();
+    }
+
+    var _push = history.pushState, _repl = history.replaceState;
+    history.pushState = function () {
+      var r = _push.apply(this, arguments);
+      onRoute();
+      return r;
+    };
+    history.replaceState = function () {
+      var r = _repl.apply(this, arguments);
+      onRoute();
+      return r;
+    };
+
+    window.addEventListener('popstate', onRoute);
+    window.addEventListener('hashchange', onRoute);
+
+    var lastPath = location.pathname + location.hash;
+    setInterval(function () {
+      var now = location.pathname + location.hash;
+      if (now !== lastPath) {
+        lastPath = now;
+        onRoute();
+      }
+    }, 500);
+
+    setInterval(function () {
+      if (boardIsMisplaced()) detachMainPanel();
+    }, 1000);
+  }
+
+  function startCoreFeatures() {
+    /* Style + visible UI mount happen together AFTER COMO has had a chance to
+       paint its own page, so there is no unstyled flash and less competition
+       with Angular's initial render. */
+    try {
+      if (!style.isConnected) document.head.appendChild(style);
+    } catch(e) {}
+
+    try {
+      _uiScale = loadUiScale();
+      _uiScaleLoaded = true;
+    } catch(e2) {
+      _uiScale = UI_SCALE_DEFAULT;
+    }
+
     setInterval(panelHealthCheck, PANEL_HEALTH_MS);
     setInterval(taskPanelHealthCheck, PANEL_HEALTH_MS);
-    /* A fresh reload often renders the page's anchors well after this point,
-       so check rapidly for the first 60s to bring the panels up promptly. */
+
     _fastMountUntil = Date.now() + 60000;
     setInterval(function(){
       if (Date.now() > _fastMountUntil) return;
-      try { panelHealthCheck(); taskPanelHealthCheck(); } catch(e) {}
-    }, 400);
-    /* Late-loading pages: re-check once everything has finished loading. */
+      try { panelHealthCheck(); taskPanelHealthCheck(); } catch(e3) {}
+    }, 500);
+
     window.addEventListener('load', function(){
-      try { panelHealthCheck(); taskPanelHealthCheck(); } catch(e) {}
+      try { panelHealthCheck(); taskPanelHealthCheck(); } catch(e4) {}
     });
 
-    // Pull the shared names list FIRST, before any scans, panel work,
-    // or push can happen, so a fresh install starts from the full list.
-    // The gate in syncPush keeps every push queued until this completes,
-    // and the union push in the callback then re-seeds with anything this
-    // computer has that the server is missing.
-    try { syncPull(function(){ syncPush(); }); } catch(e) {}
+    try {
+      panelWatcher.observe(document.documentElement, { childList: true, subtree: true });
+    } catch(e5) {}
 
-    // ── One-time migration to v21.9 own/remote split ──
-    var CLEAN_KEY = 'cbt_cleaned_v21_9';
-    if (!gmGet(CLEAN_KEY, null)) {
-      // Migrate existing weekly data into OWN store before wiping old key
-      try {
-        var oldWeekly = null;
-        try { var gv = gmGet(WEEKLY_KEY, null); if (gv) oldWeekly = (typeof gv === 'string') ? JSON.parse(gv) : gv; } catch(e) {}
-        if (!oldWeekly) { try { oldWeekly = JSON.parse(localStorage.getItem(WEEKLY_KEY) || '{}'); } catch(e) {} }
-        if (oldWeekly && Object.keys(oldWeekly).length > 0) {
-          var cleanedOld = sanitizeWeekly(oldWeekly);
-          if (Object.keys(cleanedOld).length > 0) {
-            var json = JSON.stringify(cleanedOld);
-            gmSet(OWN_WEEKLY_KEY, json);
-            try { localStorage.setItem(OWN_WEEKLY_KEY, json); } catch(e) {}
-          }
-        }
-      } catch(e) {}
-      // Migrate existing today history into OWN store
-      try {
-        var oldHistory = null;
-        try { var ghv = gmGet(STORAGE_KEY, null); if (ghv) oldHistory = (typeof ghv === 'string') ? JSON.parse(ghv) : ghv; } catch(e) {}
-        if (!oldHistory) { try { oldHistory = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch(e) {} }
-        if (oldHistory && Object.keys(oldHistory).length > 0) {
-          var cleanedHist = sanitizeHistory(oldHistory);
-          if (Object.keys(cleanedHist).length > 0) {
-            var hjson = JSON.stringify(cleanedHist);
-            gmSet(STORAGE_KEY, hjson);
-            try { localStorage.setItem(STORAGE_KEY, hjson); } catch(e) {}
-          }
-        }
-      } catch(e) {}
-      // Wipe remote caches — will be rebuilt correctly on first pull
-      saveRemoteHistory({});
-      saveRemoteWeekly({});
-      gmSet(CLEAN_KEY, '1');
-    }
+    try { ensureSortAttachment(); } catch(e6) {}
+    try { if (isDashboardView()) injectPanel(); } catch(e7) {}
+    try { injectTaskPanel(); } catch(e8) {}
+    installRouteHealth();
+
+    /* Start associate-field autocomplete only after the main page has painted. */
+    try { startAutocompleteWatch(); } catch(e9) {}
 
     if (isComoSite()) {
       try {
         timerWatcher.observe(document.documentElement, { childList: true, subtree: true });
         injectAllTimers();
-            /* tickTimers updates the existing value in place — it never
-           removes or recreates the column. injectAllTimers stays as a
-           safety net for rows the observer missed; injectRowTimer already
-           no-ops when a row's column is present, so nothing is rebuilt. */
-        setInterval(function(){ try { tickTimers(); injectAllTimers(); } catch(e) {} }, 1000);
-        fetchAndUpdate();
-      } catch(e) {}
-    }
-    try { panelWatcher.observe(document.documentElement, { childList: true, subtree: true }); } catch(e) {}
-    try { if (isDashboardView()) injectPanel(); } catch(e) {}
-    try { injectTaskPanel(); } catch(e) {}
 
-    /* React the moment the route changes instead of waiting for the next
-       health tick — otherwise the board lingers for up to 2s on Packages.
-       Angular routes via pushState, which does not fire popstate. */
-    (function () {
-      function onRoute() {
-        if (!isDashboardView()) detachMainPanel();
-        /* Renew the rapid-check window: the anchor this board attaches to is
-           rendered by the page a moment after the route changes, and the
-           cached panel node is reinserted with its data intact as soon as it
-           appears. Live data keeps refreshing on its own intervals. */
-        _fastMountUntil = Date.now() + 15000;
-        panelHealthCheck();
-        taskPanelHealthCheck();
-      }
-      var _push = history.pushState, _repl = history.replaceState;
-      history.pushState = function () {
-        var r = _push.apply(this, arguments); onRoute(); return r;
-      };
-      history.replaceState = function () {
-        var r = _repl.apply(this, arguments); onRoute(); return r;
-      };
-      window.addEventListener('popstate', onRoute);
-      window.addEventListener('hashchange', onRoute);
+        /* Visible Time Left values still tick every second. The expensive
+           whole-page safety scan is only every 5s; mutations are handled
+           immediately and locally by timerWatcher above. */
+        setInterval(function(){ try { tickTimers(); } catch(e10) {} }, 1000);
+        setInterval(function(){
+          if (document.hidden || !isDashboardView()) return;
+          try { injectAllTimers(); } catch(e11) {}
+        }, 5000);
+      } catch(e12) {}
 
-      /* Safety net for route changes the patch above misses. */
-      var lastPath = location.pathname + location.hash;
-      setInterval(function () {
-        var now = location.pathname + location.hash;
-        if (now !== lastPath) { lastPath = now; onRoute(); }
-      }, 150);
-
-      /* Immediate correction if the board is ever found out of place. */
-      setInterval(function () { if (boardIsMisplaced()) detachMainPanel(); }, 400);
-    })();
-    if (isComoSite()) {
+      /* Authoritative Live data + stats keep the same refresh cadence. */
       pollActiveTasks();
+      fetchAndUpdate();
       setInterval(pollActiveTasks, POLL_MS);
       setInterval(tickLive, TICK_MS);
       setInterval(fetchAndUpdate, 1000);
     }
-    syncNamesFromAllTabs();
-    scanLocalStorageForNames();
+  }
+
+  function startBackgroundFeatures() {
+    /* These are important, but none of them needs to compete with the website's
+       first paint. They are started after the visible board is already usable. */
+    try { runLegacyDataMigration(); } catch(e) {}
+
+    try { syncPull(function(){ syncPush(); }); } catch(e2) {}
+
+    try { syncNamesFromAllTabs(); } catch(e3) {}
+    try { scanLocalStorageForNames(); } catch(e4) {}
+
     setInterval(function(){
+      if (document.hidden) return;
       if (syncNamesFromAllTabs() && activeTab === 'names') renderNames();
     }, 5000);
-    syncHistoryPull(function(){ syncHistoryPush(); });
-    syncWeeklyPull(function(){ syncWeeklyPush(); });
-    try { hofPull(); } catch(e) {}
-    setInterval(function(){ syncPull(); }, 60000);
-    setInterval(function(){ syncHistoryPull(); }, 60000);
-    setInterval(function(){ syncWeeklyPull(); }, 60000);
-    setInterval(function(){ try { hofPull(); } catch(e) {} }, 60000);
+
+    try { syncHistoryPull(function(){ syncHistoryPush(); }); } catch(e5) {}
+    try { syncWeeklyPull(function(){ syncWeeklyPush(); }); } catch(e6) {}
+    try { hofPull(); } catch(e7) {}
+
+    setInterval(function(){ if (!document.hidden) syncPull(); }, 60000);
+    setInterval(function(){ if (!document.hidden) syncHistoryPull(); }, 60000);
+    setInterval(function(){ if (!document.hidden) syncWeeklyPull(); }, 60000);
+    setInterval(function(){ if (!document.hidden) { try { hofPull(); } catch(e8) {} } }, 60000);
+
     if (isComoSite()) {
       try {
         GM_xmlhttpRequest({
-          method: 'GET', url: DRIVE_URL + '&_=' + Date.now(), responseType: 'json',
+          method: 'GET',
+          url: DRIVE_URL + '&_=' + Date.now(),
+          responseType: 'json',
           onload: function(res) {
-            if (res.status>=200&&res.status<300&&res.response) batchRateCache = res.response[STORE_ID]||200;
+            if (res.status >= 200 && res.status < 300 && res.response) {
+              batchRateCache = res.response[STORE_ID] || 200;
+            }
             fetchAndUpdate();
           },
           onerror: function(){}
         });
-      } catch(e) {}
+      } catch(e9) {}
     }
+  }
+
+  function start() {
+    if (_cbtStartupDone) return;
+    _cbtStartupDone = true;
+    MY_DEVICE_ID = getDeviceId();
+
+    /* Core UI comes in just after the first two browser paints. */
+    cbtAfterFirstPaint(startCoreFeatures, 120);
+
+    /* Remote sync/storage scans are deliberately later and idle-scheduled. */
+    cbtAfterFirstPaint(function(){
+      cbtIdle(startBackgroundFeatures, 900);
+    }, 650);
   }
 
   if (document.readyState === 'loading') {
