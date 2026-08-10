@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.25
+// @version      23.9.28
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -1367,50 +1367,96 @@
     ══════════════════════════════════════ */
     #cbt-qr-overlay {
       position: fixed; inset: 0; z-index: 2147483646;
-      background: rgba(13,27,42,0.45);
-      display: flex; align-items: center; justify-content: center;
+      background: transparent !important;
+      backdrop-filter: none !important;
+      -webkit-backdrop-filter: none !important;
+      display: flex;
+      align-items: flex-end;
+      justify-content: flex-end;
+      padding: 0 16px 16px 0;
+      box-sizing: border-box;
       font-family: var(--cb-sans);
-      animation: cbtFadeIn 0.15s ease-out;
+      pointer-events: none;
     }
     #cbt-qr-card {
-      background: #ffffff; border-radius: 14px; width: 400px;
-      box-shadow: 0 20px 60px rgba(13,27,42,0.35), 0 4px 16px rgba(13,27,42,0.2);
+      pointer-events: auto;
+      background: #ffffff !important;
+      border: 1px solid #d8e0e8;
+      border-radius: 11px;
+      width: 248px;
+      max-width: calc(100vw - 24px);
+      box-shadow: 0 8px 24px rgba(13,27,42,0.18), 0 2px 7px rgba(13,27,42,0.10);
       overflow: hidden;
+      animation: cbtQrCornerIn .12s ease-out;
+    }
+    @keyframes cbtQrCornerIn {
+      from { opacity: 0; transform: translateY(8px); }
+      to   { opacity: 1; transform: translateY(0); }
     }
     #cbt-qr-head {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 12px 16px; background: #f0f4f8;
-      border-bottom: 1px solid var(--cb-border);
+      padding: 8px 10px; background: #f7f9fb;
+      border-bottom: 1px solid #e1e7ee;
     }
     #cbt-qr-title {
-      font-size: 13px; font-weight: 800; color: var(--cb-navy);
-      letter-spacing: .05em; text-transform: uppercase;
-      display: flex; align-items: center; gap: 8px;
+      font-size: 11px; font-weight: 800; color: #0d1b2a;
+      letter-spacing: .045em; text-transform: uppercase;
+      display: flex; align-items: center; gap: 6px;
     }
     #cbt-qr-title::before {
-      content: ''; width: 3px; height: 14px;
+      content: ''; width: 3px; height: 12px;
       background: var(--cb-blue); border-radius: 2px;
     }
     #cbt-qr-close {
-      cursor: pointer; border: none; background: none; color: var(--cb-text3);
-      font-size: 15px; width: 26px; height: 26px; border-radius: 50%;
+      cursor: pointer; border: none; background: transparent; color: #66788a;
+      font-size: 14px; width: 24px; height: 24px; border-radius: 6px;
       display: flex; align-items: center; justify-content: center; padding: 0;
-      transition: color .15s, background .15s;
+      transition: color .12s, background .12s;
     }
-    #cbt-qr-close:hover { color: var(--cb-red); background: rgba(255,61,61,.1); }
-    #cbt-qr-canvas-wrap { display: flex; align-items: center; justify-content: center; padding: 26px 26px 12px; }
-    #cbt-qr-canvas { width: 324px; height: 324px; border-radius: 8px; }
-    #cbt-qr-err { display: none; color: var(--cb-red); font-size: 12px; font-weight: 600; text-align: center; padding: 0 16px 8px; }
+    #cbt-qr-close:hover { color: var(--cb-red); background: rgba(255,61,61,.08); }
+    #cbt-qr-canvas-wrap {
+      display: flex; align-items: center; justify-content: center;
+      padding: 12px 12px 7px;
+      background: #ffffff;
+    }
+    #cbt-qr-svg {
+      width: 186px;
+      height: 186px;
+      border-radius: 5px;
+      display: block;
+      background: #ffffff;
+      overflow: hidden;
+    }
+    #cbt-qr-svg svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+      background: #ffffff;
+      shape-rendering: crispEdges;
+    }
+    #cbt-qr-err {
+      display: none; color: var(--cb-red); font-size: 10px; font-weight: 700;
+      text-align: center; padding: 0 10px 5px;
+    }
     #cbt-qr-input {
-      display: block; width: calc(100% - 52px); box-sizing: border-box;
-      margin: 0 26px 22px; padding: 15px 14px;
-      border: 1.5px solid var(--cb-border); border-radius: 8px;
-      font-size: 19px; font-weight: 700; letter-spacing: .02em;
-      font-family: var(--cb-mono); color: var(--cb-text);
+      display: block; width: calc(100% - 24px); box-sizing: border-box;
+      margin: 0 12px 12px; padding: 8px 9px;
+      border: 1px solid #d8e0e8; border-radius: 7px;
+      font-size: 12px; font-weight: 700; letter-spacing: .01em;
+      font-family: var(--cb-mono); color: #152536;
+      background: #ffffff;
       outline: none; text-align: center;
-      transition: border-color .15s, box-shadow .15s;
+      transition: border-color .12s, box-shadow .12s;
     }
-    #cbt-qr-input:focus { border-color: var(--cb-blue); box-shadow: 0 0 0 3px rgba(41,121,255,.14); }
+    #cbt-qr-input:focus {
+      border-color: var(--cb-blue);
+      box-shadow: 0 0 0 2px rgba(41,121,255,.12);
+    }
+    @media (max-width: 560px) {
+      #cbt-qr-overlay { padding: 0 8px 8px 0; }
+      #cbt-qr-card { width: 224px; }
+      #cbt-qr-svg { width: 168px; height: 168px; }
+    }
 
     /* ══════════════════════════════════════
        AUTO FORCE ASSIGN
@@ -5407,6 +5453,10 @@
 
   var _qrOverlay = null;
   var _qrSuppressNextMouseup = false;
+  var _qrRenderRAF = 0;
+  var _qrLastOpenedText = '';
+  var _qrOutsideHandler = null;
+  var _qrSelectionTimer = 0;
 
   /* Every surface this script draws. Text inside these is not selectable and
      never becomes a QR code — the feature is for the page's own content. */
@@ -5424,38 +5474,92 @@
   }
 
   function qrRender(text) {
-    var canvas = document.getElementById('cbt-qr-canvas');
+    var host = document.getElementById('cbt-qr-svg');
     var err = document.getElementById('cbt-qr-err');
-    if (!canvas) return;
-    var ctx = canvas.getContext('2d');
-    var W = canvas.width;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(0, 0, W, W);
-    text = text || '';
-    if (!text.trim()) { if (err) err.style.display = 'none'; return; }
+    if (!host) return;
+
+    text = String(text || '');
+    if (!text.trim()) {
+      host.innerHTML = '';
+      if (err) err.style.display = 'none';
+      return;
+    }
+
     try {
       var qr = qrcode(0, 'M');
       qr.addData(text);
       qr.make();
+
       var n = qr.getModuleCount();
       var quiet = 4;
-      var cell = Math.floor(W / (n + quiet * 2));
-      var off = Math.floor((W - cell * n) / 2);
-      ctx.fillStyle = '#0d1b2a';
+      var size = n + quiet * 2;
+      var path = '';
+
+      /* One SVG path is substantially cheaper than hundreds of DOM nodes and
+         does not depend on Canvas APIs, which some browser privacy extensions
+         can restrict. */
       for (var r = 0; r < n; r++) {
         for (var c = 0; c < n; c++) {
-          if (qr.isDark(r, c)) ctx.fillRect(off + c * cell, off + r * cell, cell, cell);
+          if (!qr.isDark(r, c)) continue;
+          var x = c + quiet;
+          var y = r + quiet;
+          path += 'M' + x + ' ' + y + 'h1v1h-1z';
         }
       }
-      if (err) err.style.display = 'none';
+
+      host.innerHTML =
+        '<svg xmlns="http://www.w3.org/2000/svg" ' +
+             'viewBox="0 0 ' + size + ' ' + size + '" ' +
+             'preserveAspectRatio="xMidYMid meet" ' +
+             'role="img" aria-label="Generated QR code">' +
+          '<rect width="' + size + '" height="' + size + '" fill="#ffffff"/>' +
+          '<path d="' + path + '" fill="#000000"/>' +
+        '</svg>';
+
+      if (err) {
+        err.textContent = '';
+        err.style.display = 'none';
+      }
     } catch(e) {
-      if (err) { err.textContent = 'Text too long for a QR code'; err.style.display = 'block'; }
+      host.innerHTML = '';
+      if (err) {
+        err.textContent = 'Could not generate QR code';
+        err.style.display = 'block';
+      }
+      try { console.warn('[CBT QR] QR generation failed:', e); } catch(ignore) {}
     }
   }
 
+  function qrScheduleRender(text) {
+    if (_qrRenderRAF) {
+      try { cancelAnimationFrame(_qrRenderRAF); } catch(e) {}
+    }
+    var raf = (typeof requestAnimationFrame === 'function')
+      ? requestAnimationFrame
+      : function(cb){ return setTimeout(cb, 16); };
+
+    _qrRenderRAF = raf(function(){
+      _qrRenderRAF = 0;
+      qrRender(text);
+    });
+  }
+
   function qrTeardown() {
+    if (_qrSelectionTimer) {
+      clearTimeout(_qrSelectionTimer);
+      _qrSelectionTimer = 0;
+    }
+    if (_qrRenderRAF) {
+      try { cancelAnimationFrame(_qrRenderRAF); } catch(e0) {}
+      _qrRenderRAF = 0;
+    }
+    if (_qrOutsideHandler) {
+      try { document.removeEventListener('mousedown', _qrOutsideHandler, true); } catch(e1) {}
+      _qrOutsideHandler = null;
+    }
     if (_qrOverlay && _qrOverlay.parentNode) _qrOverlay.parentNode.removeChild(_qrOverlay);
     _qrOverlay = null;
+    _qrLastOpenedText = '';
   }
 
   function qrClose() {
@@ -5471,42 +5575,199 @@
   }
 
   function qrOpen(text) {
+    text = String(text || '').trim();
+    if (!text) return;
+
+    /* Same text + already open = no DOM rebuild and no QR re-encode. */
+    if (_qrOverlay && _qrOverlay.isConnected && _qrLastOpenedText === text) return;
+
     qrTeardown();
+    _qrLastOpenedText = text;
+
     _qrOverlay = document.createElement('div');
     _qrOverlay.id = 'cbt-qr-overlay';
     _qrOverlay.innerHTML =
-      '<div id="cbt-qr-card">' +
+      '<div id="cbt-qr-card" role="dialog" aria-label="QR Code">' +
         '<div id="cbt-qr-head">' +
           '<span id="cbt-qr-title">QR Code</span>' +
-          '<button id="cbt-qr-close" title="Close">✕</button>' +
+          '<button id="cbt-qr-close" type="button" title="Close" aria-label="Close QR">✕</button>' +
         '</div>' +
-        '<div id="cbt-qr-canvas-wrap"><canvas id="cbt-qr-canvas" width="648" height="648"></canvas></div>' +
+        '<div id="cbt-qr-canvas-wrap"><div id="cbt-qr-svg" aria-live="polite"></div></div>' +
         '<div id="cbt-qr-err"></div>' +
-        '<input id="cbt-qr-input" type="text" spellcheck="false" autocomplete="off" placeholder="Text to encode..."/>' +
+        '<input id="cbt-qr-input" type="text" spellcheck="false" autocomplete="off" aria-label="QR value" placeholder="Text to encode..."/>' +
       '</div>';
+
     document.body.appendChild(_qrOverlay);
-    try { applyUiScale(); } catch(e) {}
+
+    var card = _qrOverlay.querySelector('#cbt-qr-card');
     var input = _qrOverlay.querySelector('#cbt-qr-input');
     input.value = text;
-    /* click on the dark backdrop (not the card) closes the popup. This is the
-       only close path with a mouseup still to come, so flag that one mouseup
-       to be ignored — otherwise it reopens the popup on the spot. */
-    _qrOverlay.addEventListener('mousedown', function(e){
-      if (e.target !== _qrOverlay) return;
-      _qrSuppressNextMouseup = true;
-      qrClose();
-    });
+
     _qrOverlay.querySelector('#cbt-qr-close').addEventListener('click', qrClose);
-    /* live re-render while editing */
-    _qrOverlay.addEventListener('input', function(e){ if (e.target === input) qrRender(input.value); });
+
+    /* Re-render at most once per animation frame while editing. */
+    input.addEventListener('input', function(){
+      qrScheduleRender(input.value);
+    });
+
+    /* The page stays completely clear/clickable. A temporary document listener
+       exists ONLY while the small QR card is open and only checks one contains()
+       call. Clicking elsewhere closes the card without blocking COMO. */
+    _qrOutsideHandler = function(e) {
+      if (!_qrOverlay || !card || card.contains(e.target)) return;
+      qrClose();
+    };
+    document.addEventListener('mousedown', _qrOutsideHandler, true);
+
     qrRender(text);
   }
 
-  /* The automatic "highlight text -> generate a QR code" trigger has been
-     removed at your request. The popup code below/above is left untouched
-     and simply has no automatic entry point any more, so it can be wired to
-     a button later without rebuilding it. The site's own QR Generator is a
-     separate feature this script has never touched. */
+  function qrCleanSelectedText(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function qrControlSelection(target) {
+    if (!target || target.nodeType !== 1) return '';
+    if (qrInScriptUI(target)) return '';
+
+    var tag = String(target.tagName || '').toLowerCase();
+    if (tag !== 'input' && tag !== 'textarea') return '';
+
+    try {
+      var start = Number(target.selectionStart);
+      var end = Number(target.selectionEnd);
+      if (!isFinite(start) || !isFinite(end) || end <= start) return '';
+      return qrCleanSelectedText(String(target.value || '').slice(start, end));
+    } catch(e) {
+      return '';
+    }
+  }
+
+  function qrSelectionFromObject(sel) {
+    if (!sel || sel.isCollapsed || !sel.rangeCount) return '';
+
+    var text = qrCleanSelectedText(sel.toString());
+    if (!text) return '';
+
+    try {
+      if (qrInScriptUI(sel.anchorNode) || qrInScriptUI(sel.focusNode)) return '';
+      var common = sel.getRangeAt(0).commonAncestorContainer;
+      if (qrInScriptUI(common)) return '';
+    } catch(e) {}
+
+    return text;
+  }
+
+  function qrSelectionText(event) {
+    /* Inputs/textareas have their own selectionStart/selectionEnd API and do
+       not always appear in window.getSelection(). */
+    var direct = qrControlSelection(event && event.target);
+    if (direct) return direct;
+
+    var candidates = [];
+
+    function addSelection(sel) {
+      if (!sel) return;
+      if (candidates.indexOf(sel) === -1) candidates.push(sel);
+    }
+
+    try { addSelection(window.getSelection()); } catch(e0) {}
+    try { addSelection(document.getSelection()); } catch(e1) {}
+
+    /* COMO uses KAT/web components. If the highlight lives in an open shadow
+       root, use that root's selection API when the browser exposes it. */
+    try {
+      var path = event && typeof event.composedPath === 'function'
+        ? event.composedPath()
+        : [];
+
+      for (var i = 0; i < path.length; i++) {
+        var node = path[i];
+        if (!node) continue;
+
+        var root = null;
+        try {
+          if (node.nodeType === 11) root = node;
+          else if (node.getRootNode) root = node.getRootNode();
+        } catch(e2) {}
+
+        if (root && typeof root.getSelection === 'function') {
+          try { addSelection(root.getSelection()); } catch(e3) {}
+        }
+      }
+    } catch(e4) {}
+
+    var best = '';
+    for (var j = 0; j < candidates.length; j++) {
+      var value = qrSelectionFromObject(candidates[j]);
+      if (value && value.length > best.length) best = value;
+    }
+    return best;
+  }
+
+  function qrOpenCurrentSelection(event) {
+    if (_qrSuppressNextMouseup) {
+      _qrSuppressNextMouseup = false;
+      return;
+    }
+
+    var selected = qrSelectionText(event);
+    if (!selected) return;
+    qrOpen(selected);
+  }
+
+  function qrQueueSelectionOpen(event) {
+    if (event && qrInScriptUI(event.target)) return;
+
+    if (_qrSelectionTimer) {
+      clearTimeout(_qrSelectionTimer);
+      _qrSelectionTimer = 0;
+    }
+
+    /* Capture the useful event fields before the browser/event object is
+       recycled. composedPath() is captured now for shadow-root support. */
+    var snapshot = {
+      target: event ? event.target : null,
+      path: []
+    };
+    try {
+      if (event && typeof event.composedPath === 'function') {
+        snapshot.path = event.composedPath();
+      }
+    } catch(e) {}
+
+    snapshot.composedPath = function(){ return snapshot.path || []; };
+
+    /* Selection finalization happens after pointer/mouse up. One zero-delay
+       task is enough; no repeated checking is needed. */
+    _qrSelectionTimer = setTimeout(function(){
+      _qrSelectionTimer = 0;
+      qrOpenCurrentSelection(snapshot);
+    }, 0);
+  }
+
+  /* Restored QR feature. Capture phase is intentional: some COMO/KAT
+     components stop mouse/pointer events before they bubble to document.
+     Capture lets the QR feature see the completed selection without adding
+     any observer, interval, polling, or network request. */
+  if (typeof PointerEvent !== 'undefined') {
+    document.addEventListener('pointerup', qrQueueSelectionOpen, true);
+  } else {
+    document.addEventListener('mouseup', qrQueueSelectionOpen, true);
+  }
+
+  /* Keyboard text selection remains supported. */
+  document.addEventListener('keyup', function(e) {
+    if (!e || !e.shiftKey) return;
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' &&
+        e.key !== 'ArrowUp' && e.key !== 'ArrowDown' &&
+        e.key !== 'Home' && e.key !== 'End') return;
+    qrQueueSelectionOpen(e);
+  }, true);
+
+  document.addEventListener('keydown', function(e) {
+    if (e && e.key === 'Escape' && _qrOverlay) qrClose();
+  }, true);
 
   /* ══════════════════════════════════════
      AUTO FORCE ASSIGN
