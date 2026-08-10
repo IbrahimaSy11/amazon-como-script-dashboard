@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.28
+// @version      23.9.31
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -1563,12 +1563,12 @@
       height: 40px !important;
       min-height: 40px !important;
       max-height: 40px !important;
-      padding: 0 10px !important;
+      padding: 0 14px !important;
       margin: 0 !important;
       display: inline-flex !important;
       align-items: center !important;
-      justify-content: center !important;
-      text-align: center !important;
+      justify-content: flex-start !important;
+      text-align: left !important;
       white-space: nowrap;
       flex-shrink: 0;
       box-sizing: border-box !important;
@@ -6927,6 +6927,117 @@
      and Resolve and other page-level search boxes: those fields merely
      mention "associate ID" in their placeholder, and the old test looked at
      wording alone with no container requirement. */
+  /* Search and Resolve exception
+     ----------------------------
+     This field was intentionally excluded before because generic page search
+     boxes could accidentally receive associate suggestions. The user now
+     wants the name/login popup back ONLY on Outbound -> Search and Resolve.
+
+     Detection is deliberately strict:
+       - Outbound site only
+       - the page heading/tab must identify Search and Resolve, OR the search
+         input must carry the known multi-ID Search and Resolve placeholder
+       - the field must be the page's main search input
+       - when a search-type selector is present, it must be set to Associate ID
+
+     This is checked only when the user focuses/types in a field, so it adds no
+     background polling and no continuous DOM work. */
+  function acIsSearchResolvePage() {
+    if (!isOutboundSite()) return false;
+
+    var path = (location.pathname || '').toLowerCase();
+    if (/search[^a-z0-9]*and[^a-z0-9]*resolve|search[^a-z0-9]*resolve/.test(path)) return true;
+
+    try {
+      var heads = document.querySelectorAll('h1,h2,h3,[role="heading"]');
+      for (var i = 0; i < heads.length; i++) {
+        var t = (heads[i].textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+        if (t === 'search and resolve') return true;
+      }
+    } catch(e) {}
+
+    return false;
+  }
+
+  function acSearchResolveModeIsAssociate(input) {
+    var scope = null;
+    try {
+      scope = input.closest('form') ||
+              input.closest('[class*="search"]') ||
+              input.parentElement;
+    } catch(e) {
+      scope = input.parentElement;
+    }
+
+    /* Native select used by the current Search and Resolve page. */
+    try {
+      var selects = (scope || document).querySelectorAll('select');
+      for (var i = 0; i < selects.length; i++) {
+        var s = selects[i];
+        var txt = '';
+        try {
+          txt = ((s.options && s.selectedIndex >= 0 && s.options[s.selectedIndex])
+                   ? s.options[s.selectedIndex].textContent
+                   : s.value) || '';
+        } catch(e2) { txt = s.value || ''; }
+        txt = txt.replace(/\s+/g, ' ').trim().toLowerCase();
+        if (/associate\s*id|associate/.test(txt)) return true;
+      }
+    } catch(e3) {}
+
+    /* Katal/custom select fallback. Keep the search local first. */
+    try {
+      var root = scope || document;
+      var custom = root.querySelectorAll('kat-select,[role="combobox"],button,[aria-haspopup="listbox"]');
+      for (var j = 0; j < custom.length; j++) {
+        var ct = (custom[j].textContent || custom[j].getAttribute('value') || custom[j].getAttribute('aria-label') || '')
+          .replace(/\s+/g, ' ').trim().toLowerCase();
+        if (/^associate\s*id$|associate\s*id/.test(ct)) return true;
+      }
+    } catch(e4) {}
+
+    /* If no selector can be read, only accept the exact known Search and
+       Resolve search box when its own metadata explicitly references
+       Associate ID. This keeps Search Historical and unrelated search fields
+       excluded. */
+    var own = [
+      input.getAttribute('placeholder'),
+      input.getAttribute('aria-label'),
+      input.getAttribute('name'),
+      input.getAttribute('id')
+    ].filter(Boolean).join(' ').toLowerCase();
+
+    return /associate\s*id/.test(own) &&
+           (/procurement\s*list\s*id/.test(own) || /order\s*id/.test(own) || /status/.test(own));
+  }
+
+  function acIsSearchResolveAssociateField(el) {
+    if (!el || el.tagName !== 'INPUT' || acIsOurs(el)) return false;
+    if (!isOutboundSite()) return false;
+
+    var type = (el.getAttribute('type') || 'text').toLowerCase();
+    if (type !== 'text' && type !== 'search' && type !== '') return false;
+    if (el.disabled || el.readOnly) return false;
+
+    var own = [
+      el.getAttribute('placeholder'),
+      el.getAttribute('aria-label'),
+      el.getAttribute('name'),
+      el.getAttribute('id')
+    ].filter(Boolean).join(' ').toLowerCase();
+
+    /* The screenshot/current page uses one broad search input whose
+       placeholder mentions status, zone, order ID, procurement list ID and
+       associate ID. That signature is strong enough even if the SPA URL
+       itself is generic. */
+    var knownSearchBox =
+      /associate\s*id/.test(own) &&
+      (/procurement\s*list\s*id/.test(own) || (/status/.test(own) && /zone/.test(own)));
+
+    if (!knownSearchBox && !acIsSearchResolvePage()) return false;
+    return acSearchResolveModeIsAssociate(el);
+  }
+
   function acInAssignmentContainer(el) {
     var n = el, guard = 0;
     while (n && guard++ < 200) {
@@ -6954,6 +7065,11 @@
 
   function acIsAssociateField(el) {
     if (!el || el.tagName !== 'INPUT' || acIsOurs(el)) return false;
+
+    /* The one page-level exception: Outbound -> Search and Resolve with
+       Associate ID selected. All other page-level searches remain excluded. */
+    if (acIsSearchResolveAssociateField(el)) return true;
+
     if (!acInAssignmentContainer(el)) return false;
     var type = (el.getAttribute('type') || 'text').toLowerCase();
     if (type !== 'text' && type !== 'search' && type !== '') return false;
@@ -7117,6 +7233,15 @@
 
   document.addEventListener('input', function(e){
     var t = acRealTarget(e);
+
+    /* Search and Resolve can change its search type while the text box remains
+       focused. Bind lazily on the first keystroke once Associate ID is active. */
+    if (t !== _acInput && acIsSearchResolveAssociateField(t)) {
+      acBind(t, null);
+      _acInput = t;
+      _acHost = null;
+    }
+
     if (t !== _acInput) return;
     var v = t.value || '';
     if (v.trim().length < AC_MIN_CHARS) { acClose(); return; }
