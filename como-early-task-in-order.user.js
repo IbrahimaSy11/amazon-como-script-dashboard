@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.31
+// @version      23.9.45
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -168,6 +168,16 @@
     #cbt-table, #cbt-hist-table, #cbt-weekly-table, #cbt-names-table {
       width: 100%; border-collapse: collapse;
     }
+    #cbt-hist-table, #cbt-weekly-table { table-layout: fixed; }
+
+    /* TODAY: lock all five columns so Latest Avg is always visible. */
+    #cbt-hist-table th:nth-child(1), #cbt-hist-table td:nth-child(1) { width: 36%; }
+    #cbt-hist-table th:nth-child(2), #cbt-hist-table td:nth-child(2) { width: 13%; }
+    #cbt-hist-table th:nth-child(3), #cbt-hist-table td:nth-child(3) { width: 15%; }
+    #cbt-hist-table th:nth-child(4), #cbt-hist-table td:nth-child(4) { width: 17%; }
+    #cbt-hist-table th:nth-child(5), #cbt-hist-table td:nth-child(5) { width: 19%; }
+
+    #cbt-weekly-table th:first-child, #cbt-weekly-table td:first-child { width: 30%; }
     #cbt-table thead tr, #cbt-hist-table thead tr,
     #cbt-weekly-table thead tr, #cbt-names-table thead tr {
       border-bottom: 2px solid var(--cb-border);
@@ -1300,11 +1310,12 @@
     }
     #cbt-hof-view { overflow-x: auto; }
     #cbt-hof-table { width: 100%; max-width: 100%; table-layout: fixed; border-collapse: collapse; }
-    #cbt-hof-table th:nth-child(1), #cbt-hof-table td:nth-child(1) { width: 36%; }
-    #cbt-hof-table th:nth-child(2), #cbt-hof-table td:nth-child(2) { width: 15%; }
-    #cbt-hof-table th:nth-child(3), #cbt-hof-table td:nth-child(3) { width: 16%; }
-    #cbt-hof-table th:nth-child(4), #cbt-hof-table td:nth-child(4) { width: 16%; }
-    #cbt-hof-table th:nth-child(5), #cbt-hof-table td:nth-child(5) { width: 17%; }
+    #cbt-hof-table th:nth-child(1), #cbt-hof-table td:nth-child(1) { width: 31%; }
+    #cbt-hof-table th:nth-child(2), #cbt-hof-table td:nth-child(2) { width: 11%; }
+    #cbt-hof-table th:nth-child(3), #cbt-hof-table td:nth-child(3) { width: 12%; }
+    #cbt-hof-table th:nth-child(4), #cbt-hof-table td:nth-child(4) { width: 15%; }
+    #cbt-hof-table th:nth-child(5), #cbt-hof-table td:nth-child(5) { width: 15%; }
+    #cbt-hof-table th:nth-child(6), #cbt-hof-table td:nth-child(6) { width: 16%; }
     #cbt-hof-table thead tr {
       border-bottom: 2px solid var(--cb-border); background: #f8fafc;
       position: sticky; top: 0; z-index: 1;
@@ -1382,9 +1393,9 @@
       pointer-events: auto;
       background: #ffffff !important;
       border: 1px solid #d8e0e8;
-      border-radius: 11px;
-      width: 248px;
-      max-width: calc(100vw - 24px);
+      border-radius: 10px;
+      width: 340px;
+      max-width: calc(100vw - 20px);
       box-shadow: 0 8px 24px rgba(13,27,42,0.18), 0 2px 7px rgba(13,27,42,0.10);
       overflow: hidden;
       animation: cbtQrCornerIn .12s ease-out;
@@ -1395,16 +1406,16 @@
     }
     #cbt-qr-head {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 8px 10px; background: #f7f9fb;
+      padding: 9px 11px; background: #f7f9fb;
       border-bottom: 1px solid #e1e7ee;
     }
     #cbt-qr-title {
-      font-size: 11px; font-weight: 800; color: #0d1b2a;
+      font-size: 12px; font-weight: 800; color: #0d1b2a;
       letter-spacing: .045em; text-transform: uppercase;
       display: flex; align-items: center; gap: 6px;
     }
     #cbt-qr-title::before {
-      content: ''; width: 3px; height: 12px;
+      content: ''; width: 3px; height: 16px;
       background: var(--cb-blue); border-radius: 2px;
     }
     #cbt-qr-close {
@@ -1416,12 +1427,12 @@
     #cbt-qr-close:hover { color: var(--cb-red); background: rgba(255,61,61,.08); }
     #cbt-qr-canvas-wrap {
       display: flex; align-items: center; justify-content: center;
-      padding: 12px 12px 7px;
+      padding: 14px 14px 9px;
       background: #ffffff;
     }
     #cbt-qr-svg {
-      width: 186px;
-      height: 186px;
+      width: 260px;
+      height: 260px;
       border-radius: 5px;
       display: block;
       background: #ffffff;
@@ -1440,9 +1451,10 @@
     }
     #cbt-qr-input {
       display: block; width: calc(100% - 24px); box-sizing: border-box;
-      margin: 0 12px 12px; padding: 8px 9px;
+      margin: 0 12px 14px; padding: 11px 12px;
+      min-height: 44px;
       border: 1px solid #d8e0e8; border-radius: 7px;
-      font-size: 12px; font-weight: 700; letter-spacing: .01em;
+      font-size: 16px; font-weight: 700; letter-spacing: .01em;
       font-family: var(--cb-mono); color: #152536;
       background: #ffffff;
       outline: none; text-align: center;
@@ -1453,9 +1465,9 @@
       box-shadow: 0 0 0 2px rgba(41,121,255,.12);
     }
     @media (max-width: 560px) {
-      #cbt-qr-overlay { padding: 0 8px 8px 0; }
-      #cbt-qr-card { width: 224px; }
-      #cbt-qr-svg { width: 168px; height: 168px; }
+      #cbt-qr-overlay { padding: 0 6px 6px 0; }
+      #cbt-qr-card { width: 300px; }
+      #cbt-qr-svg { width: 230px; height: 230px; }
     }
 
     /* ══════════════════════════════════════
@@ -1706,13 +1718,33 @@
 
   var _storeTimezoneCache = null;
   var _storeTimezoneCacheAt = 0;
+  var _storeTimezoneCacheScope = '';
   var _parseTimeMemo = Object.create(null);
   var _parseTimeMemoDay = '';
 
   function getStoreTimezone() {
     var nowMs = Date.now();
-    if (_storeTimezoneCache && nowMs - _storeTimezoneCacheAt < 10 * 60 * 1000) {
+
+    /* Scope the cache to the store currently present in the COMO URL. If the
+       user switches stores through SPA navigation, the old store's timezone
+       is discarded immediately rather than being retained for 10 minutes. */
+    var scope = '';
+    try {
+      var sm = location.pathname.match(/\/store\/([^/]+)/i);
+      scope = sm && sm[1] ? sm[1] : (location.host + location.pathname);
+    } catch(e0) {
+      scope = location.host || '';
+    }
+
+    if (_storeTimezoneCache && _storeTimezoneCacheScope === scope &&
+        nowMs - _storeTimezoneCacheAt < 10 * 60 * 1000) {
       return _storeTimezoneCache;
+    }
+
+    if (_storeTimezoneCacheScope !== scope) {
+      _storeTimezoneCache = null;
+      _parseTimeMemo = Object.create(null);
+      _parseTimeMemoDay = '';
     }
 
     var tz = null;
@@ -1733,6 +1765,7 @@
 
     _storeTimezoneCache = tz || 'America/New_York';
     _storeTimezoneCacheAt = nowMs;
+    _storeTimezoneCacheScope = scope;
     return _storeTimezoneCache;
   }
 
@@ -2025,19 +2058,368 @@
   });
 
   /* ══════════════════════════════════════════
-     PART 3 — BATCHERS + REMAINING PACKAGES
+     PART 3 — BATCHERS + REMAINING + HOURLY RECOMMEND
   ══════════════════════════════════════════ */
+
+  /* Recommendation design
+     ---------------------
+     The old recommendation divided remaining PACKAGES by live batcher speed.
+     That could recommend "1" even when many carts were due soon.
+
+     v23.9.45 deliberately does NOT use individual associate speed/rate.
+
+     It treats each open batching job/cart as one unit of work and asks:
+       "How many concurrent batchers are needed to clear these carts before
+        their deadlines / before the next :57 planning point?"
+
+     The recommendation is stable:
+       - :57 store time starts a new hourly planning cycle.
+       - During a cycle the number may INCREASE when rush/new urgent carts
+         arrive, but it never decreases.
+       - :55 → :57 is the normal release window, so next-cycle carts do not
+         make the old cycle spike for two minutes. Truly urgent/overdue carts
+         can still raise the recommendation.
+       - At the next :57 the recommendation is recalculated from scratch.
+
+     CONSERVATIVE PLANNING ASSUMPTIONS:
+       - EVERY batcher is treated as slow/unpredictable for staffing.
+       - One cart consumes 20 planning-minutes of one batcher.
+         This is a fixed WORST-CASE planning unit, NOT a measured worker speed.
+       - A batcher is reusable: after finishing one cart, they can immediately
+         take another. Capacity is therefore worker-minutes across the hour,
+         not one permanently assigned batcher per cart.
+       - Keep 5 minutes of deadline safety.
+       - Reserve 12% extra cart capacity (1–4 carts) for mid-hour rush work.
+       - Overdue carts are treated as needing attention within 8 minutes.
+  */
+
+  var CBT_REC_RELEASE_MINUTE       = 57;
+  var CBT_REC_RELEASE_FREEZE_START = 55;
+  var CBT_REC_CART_MINUTES         = 20;
+  var CBT_REC_DEADLINE_BUFFER_MIN  = 5;
+  var CBT_REC_OVERDUE_WINDOW_MIN   = 8;
+  var CBT_REC_RUSH_RATIO           = 0.12;
+  var CBT_REC_RUSH_MIN             = 1;
+  var CBT_REC_RUSH_MAX             = 4;
+  var CBT_REC_MAX_BATCHERS         = 38;
+  var CBT_REC_STATE_PREFIX         = 'cbt_hourly_recommend_v2_slow_';
+
+  /* Kept only because an older background Drive pull still assigns it.
+     Recommendation no longer reads this value. */
   var batchRateCache = 120;
 
-  function updateStats(inProgress, remaining, recommended, dotColor) {
+  function cbtRecStoreKey() {
+    return String(STORE_ID || 'unknown').replace(/[.$#\[\]\/]/g, '_');
+  }
+
+  function cbtRecStateKey() {
+    return CBT_REC_STATE_PREFIX + cbtRecStoreKey();
+  }
+
+  function cbtRecLoadState() {
+    var key = cbtRecStateKey();
+    var raw = gmGet(key, null);
+    if (raw == null) {
+      try { raw = localStorage.getItem(key); } catch(e) {}
+    }
+    if (!raw) return null;
+    try {
+      var s = (typeof raw === 'string') ? JSON.parse(raw) : raw;
+      return s && typeof s === 'object' ? s : null;
+    } catch(e2) { return null; }
+  }
+
+  function cbtRecSaveState(state) {
+    if (!state) return;
+    var key = cbtRecStateKey();
+    var json = JSON.stringify(state);
+    gmSet(key, json);
+    try { localStorage.setItem(key, json); } catch(e) {}
+  }
+
+  function cbtRecStoreClock(nowMs) {
+    var now = new Date(nowMs || Date.now());
+    try {
+      var parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: getStoreTimezone(),
+        hour12: false,
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit'
+      }).formatToParts(now);
+
+      var o = { year:0, month:0, day:0, hour:0, minute:0, second:0 };
+      for (var i = 0; i < parts.length; i++) {
+        var p = parts[i];
+        if (p.type === 'year') o.year = parseInt(p.value,10)||0;
+        else if (p.type === 'month') o.month = parseInt(p.value,10)||0;
+        else if (p.type === 'day') o.day = parseInt(p.value,10)||0;
+        else if (p.type === 'hour') o.hour = parseInt(p.value,10)||0;
+        else if (p.type === 'minute') o.minute = parseInt(p.value,10)||0;
+        else if (p.type === 'second') o.second = parseInt(p.value,10)||0;
+      }
+      if (o.hour === 24) o.hour = 0;
+      return o;
+    } catch(e) {
+      return {
+        year: now.getFullYear(), month: now.getMonth()+1, day: now.getDate(),
+        hour: now.getHours(), minute: now.getMinutes(), second: now.getSeconds()
+      };
+    }
+  }
+
+  function cbtRecPad2(n) { return String(n).padStart(2, '0'); }
+
+  function cbtRecCycleInfo(nowMs) {
+    var p = cbtRecStoreClock(nowMs);
+    var releaseSerial = Date.UTC(p.year, p.month - 1, p.day, p.hour, 0, 0);
+
+    /* Before :57, we are still inside the cycle that began at the PREVIOUS
+       hour's :57. */
+    if (p.minute < CBT_REC_RELEASE_MINUTE) releaseSerial -= 3600000;
+
+    var rd = new Date(releaseSerial);
+    var cycleKey =
+      rd.getUTCFullYear() + '-' +
+      cbtRecPad2(rd.getUTCMonth()+1) + '-' +
+      cbtRecPad2(rd.getUTCDate()) + 'T' +
+      cbtRecPad2(rd.getUTCHours()) + ':' +
+      cbtRecPad2(CBT_REC_RELEASE_MINUTE);
+
+    var minutesIntoCycle;
+    if (p.minute >= CBT_REC_RELEASE_MINUTE) {
+      minutesIntoCycle = (p.minute - CBT_REC_RELEASE_MINUTE) + p.second / 60;
+    } else {
+      minutesIntoCycle = (p.minute + (60 - CBT_REC_RELEASE_MINUTE)) + p.second / 60;
+    }
+
+    var toNextRelease = Math.max(0.25, 60 - minutesIntoCycle);
+    var inReleaseWindow =
+      p.minute >= CBT_REC_RELEASE_FREEZE_START &&
+      p.minute < CBT_REC_RELEASE_MINUTE;
+
+    return {
+      key: cycleKey,
+      minute: p.minute,
+      minutesInto: minutesIntoCycle,
+      minutesToNextRelease: toNextRelease,
+      inReleaseWindow: inReleaseWindow
+    };
+  }
+
+  function cbtRecJobDeadlineMs(job) {
+    if (!job || typeof job !== 'object') return null;
+    var fields = [
+      'jobBatchTarget', 'batchTarget', 'batchTargetTime',
+      'targetTime', 'targetTimestamp', 'deadline'
+    ];
+    for (var i = 0; i < fields.length; i++) {
+      var ms = cbtNormalizeEpochMs(job[fields[i]]);
+      if (ms) return ms;
+    }
+    return null;
+  }
+
+  function cbtRecIsBatchingWork(job) {
+    if (!job || typeof job !== 'object') return false;
+
+    var state = String(job.operationState || job.state || '').toUpperCase();
+    var open =
+      state === 'IN_PROGRESS' ||
+      state === 'NONE' ||
+      state === 'BATCHING' ||
+      state === 'NOT_STARTED' ||
+      state === 'CREATED' ||
+      state === 'ASSIGNABLE' ||
+      state === 'UNASSIGNABLE';
+
+    if (!open) return false;
+
+    /* Do not staff the Batcher recommendation from Problem Solve / UNPACK
+       records when those labels are explicitly present in the summary. */
+    var typeText = [
+      job.destinationType, job.jobType, job.taskType,
+      job.operationType, job.workflowType
+    ].filter(Boolean).join(' ').toUpperCase();
+
+    if (typeText.indexOf('UNPACK') !== -1) return false;
+    if (typeText.indexOf('PROBLEM') !== -1 && typeText.indexOf('SOLVE') !== -1) return false;
+
+    return true;
+  }
+
+  function cbtRecRushReserve(openCount) {
+    if (!(openCount > 0)) return 0;
+    var r = Math.ceil(openCount * CBT_REC_RUSH_RATIO);
+    r = Math.max(CBT_REC_RUSH_MIN, r);
+    r = Math.min(CBT_REC_RUSH_MAX, r);
+    return r;
+  }
+
+  function cbtRecNeedForCount(count, availableMinutes) {
+    if (!(count > 0)) return 0;
+
+    var mins = Number(availableMinutes);
+    if (!isFinite(mins)) mins = CBT_REC_OVERDUE_WINDOW_MIN;
+
+    /* Once a deadline is missed, the safest task-count-only instruction is
+       effectively "one person per overdue cart" until the backlog is caught. */
+    if (mins <= 0) mins = CBT_REC_OVERDUE_WINDOW_MIN;
+
+    var effective = Math.max(1, mins - CBT_REC_DEADLINE_BUFFER_MIN);
+    var need = Math.ceil((count * CBT_REC_CART_MINUTES) / effective);
+
+    /* More batchers than carts cannot create more parallel cart work. */
+    if (need > count) need = count;
+    if (need < 1) need = 1;
+    return need;
+  }
+
+  function cbtRecCalculate(data, nowMs) {
+    nowMs = Number(nowMs) || Date.now();
+    var cycle = cbtRecCycleInfo(nowMs);
+
+    var jobs = Array.isArray(data)
+      ? data.filter(cbtRecIsBatchingWork)
+      : [];
+
+    var openCount = jobs.length;
+    if (!openCount) {
+      return {
+        raw: 0, urgentRaw: 0, openCount: 0, rushReserve: 0,
+        overdue: 0, dueByNextRelease: 0, earliestMinutes: null,
+        cycle: cycle
+      };
+    }
+
+    var fallbackDeadline = nowMs + cycle.minutesToNextRelease * 60000;
+    var rows = [];
+    for (var i = 0; i < jobs.length; i++) {
+      var dl = cbtRecJobDeadlineMs(jobs[i]) || fallbackDeadline;
+      rows.push({ deadline: dl, job: jobs[i] });
+    }
+    rows.sort(function(a,b){ return a.deadline - b.deadline; });
+
+    var maxNeed = 0;
+    var urgentNeed = 0;
+    var overdue = 0;
+    var dueByNextRelease = 0;
+    var nextReleaseMs = nowMs + cycle.minutesToNextRelease * 60000;
+    /* Give the normal :57 → :00 handoff a tiny grace so 8:00 targets still
+       belong to the ending 7:57 planning hour. */
+    var urgentCutoff = nextReleaseMs + 3 * 60000;
+
+    for (var r = 0; r < rows.length; r++) {
+      var count = r + 1;
+      var minutes = (rows[r].deadline - nowMs) / 60000;
+      if (minutes <= 0) overdue++;
+
+      var need = cbtRecNeedForCount(count, minutes);
+      if (need > maxNeed) maxNeed = need;
+
+      if (rows[r].deadline <= urgentCutoff) {
+        dueByNextRelease = count;
+        if (need > urgentNeed) urgentNeed = need;
+      }
+    }
+
+    /* Rush reserve: plan a small amount of empty capacity before the NEXT
+       :57 release. This prevents staffing exactly to today's visible carts.
+       The reserve is intentionally disabled during :55–:57 because that is
+       when the next normal wave is expected to appear. */
+    var rushReserve = cycle.inReleaseWindow ? 0 : cbtRecRushReserve(openCount);
+    if (!cycle.inReleaseWindow) {
+      var plannedCount = openCount + rushReserve;
+      var horizonNeed = cbtRecNeedForCount(plannedCount, cycle.minutesToNextRelease);
+      if (horizonNeed > maxNeed) maxNeed = horizonNeed;
+    }
+
+    maxNeed = Math.max(1, Math.min(CBT_REC_MAX_BATCHERS, maxNeed));
+    urgentNeed = Math.max(0, Math.min(CBT_REC_MAX_BATCHERS, urgentNeed));
+
+    return {
+      raw: maxNeed,
+      urgentRaw: urgentNeed,
+      openCount: openCount,
+      rushReserve: rushReserve,
+      overdue: overdue,
+      dueByNextRelease: dueByNextRelease,
+      earliestMinutes: (rows[0].deadline - nowMs) / 60000,
+      cycle: cycle
+    };
+  }
+
+  function cbtRecLockedValue(calc) {
+    if (!calc || !calc.cycle) return 0;
+
+    var state = cbtRecLoadState();
+    var cycleKey = calc.cycle.key;
+
+    if (!state || state.cycleKey !== cycleKey) {
+      /* New :57 cycle: create a fresh baseline from the workload that exists
+         now. It can rise later, but it will not fall until the next :57. */
+      state = {
+        cycleKey: cycleKey,
+        locked: calc.raw,
+        baseline: calc.raw,
+        maxRaw: calc.raw,
+        startedAt: Date.now(),
+        updatedAt: Date.now()
+      };
+      cbtRecSaveState(state);
+      return state.locked;
+    }
+
+    /* During :55–:57, newly released NEXT-hour carts should not make the old
+       hour jump. Only work due by the imminent release / overdue work is
+       allowed to raise the old-cycle recommendation. */
+    var candidate = calc.cycle.inReleaseWindow ? calc.urgentRaw : calc.raw;
+    candidate = Math.max(0, Math.min(CBT_REC_MAX_BATCHERS, Number(candidate) || 0));
+
+    if (candidate > (Number(state.locked) || 0)) {
+      state.locked = candidate;
+      state.maxRaw = Math.max(Number(state.maxRaw)||0, candidate);
+      state.updatedAt = Date.now();
+      cbtRecSaveState(state);
+    }
+
+    return Math.max(0, Math.min(CBT_REC_MAX_BATCHERS, Number(state.locked) || 0));
+  }
+
+  function cbtRecTooltip(calc, recommended) {
+    if (!calc) return '';
+    var parts = [];
+
+    parts.push('Locked hourly target: ' + recommended);
+    parts.push('slow-plan: 20m/cart · batchers reuse capacity after each cart');
+    parts.push(calc.openCount + ' open cart' + (calc.openCount === 1 ? '' : 's'));
+
+    if (calc.overdue > 0) {
+      parts.push(calc.overdue + ' overdue');
+    } else if (calc.earliestMinutes != null && isFinite(calc.earliestMinutes)) {
+      parts.push('earliest due in ' + Math.max(0, Math.round(calc.earliestMinutes)) + 'm');
+    }
+
+    if (calc.rushReserve > 0) parts.push('+' + calc.rushReserve + ' rush reserve');
+    parts.push('resets at next :57 store time');
+
+    return parts.join(' · ');
+  }
+
+  function updateStats(inProgress, remaining, recommended, dotColor, recTitle) {
     var elIP  = document.getElementById('cbt-stat-ip');
     var elRem = document.getElementById('cbt-stat-rem');
     var elRec = document.getElementById('cbt-stat-rec');
     var elDot = document.getElementById('cbt-stat-dot');
     if (elIP)  elIP.textContent  = inProgress;
     if (elRem) elRem.textContent = remaining;
-    if (elRec) elRec.textContent = recommended != null ? recommended : '—';
-    if (elDot && dotColor) { elDot.style.background = dotColor; elDot.style.boxShadow = '0 0 6px ' + dotColor; }
+    if (elRec) {
+      elRec.textContent = recommended != null ? recommended : '—';
+      if (recTitle) elRec.title = recTitle;
+    }
+    if (elDot && dotColor) {
+      elDot.style.background = dotColor;
+      elDot.style.boxShadow = '0 0 6px ' + dotColor;
+    }
     var old = document.getElementById('etf-ps-stats');
     if (old) old.remove();
   }
@@ -2057,54 +2439,56 @@
 
     /* Use the original fetch for this script-owned stats request so our global
        passive JSON interceptor does not parse/process the same payload twice. */
-    _origFetch(COMO_BASE + '/api/store/' + STORE_ID + '/activeJobSummary?_cbt=' + Date.now(), { cache: 'no-store', credentials: 'include' })
+    _origFetch(COMO_BASE + '/api/store/' + STORE_ID + '/activeJobSummary?_cbt=' + Date.now(), {
+      cache: 'no-store',
+      credentials: 'include'
+    })
       .then(function (r) { return r.json(); })
       .then(function (data) {
-        var inProgress = data.filter(function (j) { return j.operationState === 'IN_PROGRESS'; }).length;
-        var activeJobs = data.filter(function (j) {
-          return j.operationState === 'IN_PROGRESS' || j.operationState === 'NONE';
-        });
-        var expected  = activeJobs.reduce(function (s, j) { return s + (Number(j.totalExpectedPackages) || 0); }, 0);
-        var batched   = activeJobs.reduce(function (s, j) { return s + (Number(j.packagesBatched) || 0); }, 0);
-        var collected = activeJobs.reduce(function (s, j) { return s + (Number(j.packagesCollected) || 0); }, 0);
-        var remaining = expected - (batched + collected);
+        if (!Array.isArray(data)) data = [];
 
-        var latestTarget = Math.max.apply(null,
-          data.filter(function(j){ return j.destinationType !== 'UNPACK'; })
-              .map(function(j){ return Number(j.jobBatchTarget); })
-              .filter(function(t){ return t > 0; })
-        );
-        var nowEpoch = Date.now() / 1000;
-        var timeRemaining = (latestTarget - nowEpoch) / 3600;
-        var adjustedTimeRemaining = timeRemaining;
-        if (adjustedTimeRemaining <= 0) adjustedTimeRemaining = 0.5;
+        var staffingJobs = data.filter(cbtRecIsBatchingWork);
+        var inProgress = staffingJobs.filter(function (j) {
+          var st = String(j.operationState || j.state || '').toUpperCase();
+          return st === 'IN_PROGRESS' || st === 'BATCHING';
+        }).length;
 
-        var liveRates = [];
-        taskCache.forEach(function(d) {
-          if (cbtIsLiveBatch(d)) {
-            var r = computeRow(d);
-            if (r.scanRate && r.scanRate > 0) liveRates.push(r.scanRate);
-          }
-        });
-        var avgRatePerBatcher = liveRates.length > 0
-          ? (liveRates.reduce(function(s,r){return s+r;},0) / liveRates.length) * 60
-          : batchRateCache;
-        if (avgRatePerBatcher < 60) avgRatePerBatcher = 120;
+        /* Remaining stays package-based because that stat is useful as a
+           package backlog indicator. It is NOT used by Recommended anymore. */
+        var expected  = staffingJobs.reduce(function (s, j) {
+          return s + (Number(j.totalExpectedPackages) || 0);
+        }, 0);
+        var batched   = staffingJobs.reduce(function (s, j) {
+          return s + (Number(j.packagesBatched) || 0);
+        }, 0);
+        var collected = staffingJobs.reduce(function (s, j) {
+          return s + (Number(j.packagesCollected) || 0);
+        }, 0);
+        var remaining = Math.max(0, expected - (batched + collected));
 
-        var recommended = 0;
-        if (remaining > 0 && avgRatePerBatcher > 0) {
-          recommended = Math.ceil(remaining / (avgRatePerBatcher * adjustedTimeRemaining));
-        }
-        if (recommended < 0 || isNaN(recommended)) recommended = 0;
-        if (recommended > 38) recommended = 38;
+        var calc = cbtRecCalculate(data, Date.now());
+        var recommended = cbtRecLockedValue(calc);
 
+        /* Recommended now means MINIMUM staffing target.
+           Having more batchers than Recommended is not an error. */
         var dotColor = 'gray';
-        if (recommended >= 38)               dotColor = '#f85149';
-        else if (inProgress === recommended) dotColor = '#3fb950';
-        else if (inProgress < recommended)   dotColor = '#e3b341';
-        else                                 dotColor = '#f85149';
+        if (recommended > 0) {
+          if (inProgress >= recommended) {
+            dotColor = '#3fb950';
+          } else {
+            var deficit = recommended - inProgress;
+            var coverage = recommended > 0 ? inProgress / recommended : 1;
+            dotColor = (deficit >= 3 || coverage < 0.75) ? '#f85149' : '#e3b341';
+          }
+        }
 
-        updateStats(inProgress, remaining, recommended, dotColor);
+        updateStats(
+          inProgress,
+          remaining,
+          recommended,
+          dotColor,
+          cbtRecTooltip(calc, recommended)
+        );
         removeFromHeader();
       })
       .catch(function () {})
@@ -2118,6 +2502,15 @@
   var WARN_ELAPSED_MIN = 15, ALERT_ELAPSED_MIN = 25;
   var WARN_RATE = 2.1, ALERT_RATE = 1.5;
 
+  /* Trusted-rate guardrail.
+     COMO packagesBatched is cumulative for the current job. A cumulative
+     package count must never be divided by a newer/reset BATCHING sub-operation
+     start. Rates above this ceiling are treated as invalid rather than shown
+     or stored as real performance. */
+  var CBT_MAX_VALID_RATE = 20;
+  var CBT_OBS_RATE_MIN_WINDOW_MS = 30000;
+  var _cbtObservedProgressByRef = Object.create(null);
+
   /* LIVE ELAPSED / CLOCK STABILITY
      --------------------------------
      Live time is derived from the CURRENT BATCHING operation returned by the
@@ -2128,9 +2521,11 @@
      Important protections:
        - timestamps are normalized whether COMO sends seconds, milliseconds,
          microseconds, or an ISO timestamp;
-       - when operationDetails contains more than one BATCHING operation, the
-         current/latest active one is selected (never simply the first one);
-       - the first authoritative start for a job is locked for that job;
+       - when operationDetails contains more than one BATCHING operation,
+         cumulative packages use the EARLIEST credible BATCHING start for that
+         same job, preventing a newer sub-operation from resetting the timer;
+       - the first authoritative start is locked, but the API may correct that
+         lock BACKWARD if it later reveals an earlier credible start;
        - a reused cart/shortClientRef is recognized as a NEW job by job id,
          task id, created time, or a changed start after a missing-data gap;
        - removed carts keep their lock only briefly, not for hours;
@@ -2229,28 +2624,34 @@
   function cbtTaskGeneration(data) {
     if (!data || typeof data !== 'object') return '';
 
-    /* Only use fields that actually identify the job/task. A plain `id` is
-       intentionally NOT used here because different COMO response shapes can
-       put unrelated IDs in that field for the same cart. That was capable of
-       invalidating an otherwise-correct elapsed-time lock. */
+    /* Prefer stable job/task identities. A generic `id` is still deliberately
+       excluded because different COMO payload shapes can use it for unrelated
+       objects that happen to describe the same cart. */
     var fields = ['jobId','jobID','taskId','taskID','jobUuid','jobUUID','taskUuid','taskUUID'];
     for (var i = 0; i < fields.length; i++) {
       var v = data[fields[i]];
       if (v != null && String(v).trim()) return 'job:' + String(v).trim();
     }
 
-    /* When no strong ID is available, the real BATCHING start is the safest
-       generation identity. Missing operationDetails simply returns empty,
-       which means an existing lock is preserved rather than reset. */
+    /* Creation time is a stable fallback identity, but is NEVER used as the
+       elapsed timer start. */
+    var createdFields = ['created','createdAt','creationTime','createdTime'];
+    for (var c = 0; c < createdFields.length; c++) {
+      var createdMs = cbtNormalizeEpochMs(data[createdFields[c]]);
+      if (createdMs) return 'created:' + Math.round(createdMs);
+    }
+
+    /* Last-resort identity only. Use the EARLIEST BATCHING start because the
+       package counter is cumulative across BATCHING sub-operations. */
     var ops = Array.isArray(data.operationDetails) ? data.operationDetails : [];
-    var latest = 0;
+    var earliest = Infinity;
     for (var j = 0; j < ops.length; j++) {
       var op = ops[j];
       if (!op || String(op.name || '').toUpperCase() !== 'BATCHING') continue;
       var ms = cbtNormalizeEpochMs(op.start);
-      if (ms && ms > latest) latest = ms;
+      if (ms && ms < earliest) earliest = ms;
     }
-    return latest ? 'batch:' + Math.round(latest) : '';
+    return isFinite(earliest) ? 'batch:' + Math.round(earliest) : '';
   }
 
   function cbtBatchingOpInfo(data, liveOnly) {
@@ -2258,39 +2659,70 @@
     var ops = Array.isArray(data.operationDetails) ? data.operationDetails : [];
     var wholeState = String(data.state || '').toUpperCase();
     var candidates = [];
+    var hasLiveEvidence = wholeState === 'BATCHING';
 
     for (var i = 0; i < ops.length; i++) {
       var op = ops[i];
       if (!op || String(op.name || '').toUpperCase() !== 'BATCHING') continue;
+
       var startMs = cbtNormalizeEpochMs(op.start);
       if (!startMs) continue;
+
       var endMs = cbtNormalizeEpochMs(op.end);
       var opState = String(op.state || op.operationState || '').toUpperCase();
-      var explicitActive = opState === 'IN_PROGRESS' || opState === 'STARTED' || opState === 'ACTIVE';
-      var explicitDone = opState === 'COMPLETED' || opState === 'COMPLETE' || opState === 'FINISHED' || opState === 'DONE';
-      /* COMO can include an `end` value on a response that is STILL actively
-         BATCHING. Therefore an end timestamp alone must never disqualify a
-         live operation. The explicit task state is authoritative here. */
-      var live = explicitActive || (wholeState === 'BATCHING' && !explicitDone);
+      var explicitActive =
+        opState === 'IN_PROGRESS' ||
+        opState === 'STARTED' ||
+        opState === 'ACTIVE';
+      var explicitDone =
+        opState === 'COMPLETED' ||
+        opState === 'COMPLETE' ||
+        opState === 'FINISHED' ||
+        opState === 'DONE';
 
-      /* If a trustworthy server clock is available, reject obviously stale or
-         future operations from the LIVE candidate set. Completed-history
-         selection intentionally remains unrestricted. */
+      if (explicitActive) hasLiveEvidence = true;
+
+      var credible = true;
       if (liveOnly && _cbtClockAnchorServerMs != null) {
         var nowMs = cbtNowMs();
-        if (startMs > nowMs + 5 * 60 * 1000) live = false;
-        if (startMs < nowMs - CBT_MAX_LIVE_AGE_MS) live = false;
+        if (startMs > nowMs + 5 * 60 * 1000) credible = false;
+        if (startMs < nowMs - CBT_MAX_LIVE_AGE_MS) credible = false;
       }
 
-      if (liveOnly && !live) continue;
-      candidates.push({ op:op, startMs:startMs, endMs:endMs, live:live, state:opState });
+      if (!credible) continue;
+      candidates.push({
+        op: op,
+        startMs: startMs,
+        endMs: endMs,
+        explicitActive: explicitActive,
+        explicitDone: explicitDone,
+        state: opState
+      });
     }
 
     if (!candidates.length) return null;
-    /* If the payload contains historical + current BATCHING operations, the
-       current operation is the one with the latest start. */
-    candidates.sort(function(a,b){ return b.startMs - a.startMs; });
-    return candidates[0];
+    if (liveOnly && !hasLiveEvidence) return null;
+
+    /* packagesBatched is cumulative for the job. Therefore the matching time
+       interval must begin at the EARLIEST credible BATCHING start, not at a
+       later BATCHING sub-operation that may have appeared after packages were
+       already counted. */
+    var earliest = candidates[0];
+    var latestEnd = null;
+    for (var j = 0; j < candidates.length; j++) {
+      if (candidates[j].startMs < earliest.startMs) earliest = candidates[j];
+      if (candidates[j].endMs && (!latestEnd || candidates[j].endMs > latestEnd)) {
+        latestEnd = candidates[j].endMs;
+      }
+    }
+
+    return {
+      op: earliest.op,
+      startMs: earliest.startMs,
+      endMs: latestEnd,
+      live: !!liveOnly,
+      state: earliest.state
+    };
   }
 
   function cbtRawBatchingStartMs(data, liveOnly) {
@@ -2323,14 +2755,23 @@
     var replace = !cur;
 
     if (cur) {
-      /* A full job/task/created identity change means the same physical cart
-         has been reused for a new batch. Never carry the old elapsed start. */
+      var oldGen = String(cur.generation || '');
+      var newGen = String(generation || '');
+      var bothBatchFallbacks =
+        oldGen.indexOf('batch:') === 0 &&
+        newGen.indexOf('batch:') === 0;
+
+      /* Strong/created identity change means a genuinely new job. For the
+         unstable last-resort batch:start identity, do not call it a new job
+         while the cart has remained continuously present; the API may simply
+         have revealed an earlier operation. */
       if (generation && cur.generation && generation !== cur.generation) {
-        replace = true;
-      /* If the task disappeared and later returned with a genuinely different
-         BATCHING start, treat it as a new generation even when no job id was
-         present in the payload. */
-      } else if (cur.missingSince && Math.abs(info.startMs - cur.ms) > 1000) {
+        if (!(bothBatchFallbacks && !cur.missingSince)) replace = true;
+      }
+
+      /* A cart that disappeared and later returns with a different real start
+         is a new batch even if no strong identity was available. */
+      if (!replace && cur.missingSince && Math.abs(info.startMs - cur.ms) > 1000) {
         replace = true;
       }
     }
@@ -2340,10 +2781,23 @@
         ms: info.startMs,
         generation: generation,
         lastSeen: now,
-        missingSince: 0
+        missingSince: 0,
+        source: 'api-earliest'
       };
+      delete _cbtObservedProgressByRef[ref];
     } else {
+      /* Critical v23.9.45 fix: for the SAME job, an authoritative API update
+         may correct the clock only BACKWARD. It can never shorten elapsed time
+         by introducing a newer BATCHING sub-operation. */
+      if (info.startMs < cur.ms - 1000) {
+        cur.ms = info.startMs;
+        cur.source = 'api-corrected-earlier';
+      }
       if (!cur.generation && generation) cur.generation = generation;
+      else if (generation && String(cur.generation || '').indexOf('batch:') === 0 &&
+               String(generation).indexOf('batch:') === 0) {
+        cur.generation = generation;
+      }
       cur.lastSeen = now;
       cur.missingSince = 0;
     }
@@ -2408,6 +2862,7 @@
     ref = String(ref);
     try { delete _cbtLiveStartByRef[ref]; } catch(e) {}
     try { delete _cbtMissingPollsByRef[ref]; } catch(e) {}
+    try { delete _cbtObservedProgressByRef[ref]; } catch(e) {}
   }
 
   function cbtMarkLiveMissing(ref) {
@@ -2425,6 +2880,7 @@
       if (expiredMissing || expiredIdle) {
         try { delete _cbtLiveStartByRef[ref]; } catch(err) {}
         try { delete _cbtMissingPollsByRef[ref]; } catch(err2) {}
+        try { delete _cbtObservedProgressByRef[ref]; } catch(err3) {}
       }
     });
   }
@@ -2460,14 +2916,21 @@
   function syncHistoryUrl() { return FIREBASE_URL + FIREBASE_HISTORY_PATH; }
   function syncWeeklyUrl()  { return FIREBASE_URL + FIREBASE_WEEKLY_PATH; }
   function syncHistoryDeviceUrl(devId) { return FIREBASE_URL + '/como_history/devices/' + devId + '.json'; }
+  function syncHistoryMetaUrl(devId)   { return FIREBASE_URL + '/como_history/meta/' + devId + '.json'; }
   function syncWeeklyDeviceUrl(devId)  { return FIREBASE_URL + '/como_weekly/devices/'  + devId + '.json'; }
+  function syncWeeklyMetaUrl(devId)    { return FIREBASE_URL + '/como_weekly/meta/' + devId + '.json'; }
 
   // ── Own vs Remote cache keys ──
   // OWN = only this device's recorded batches (pushed to Pantry)
   // REMOTE_CACHE = sum of all OTHER devices' slices (rebuilt on pull, never pushed)
-  var OWN_WEEKLY_KEY       = 'cbt_own_weekly';
-  var REMOTE_HISTORY_KEY   = 'cbt_remote_history_cache';
-  var REMOTE_WEEKLY_KEY    = 'cbt_remote_weekly_cache';
+  var OWN_WEEKLY_KEY            = 'cbt_own_weekly';
+  var WEEKLY_PERIOD_KEY         = 'cbt_weekly_period_start';
+  var REMOTE_HISTORY_KEY        = 'cbt_remote_history_cache';
+  var REMOTE_HISTORY_DATE_KEY   = 'cbt_remote_history_date';
+  var REMOTE_WEEKLY_KEY         = 'cbt_remote_weekly_cache';
+  var REMOTE_WEEKLY_PERIOD_KEY  = 'cbt_remote_weekly_period_start';
+  var HISTORY_SYNC_SCHEMA_KEY   = 'cbt_history_sync_schema_v2';
+  var WEEKLY_SYNC_SCHEMA_KEY    = 'cbt_weekly_sync_schema_v2';
 
   var taskCache = new Map();
   var activeTab = 'live';
@@ -2496,12 +2959,12 @@
       }
     });
   }
-  var weeklySortKey = 'avgRate', weeklySortAsc = false, weeklySearchTerm = '';
+  var weeklySortKey = 'bestRate', weeklySortAsc = false, weeklySearchTerm = '';
   var liveSortKey = 'rate', liveSortAsc = false, liveSearchTerm = '';
   /* Set once the user actually clicks a Live column header. Until then the
      list keeps its default behaviour of floating LOW batchers to the top. */
   var liveSortUser = false;
-  var historySortKey = 'avgRate', historySortAsc = false, historySearchTerm = '';
+  var historySortKey = 'bestRate', historySortAsc = false, historySearchTerm = '';
   var namesSearchTerm = '';
   var hofSearchTerm = '';
   /* One name-only search term is shared across every Batcher Timers tab.
@@ -2509,7 +2972,52 @@
   var dashboardSearchTerm = '';
   var _allNamesCache = null;
 
-  function todayStr() { return new Date().toLocaleDateString('en-US'); }
+  function todayStr() {
+    /* Today is the STORE'S calendar day, not the workstation's timezone.
+       This makes every computer roll Today at the same store midnight. */
+    try {
+      return new Date().toLocaleDateString('en-US', { timeZone: getStoreTimezone() });
+    } catch(e) {
+      return new Date().toLocaleDateString('en-US');
+    }
+  }
+
+  function cbtDateKeyParts(dateKey) {
+    var m = String(dateKey || '').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (!m) return null;
+    var mo = parseInt(m[1], 10), d = parseInt(m[2], 10), y = parseInt(m[3], 10);
+    if (!mo || !d || !y) return null;
+    return { y:y, m:mo, d:d };
+  }
+
+  function cbtDateKeyEpoch(dateKey) {
+    var p = cbtDateKeyParts(dateKey);
+    return p ? Date.UTC(p.y, p.m - 1, p.d) : NaN;
+  }
+
+  function cbtDateKeyFromEpoch(ms) {
+    var d = new Date(ms);
+    return (d.getUTCMonth() + 1) + '/' + d.getUTCDate() + '/' + d.getUTCFullYear();
+  }
+
+  function cbtWeekStartForDateKey(dateKey) {
+    var ms = cbtDateKeyEpoch(dateKey);
+    if (!isFinite(ms)) return null;
+    var dow = new Date(ms).getUTCDay(); /* Sunday = 0 */
+    return cbtDateKeyFromEpoch(ms - dow * 86400000);
+  }
+
+  function currentWeekStartStr() {
+    return cbtWeekStartForDateKey(todayStr()) || todayStr();
+  }
+
+  function cbtIsDateInCurrentWeek(dateKey) {
+    var day = cbtDateKeyEpoch(dateKey);
+    var start = cbtDateKeyEpoch(currentWeekStartStr());
+    if (!isFinite(day) || !isFinite(start)) return false;
+    return day >= start && day < start + 7 * 86400000;
+  }
+
   function fmt(s) {
     if (s == null || isNaN(s) || s < 0) return '--:--';
     return String(Math.floor(s / 60)).padStart(2,'0') + ':' + String(Math.floor(s % 60)).padStart(2,'0');
@@ -2521,69 +3029,188 @@
   }
 
   // loadWeekly / saveWeekly — OWN batches only. Never stores remote data.
+  // Weekly is a true calendar week: Sunday 12:00 AM through Saturday 11:59 PM.
   function loadWeekly() {
+    var currentWeek = currentWeekStartStr();
+    var storedPeriod = null;
+    try { storedPeriod = gmGet(WEEKLY_PERIOD_KEY, null); } catch(e0) {}
+    if (!storedPeriod) {
+      try { storedPeriod = localStorage.getItem(WEEKLY_PERIOD_KEY); } catch(e1) {}
+    }
+
     var result = {};
-    try { var gm = gmGet(OWN_WEEKLY_KEY, null) || gmGet(WEEKLY_KEY, null); if (gm) result = (typeof gm === 'string') ? JSON.parse(gm) : gm; } catch(e) {}
+    try {
+      var gm = gmGet(OWN_WEEKLY_KEY, null) || gmGet(WEEKLY_KEY, null);
+      if (gm) result = (typeof gm === 'string') ? JSON.parse(gm) : gm;
+    } catch(e2) {}
     try {
       var ls = JSON.parse(localStorage.getItem(OWN_WEEKLY_KEY) || localStorage.getItem(WEEKLY_KEY) || '{}');
       for (var dk in ls) {
         if (!result[dk]) result[dk] = {};
         for (var a in ls[dk]) { if (!result[dk][a]) result[dk][a] = ls[dk][a]; }
       }
-    } catch(e) {}
-    return result || {};
+    } catch(e3) {}
+
+    /* First run after upgrading: keep only dates that belong to THIS week.
+       A real week transition is handled by cbtResetTodayForNewDay(), which
+       explicitly clears the local weekly slice before pushing it. */
+    result = sanitizeWeekly(result || {});
+
+    if (storedPeriod !== currentWeek) {
+      gmSet(WEEKLY_PERIOD_KEY, currentWeek);
+      try { localStorage.setItem(WEEKLY_PERIOD_KEY, currentWeek); } catch(e4) {}
+    }
+
+    return result;
   }
-  function saveWeekly(w, skipPush) {
+
+  function saveWeekly(w, skipPush, periodKey) {
     _dispWeekCache = null;
-    var json = JSON.stringify(w);
+    var currentWeek = periodKey || currentWeekStartStr();
+    var clean = sanitizeWeekly(w || {});
+    var json = JSON.stringify(clean);
     gmSet(OWN_WEEKLY_KEY, json);
-    try { localStorage.setItem(OWN_WEEKLY_KEY, json); } catch(e) {}
-    if (!skipPush) { setTimeout(function(){ if (typeof syncWeeklyPush === 'function') syncWeeklyPush(); }, 0); }
+    gmSet(WEEKLY_PERIOD_KEY, currentWeek);
+    try {
+      localStorage.setItem(OWN_WEEKLY_KEY, json);
+      localStorage.setItem(WEEKLY_PERIOD_KEY, currentWeek);
+    } catch(e) {}
+    if (!skipPush) {
+      setTimeout(function(){ if (typeof syncWeeklyPush === 'function') syncWeeklyPush(); }, 0);
+    }
   }
-  // Remote weekly cache — other devices' data summed on pull, NEVER pushed
+
+  // Remote weekly cache — other devices' data summed on pull, NEVER pushed.
   function loadRemoteWeekly() {
-    try { var gm = gmGet(REMOTE_WEEKLY_KEY, null); if (gm) return (typeof gm === 'string') ? JSON.parse(gm) : gm; } catch(e) {}
-    try { return JSON.parse(localStorage.getItem(REMOTE_WEEKLY_KEY) || '{}'); } catch(e) { return {}; }
+    var currentWeek = currentWeekStartStr();
+    var period = null;
+    try { period = gmGet(REMOTE_WEEKLY_PERIOD_KEY, null); } catch(e0) {}
+    if (!period) {
+      try { period = localStorage.getItem(REMOTE_WEEKLY_PERIOD_KEY); } catch(e1) {}
+    }
+    if (period !== currentWeek) return {};
+
+    try {
+      var gm = gmGet(REMOTE_WEEKLY_KEY, null);
+      if (gm) return sanitizeWeekly((typeof gm === 'string') ? JSON.parse(gm) : gm);
+    } catch(e2) {}
+    try { return sanitizeWeekly(JSON.parse(localStorage.getItem(REMOTE_WEEKLY_KEY) || '{}')); }
+    catch(e3) { return {}; }
   }
-  function saveRemoteWeekly(w) {
+
+  function saveRemoteWeekly(w, periodKey) {
     _dispWeekCache = null;
-    var json = JSON.stringify(w);
+    var currentWeek = periodKey || currentWeekStartStr();
+    var clean = sanitizeWeekly(w || {});
+    var json = JSON.stringify(clean);
     gmSet(REMOTE_WEEKLY_KEY, json);
-    try { localStorage.setItem(REMOTE_WEEKLY_KEY, json); } catch(e) {}
+    gmSet(REMOTE_WEEKLY_PERIOD_KEY, currentWeek);
+    try {
+      localStorage.setItem(REMOTE_WEEKLY_KEY, json);
+      localStorage.setItem(REMOTE_WEEKLY_PERIOD_KEY, currentWeek);
+    } catch(e) {}
     // Never push — this is display-only aggregated data
   }
+
   // Display caches — avoid re-parsing JSON from storage on every keystroke/render.
   // Short TTL keeps date-rollover working; saves invalidate immediately.
   var _dispWeekCache = null, _dispWeekTime = 0;
   var _dispHistCache = null, _dispHistTime = 0;
 
-  // Merge own + remote for display only
+  function cbtMergeLatestFields(target, source) {
+    if (!target || !source) return;
+    var sourceRate = Number(source.lastRate);
+    if (!(sourceRate > 0) || !isFinite(sourceRate)) return;
+
+    var targetRate = Number(target.lastRate);
+    var sourceAt = Number(source.lastAt) || 0;
+    var targetAt = Number(target.lastAt) || 0;
+
+    if (!(targetRate > 0) || sourceAt > targetAt || (sourceAt === targetAt && sourceAt === 0)) {
+      target.lastRate = sourceRate;
+      target.lastAt = sourceAt;
+    }
+  }
+
+  function cbtMergeBestFields(target, source) {
+    if (!target || !source) return;
+
+    /* v23.9.45+ stores bestRate explicitly. For older cached rows, use the
+       strongest recoverable value (bestRate -> lastRate -> avgRate). */
+    var candidate = Math.max(
+      Number(source.bestRate) || 0,
+      Number(source.lastRate) || 0,
+      Number(source.avgRate) || 0
+    );
+
+    if (!(candidate > 0) || !isFinite(candidate)) return;
+    if (!(Number(target.bestRate) > 0) || candidate > Number(target.bestRate)) {
+      target.bestRate = candidate;
+    }
+  }
+
+  // Merge own + remote for display only.
+  // The current day's Today report is overlaid as today's Weekly slice so a
+  // batcher appears in Weekly immediately — not one day later at rollover.
   function getDisplayWeekly() {
     var _now = Date.now();
     if (_dispWeekCache && (_now - _dispWeekTime) < 1500) return _dispWeekCache;
     var own    = sanitizeWeekly(loadWeekly());
     var remote = sanitizeWeekly(loadRemoteWeekly());
     var out = {};
+
     function addSlice(slice) {
       for (var dk in slice) {
+        if (!cbtIsDateInCurrentWeek(dk)) continue;
         if (!out[dk]) out[dk] = {};
         for (var a in slice[dk]) {
           var r = slice[dk][a];
           if (!out[dk][a]) {
             out[dk][a] = { totalPkgs: r.totalPkgs||0, totalSec: r.totalSec||0, runs: r.runs||0,
-              totalMissing: r.totalMissing||0, totalExpected: r.totalExpected||0 };
+              totalMissing: r.totalMissing||0, totalExpected: r.totalExpected||0,
+              bestRate: null, lastRate: null, lastAt: 0 };
+            cbtMergeBestFields(out[dk][a], r);
+            cbtMergeLatestFields(out[dk][a], r);
           } else {
             out[dk][a].totalPkgs    += r.totalPkgs    || 0;
             out[dk][a].totalSec     += r.totalSec     || 0;
             out[dk][a].runs         += r.runs         || 0;
             out[dk][a].totalMissing += r.totalMissing || 0;
             out[dk][a].totalExpected+= r.totalExpected|| 0;
+            cbtMergeBestFields(out[dk][a], r);
+            cbtMergeLatestFields(out[dk][a], r);
           }
         }
       }
     }
+
     addSlice(own);
     addSlice(remote);
+
+    /* Today's source of truth is Today itself. Replace any stale/legacy
+       current-day weekly slice instead of adding it and double-counting. */
+    var td = todayStr();
+    delete out[td];
+
+    var today = sanitizeHistory(getDisplayHistory());
+    var todayKeys = Object.keys(today);
+    if (todayKeys.length) {
+      out[td] = {};
+      for (var i = 0; i < todayKeys.length; i++) {
+        var assoc = todayKeys[i], r2 = today[assoc];
+        out[td][assoc] = {
+          totalPkgs: r2.totalPkgs||0,
+          totalSec: r2.totalSec||0,
+          runs: r2.runs||0,
+          totalMissing: r2.totalMissing||0,
+          totalExpected: r2.totalExpected||0,
+          bestRate: Math.max(Number(r2.bestRate)||0, Number(r2.lastRate)||0, Number(r2.avgRate)||0) || null,
+          lastRate: Number(r2.lastRate) > 0 ? Number(r2.lastRate) : null,
+          lastAt: Number(r2.lastAt) || 0
+        };
+      }
+    }
+
     _dispWeekCache = out; _dispWeekTime = _now;
     return out;
   }
@@ -2979,58 +3606,120 @@
           method: 'PUT', url: syncHistoryDeviceUrl(devId),
           headers: { 'Content-Type': 'application/json' },
           data: JSON.stringify(mySlice),
-          onload: function(){},
+          onload: function(){
+            /* Date metadata is a sibling node so old script versions can keep
+               reading the flat device history without seeing fake associates. */
+            try {
+              GM_xmlhttpRequest({
+                method: 'PUT', url: syncHistoryMetaUrl(devId),
+                headers: { 'Content-Type': 'application/json' },
+                data: JSON.stringify({ date: todayStr(), updatedAt: Date.now(), schema: 2 }),
+                onload: function(){ gmSet(HISTORY_SYNC_SCHEMA_KEY, '2'); },
+                onerror: function(){ _histPushQueued = true; }
+              });
+            } catch(e2) { _histPushQueued = true; }
+          },
           onerror: function(){ _histPushQueued = true; }
         });
       } catch(e) {}
     }, 2500);
   }
+  var _histPullInFlight = false;
+  var _lastHistoryPullAt = 0;
+
   function syncHistoryPull(cb) {
     if (!syncEnabled()) { if (cb) cb(false); return; }
+    if (_histPullInFlight) { if (cb) cb(false); return; }
+    _histPullInFlight = true;
+
     try {
       GM_xmlhttpRequest({
         method: 'GET', url: syncHistoryUrl(), headers: { 'Content-Type': 'application/json' },
         onload: function(res){
+          _histPullInFlight = false;
+          _lastHistoryPullAt = Date.now();
+
           var changed = false;
           _histPulled = true;
           if (_histPushQueued) { _histPushQueued = false; syncHistoryPush(); }
+
           try {
+            var remoteCache = {};
+            var currentDay = todayStr();
+
             if (res.status >= 200 && res.status < 300 && res.responseText && res.responseText !== 'null') {
               var basket = JSON.parse(res.responseText);
-              if (!basket || typeof basket !== 'object') return;
-              var devId = MY_DEVICE_ID || getDeviceId();
-              var devices = (basket.devices) || {};
-              var remoteCache = {};
-              for (var d in devices) {
-                if (d === devId) continue;
-                var slice = sanitizeHistory(devices[d]);
-                for (var a in slice) {
-                  var r = slice[a];
-                  if (!remoteCache[a]) {
-                    remoteCache[a] = { assoc: r.assoc||a, totalPkgs: r.totalPkgs||0,
-                      totalSec: r.totalSec||0, runs: r.runs||0,
-                      totalMissing: r.totalMissing||0, totalExpected: r.totalExpected||0 };
-                  } else {
-                    remoteCache[a].totalPkgs    += r.totalPkgs    || 0;
-                    remoteCache[a].totalSec     += r.totalSec     || 0;
-                    remoteCache[a].runs         += r.runs         || 0;
-                    remoteCache[a].totalMissing += r.totalMissing || 0;
-                    remoteCache[a].totalExpected+= r.totalExpected|| 0;
+              if (basket && typeof basket === 'object') {
+                var devId = MY_DEVICE_ID || getDeviceId();
+                var devices = (basket.devices && typeof basket.devices === 'object') ? basket.devices : {};
+                var meta = (basket.meta && typeof basket.meta === 'object') ? basket.meta : {};
+                var anyModernMeta = Object.keys(meta).length > 0;
+
+                for (var d in devices) {
+                  if (d === devId) continue;
+
+                  var md = meta[d];
+                  var deviceDate = md && typeof md === 'object' ? md.date : null;
+
+                  /* Modern slices are accepted ONLY for today's store date.
+                     This is the key guarantee that yesterday cannot reappear
+                     after midnight because another PC was asleep/offline. */
+                  if (deviceDate && deviceDate !== currentDay) continue;
+
+                  /* Legacy v23.9.31-and-older device nodes have no date
+                     metadata. Keep them only while the Firebase basket has no
+                     modern metadata at all, so an all-old installation still
+                     migrates once. As soon as v23.9.45 devices are present,
+                     undated stale nodes are not allowed into Today. */
+                  if (!deviceDate && anyModernMeta) continue;
+
+                  var slice = sanitizeHistory(devices[d] || {});
+                  for (var a in slice) {
+                    var r = slice[a];
+                    if (!remoteCache[a]) {
+                      remoteCache[a] = { assoc: r.assoc||a, totalPkgs: r.totalPkgs||0,
+                        totalSec: r.totalSec||0, runs: r.runs||0,
+                        totalMissing: r.totalMissing||0, totalExpected: r.totalExpected||0,
+                        bestRate: null, lastRate: null, lastAt: 0 };
+                      cbtMergeBestFields(remoteCache[a], r);
+                      cbtMergeLatestFields(remoteCache[a], r);
+                    } else {
+                      remoteCache[a].totalPkgs     += r.totalPkgs     || 0;
+                      remoteCache[a].totalSec      += r.totalSec      || 0;
+                      remoteCache[a].runs          += r.runs          || 0;
+                      remoteCache[a].totalMissing  += r.totalMissing  || 0;
+                      remoteCache[a].totalExpected += r.totalExpected || 0;
+                      cbtMergeBestFields(remoteCache[a], r);
+                      cbtMergeLatestFields(remoteCache[a], r);
+                    }
                   }
                 }
               }
-              for (var a2 in remoteCache) {
-                remoteCache[a2].avgRate = remoteCache[a2].totalSec > 0
-                  ? remoteCache[a2].totalPkgs / (remoteCache[a2].totalSec / 60) : 0;
-              }
-              saveRemoteHistory(remoteCache);
+            }
+
+            for (var a2 in remoteCache) {
+              remoteCache[a2].avgRate = remoteCache[a2].totalSec > 0
+                ? remoteCache[a2].totalPkgs / (remoteCache[a2].totalSec / 60) : 0;
+            }
+
+            var oldRemote = loadRemoteHistory();
+            var oldJson = JSON.stringify(sanitizeHistory(oldRemote || {}));
+            var newJson = JSON.stringify(sanitizeHistory(remoteCache || {}));
+
+            if (oldJson !== newJson || gmGet(REMOTE_HISTORY_DATE_KEY, null) !== currentDay) {
+              saveRemoteHistory(remoteCache, currentDay);
               changed = true;
-              setTimeout(function(){ if (document.getElementById('cbt-hist-tbody')) renderHistory(); }, 200);
+
+              if (document.getElementById('cbt-hist-tbody')) {
+                setTimeout(function(){ try { renderHistory(); } catch(e) {} }, 0);
+              }
             }
           } catch(e) {}
+
           if (cb) cb(changed);
         },
         onerror: function(){
+          _histPullInFlight = false;
           if (!_histPulled && !_histFirstPullRetry) {
             _histFirstPullRetry = setTimeout(function(){ _histFirstPullRetry = null; syncHistoryPull(); }, 5000);
           }
@@ -3038,6 +3727,7 @@
         }
       });
     } catch(e) {
+      _histPullInFlight = false;
       if (!_histPulled && !_histFirstPullRetry) {
         _histFirstPullRetry = setTimeout(function(){ _histFirstPullRetry = null; syncHistoryPull(); }, 5000);
       }
@@ -3061,56 +3751,173 @@
           method: 'PUT', url: syncWeeklyDeviceUrl(devId),
           headers: { 'Content-Type': 'application/json' },
           data: JSON.stringify(mySlice),
-          onload: function(){},
+          onload: function(){
+            try {
+              GM_xmlhttpRequest({
+                method: 'PUT', url: syncWeeklyMetaUrl(devId),
+                headers: { 'Content-Type': 'application/json' },
+                data: JSON.stringify({
+                  weekStart: currentWeekStartStr(),
+                  updatedAt: Date.now(),
+                  schema: 2
+                }),
+                onload: function(){ gmSet(WEEKLY_SYNC_SCHEMA_KEY, '2'); },
+                onerror: function(){ _weeklyPushQueued = true; }
+              });
+            } catch(e2) { _weeklyPushQueued = true; }
+          },
           onerror: function(){ _weeklyPushQueued = true; }
         });
       } catch(e) {}
     }, 2500);
   }
+  var _weeklyPullInFlight = false;
+  var _lastWeeklyPullAt = 0;
+
+  function cbtAddWeeklySlice(target, slice) {
+    slice = sanitizeWeekly(slice || {});
+    for (var dk in slice) {
+      if (!cbtIsDateInCurrentWeek(dk)) continue;
+      if (!target[dk]) target[dk] = {};
+      for (var a in slice[dk]) {
+        var r = slice[dk][a];
+        if (!target[dk][a]) {
+          target[dk][a] = {
+            totalPkgs: r.totalPkgs||0,
+            totalSec: r.totalSec||0,
+            runs: r.runs||0,
+            totalMissing: r.totalMissing||0,
+            totalExpected: r.totalExpected||0,
+            bestRate: null,
+            lastRate: null,
+            lastAt: 0
+          };
+          cbtMergeBestFields(target[dk][a], r);
+          cbtMergeLatestFields(target[dk][a], r);
+        } else {
+          target[dk][a].totalPkgs     += r.totalPkgs     || 0;
+          target[dk][a].totalSec      += r.totalSec      || 0;
+          target[dk][a].runs          += r.runs          || 0;
+          target[dk][a].totalMissing  += r.totalMissing  || 0;
+          target[dk][a].totalExpected += r.totalExpected || 0;
+          cbtMergeBestFields(target[dk][a], r);
+          cbtMergeLatestFields(target[dk][a], r);
+        }
+      }
+    }
+  }
+
+  function cbtLooksLikeWeeklyRoot(obj) {
+    if (!obj || typeof obj !== 'object') return false;
+    var keys = Object.keys(obj);
+    for (var i = 0; i < keys.length; i++) {
+      var k = keys[i];
+      /* Existing weekly keys are locale dates such as 8/12/2026. */
+      if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(k) && obj[k] && typeof obj[k] === 'object') {
+        return true;
+      }
+    }
+    return false;
+  }
+
   function syncWeeklyPull(cb) {
     if (!syncEnabled()) { if (cb) cb(false); return; }
+    if (_weeklyPullInFlight) { if (cb) cb(false); return; }
+    _weeklyPullInFlight = true;
+
     try {
       GM_xmlhttpRequest({
         method: 'GET', url: syncWeeklyUrl(), headers: { 'Content-Type': 'application/json' },
         onload: function(res){
+          _weeklyPullInFlight = false;
+          _lastWeeklyPullAt = Date.now();
+
           var changed = false;
           _weeklyPulled = true;
           if (_weeklyPushQueued) { _weeklyPushQueued = false; syncWeeklyPush(); }
+
           try {
+            var remoteCache = {};
+
             if (res.status >= 200 && res.status < 300 && res.responseText && res.responseText !== 'null') {
               var basket = JSON.parse(res.responseText);
-              if (!basket || typeof basket !== 'object') return;
-              var devId = MY_DEVICE_ID || getDeviceId();
-              var devices = (basket.devices) || {};
-              var remoteCache = {};
-              for (var d in devices) {
-                if (d === devId) continue;
-                var slice = sanitizeWeekly(devices[d]);
-                for (var dk in slice) {
-                  if (!remoteCache[dk]) remoteCache[dk] = {};
-                  for (var a in slice[dk]) {
-                    var r = slice[dk][a];
-                    if (!remoteCache[dk][a]) {
-                      remoteCache[dk][a] = { totalPkgs: r.totalPkgs||0, totalSec: r.totalSec||0,
-                        runs: r.runs||0, totalMissing: r.totalMissing||0, totalExpected: r.totalExpected||0 };
-                    } else {
-                      remoteCache[dk][a].totalPkgs    += r.totalPkgs    || 0;
-                      remoteCache[dk][a].totalSec     += r.totalSec     || 0;
-                      remoteCache[dk][a].runs         += r.runs         || 0;
-                      remoteCache[dk][a].totalMissing += r.totalMissing || 0;
-                      remoteCache[dk][a].totalExpected+= r.totalExpected|| 0;
-                    }
+              if (basket && typeof basket === 'object') {
+                var devId = MY_DEVICE_ID || getDeviceId();
+                var currentWeek = currentWeekStartStr();
+                var devices = (basket.devices && typeof basket.devices === 'object') ? basket.devices : {};
+                var meta = (basket.meta && typeof basket.meta === 'object') ? basket.meta : {};
+                var anyModernMeta = Object.keys(meta).length > 0;
+                var deviceKeys = Object.keys(devices);
+                var usedDeviceData = false;
+
+                for (var i = 0; i < deviceKeys.length; i++) {
+                  var d = deviceKeys[i];
+                  if (d === devId) continue;
+
+                  var md = meta[d];
+                  var deviceWeek = md && typeof md === 'object' ? md.weekStart : null;
+
+                  /* New-week guarantee: a sleeping/offline computer that still
+                     has LAST week's slice cannot repopulate the new Weekly tab. */
+                  if (deviceWeek && deviceWeek !== currentWeek) continue;
+
+                  /* Once modern metadata exists, undated legacy device slices
+                     are not allowed to leak an unknown/old period into Weekly. */
+                  if (!deviceWeek && anyModernMeta) continue;
+
+                  var node = devices[d];
+
+                  /* Be tolerant if a future/experimental build wrapped weekly
+                     data in {data:{...}}. Current versions remain flat. */
+                  var slice = (node && node.data && cbtLooksLikeWeeklyRoot(node.data))
+                    ? node.data
+                    : node;
+
+                  if (cbtLooksLikeWeeklyRoot(slice)) {
+                    cbtAddWeeklySlice(remoteCache, slice);
+                    usedDeviceData = true;
                   }
                 }
+
+                /* One-time legacy migration only while the Firebase weekly tree
+                   contains no modern week metadata at all. sanitizeWeekly()
+                   still limits that legacy map to this Sunday-Saturday week. */
+                if (!usedDeviceData && !anyModernMeta && cbtLooksLikeWeeklyRoot(basket)) {
+                  cbtAddWeeklySlice(remoteCache, basket);
+                } else if (!usedDeviceData && !anyModernMeta && basket.shared && cbtLooksLikeWeeklyRoot(basket.shared)) {
+                  cbtAddWeeklySlice(remoteCache, basket.shared);
+                } else if (!usedDeviceData && !anyModernMeta && basket.data && cbtLooksLikeWeeklyRoot(basket.data)) {
+                  cbtAddWeeklySlice(remoteCache, basket.data);
+                }
               }
-              saveRemoteWeekly(remoteCache);
+            }
+
+            pruneWeeklyOlderThan(WEEKLY_DAYS);
+
+            var currentWeek2 = currentWeekStartStr();
+            var oldPeriod = null;
+            try { oldPeriod = gmGet(REMOTE_WEEKLY_PERIOD_KEY, null); } catch(e0) {}
+            if (!oldPeriod) {
+              try { oldPeriod = localStorage.getItem(REMOTE_WEEKLY_PERIOD_KEY); } catch(e1) {}
+            }
+
+            var oldJson = JSON.stringify(sanitizeWeekly(loadRemoteWeekly() || {}));
+            var newJson = JSON.stringify(sanitizeWeekly(remoteCache || {}));
+
+            if (oldJson !== newJson || oldPeriod !== currentWeek2) {
+              saveRemoteWeekly(remoteCache, currentWeek2);
               changed = true;
-              setTimeout(function(){ if (document.getElementById('cbt-weekly-tbody')) renderWeekly(); }, 200);
+
+              if (document.getElementById('cbt-weekly-tbody')) {
+                setTimeout(function(){ try { renderWeekly(); } catch(e) {} }, 0);
+              }
             }
           } catch(e) {}
+
           if (cb) cb(changed);
         },
         onerror: function(){
+          _weeklyPullInFlight = false;
           if (!_weeklyPulled && !_weeklyFirstPullRetry) {
             _weeklyFirstPullRetry = setTimeout(function(){ _weeklyFirstPullRetry = null; syncWeeklyPull(); }, 5000);
           }
@@ -3118,6 +3925,7 @@
         }
       });
     } catch(e) {
+      _weeklyPullInFlight = false;
       if (!_weeklyPulled && !_weeklyFirstPullRetry) {
         _weeklyFirstPullRetry = setTimeout(function(){ _weeklyFirstPullRetry = null; syncWeeklyPull(); }, 5000);
       }
@@ -3219,21 +4027,24 @@
   }
 
   function pruneWeeklyOlderThan(days) {
-    var cutoff = new Date(); cutoff.setDate(cutoff.getDate() - days); cutoff.setHours(0,0,0,0);
-    // Prune own store
+    /* `days` is retained in the signature for compatibility with older calls.
+       Weekly is now a calendar report, so only this Sunday-Saturday period is
+       valid regardless of a rolling 7-day count. */
+    var currentWeek = currentWeekStartStr();
+
     var w = loadWeekly();
     var changed = false;
     for (var dk of Object.keys(w)) {
-      if (new Date(dk) < cutoff) { delete w[dk]; changed = true; }
+      if (!cbtIsDateInCurrentWeek(dk)) { delete w[dk]; changed = true; }
     }
-    if (changed) saveWeekly(w, true);
-    // Prune remote cache
+    if (changed) saveWeekly(w, true, currentWeek);
+
     var rc = loadRemoteWeekly();
     var rcChanged = false;
     for (var dk2 of Object.keys(rc)) {
-      if (new Date(dk2) < cutoff) { delete rc[dk2]; rcChanged = true; }
+      if (!cbtIsDateInCurrentWeek(dk2)) { delete rc[dk2]; rcChanged = true; }
     }
-    if (rcChanged) saveRemoteWeekly(rc);
+    if (rcChanged) saveRemoteWeekly(rc, currentWeek);
   }
 
   function rollDailyIntoWeekly() {
@@ -3256,7 +4067,10 @@
         // Merge: take max totalPkgs so we never downgrade an existing entry
         if (!w[sd][a] || (d2.totalPkgs||0) > (w[sd][a].totalPkgs||0)) {
           w[sd][a] = { totalPkgs: d2.totalPkgs, totalSec: d2.totalSec, runs: d2.runs,
-            avgRate: d2.avgRate, totalMissing: d2.totalMissing||0, totalExpected: d2.totalExpected||0 };
+            avgRate: d2.avgRate, totalMissing: d2.totalMissing||0, totalExpected: d2.totalExpected||0,
+            bestRate: Math.max(Number(d2.bestRate)||0, Number(d2.lastRate)||0, Number(d2.avgRate)||0) || null,
+            lastRate: Number(d2.lastRate) > 0 ? Number(d2.lastRate) : null,
+            lastAt: Number(d2.lastAt) || 0 };
         }
       }
       saveWeekly(w);
@@ -3265,29 +4079,170 @@
 
   function sanitizeHistory(h) {
     var clean = {};
-    for (var a in h) {
+    for (var a in (h || {})) {
       var e = h[a];
-      var pkgs = e.totalPkgs || 0;
-      var runs = e.runs || 0;
-      var sec  = e.totalSec || 0;
-      // Only reject clearly overflowed values — keep realistic ones
+      if (!e || typeof e !== 'object') continue;
+      var pkgs = Number(e.totalPkgs) || 0;
+      var runs = Number(e.runs) || 0;
+      var sec  = Number(e.totalSec) || 0;
       if (pkgs > 50000 || runs > 300) continue;
-      // Reject impossible rate (>20 bags/min) but only if we have meaningful time
-      if (sec > 60 && (pkgs / (sec / 60)) > 20) continue;
-      clean[a] = e;
+      if (sec > 60 && (pkgs / (sec / 60)) > CBT_MAX_VALID_RATE) continue;
+
+      var c = Object.assign({}, e);
+      if (Number(c.bestRate) > CBT_MAX_VALID_RATE) c.bestRate = null;
+      if (Number(c.lastRate) > CBT_MAX_VALID_RATE) {
+        c.lastRate = null;
+        c.lastAt = 0;
+      }
+      clean[a] = c;
     }
     return clean;
   }
 
+  var _todayBoundaryTimer = null;
+  var _lastStoreDay = null;
+
+  function cbtStoreClockParts() {
+    try {
+      var tz = getStoreTimezone();
+      var parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: tz,
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      }).formatToParts(new Date());
+
+      var out = { hour: 0, minute: 0, second: 0 };
+      for (var i = 0; i < parts.length; i++) {
+        if (parts[i].type === 'hour') out.hour = parseInt(parts[i].value, 10) || 0;
+        else if (parts[i].type === 'minute') out.minute = parseInt(parts[i].value, 10) || 0;
+        else if (parts[i].type === 'second') out.second = parseInt(parts[i].value, 10) || 0;
+      }
+      if (out.hour === 24) out.hour = 0;
+      return out;
+    } catch(e) {
+      var d = new Date();
+      return { hour: d.getHours(), minute: d.getMinutes(), second: d.getSeconds() };
+    }
+  }
+
+  function cbtResetTodayForNewDay() {
+    var currentDay = todayStr();
+    var currentWeek = currentWeekStartStr();
+    var savedDay = null;
+    try { savedDay = gmGet(DATE_KEY, null) || localStorage.getItem(DATE_KEY); } catch(e0) {}
+
+    if (savedDay === currentDay) {
+      _lastStoreDay = currentDay;
+
+      /* Upgrade/migration safety: even without a day change, force local
+         Weekly storage to the current Sunday period. */
+      try { pruneWeeklyOlderThan(WEEKLY_DAYS); } catch(e1) {}
+      return false;
+    }
+
+    var savedWeek = savedDay ? cbtWeekStartForDateKey(savedDay) : null;
+    var crossedWeek = !!(savedDay && savedWeek && savedWeek !== currentWeek);
+
+    if (savedDay && !crossedWeek) {
+      /* Monday-Saturday midnight: yesterday belongs to the SAME current week,
+         so preserve its Today report before clearing Today. */
+      try { rollDailyIntoWeekly(); } catch(e2) {}
+    }
+
+    if (crossedWeek) {
+      /* Sunday 12:00 AM (or returning after missing the Sunday boundary):
+         start a completely new Weekly report. Saturday/old-week data is no
+         longer part of the current report and must not survive locally. */
+      saveWeekly({}, true, currentWeek);
+      saveRemoteWeekly({}, currentWeek);
+      _dispWeekCache = null;
+
+      try {
+        if (_weeklyPulled) syncWeeklyPush();
+        else _weeklyPushQueued = true;
+      } catch(e3) {}
+    } else {
+      try { pruneWeeklyOlderThan(WEEKLY_DAYS); } catch(e4) {}
+    }
+
+    /* Every store midnight starts a completely empty Today report. */
+    try { localStorage.removeItem(STORAGE_KEY); } catch(e5) {}
+    gmSet(STORAGE_KEY, '{}');
+
+    try {
+      localStorage.setItem(DATE_KEY, currentDay);
+      localStorage.removeItem(REMOTE_HISTORY_KEY);
+      localStorage.setItem(REMOTE_HISTORY_DATE_KEY, currentDay);
+    } catch(e6) {}
+    gmSet(DATE_KEY, currentDay);
+    saveRemoteHistory({}, currentDay);
+
+    _dispHistCache = null;
+    _dispWeekCache = null;
+    _lastStoreDay = currentDay;
+
+    /* Publish an empty current-day slice immediately. */
+    try { if (_histPulled) syncHistoryPush(); else _histPushQueued = true; } catch(e7) {}
+    try { syncWeeklyPush(); } catch(e8) {}
+
+    if (document.getElementById('cbt-hist-tbody')) {
+      try { renderHistory(); } catch(e9) {}
+    }
+    if (document.getElementById('cbt-weekly-tbody')) {
+      try { renderWeekly(); } catch(e10) {}
+    }
+
+    /* Pull current period data after clearing. Date/week metadata filters out
+       stale data from computers still holding yesterday/last week's slices. */
+    try { syncHistoryPull(); } catch(e11) {}
+    try { syncWeeklyPull(); } catch(e12) {}
+    return true;
+  }
+
+  function cbtScheduleTodayBoundary() {
+    if (_todayBoundaryTimer) {
+      try { clearTimeout(_todayBoundaryTimer); } catch(e0) {}
+      _todayBoundaryTimer = null;
+    }
+
+    /* Wake near store midnight. Cap a single sleep at 6h so DST/timezone
+       changes cannot leave the reset timer off by an hour. Four very cheap
+       wakeups per day are far lighter than a permanent polling loop. */
+    var p = cbtStoreClockParts();
+    var seconds = (24 * 3600) - (p.hour * 3600 + p.minute * 60 + p.second);
+    if (seconds <= 0) seconds = 1;
+    var delay = Math.min(seconds * 1000 + 1200, 6 * 3600 * 1000);
+
+    _todayBoundaryTimer = setTimeout(function() {
+      _todayBoundaryTimer = null;
+      try { cbtResetTodayForNewDay(); } catch(e1) {}
+      cbtScheduleTodayBoundary();
+    }, delay);
+  }
+
+  function cbtStartTodayBoundaryClock() {
+    _lastStoreDay = todayStr();
+    try { cbtResetTodayForNewDay(); } catch(e0) {}
+    cbtScheduleTodayBoundary();
+
+    /* If the browser slept through midnight, reset immediately when the tab
+       becomes visible/focused again. */
+    document.addEventListener('visibilitychange', function() {
+      if (document.hidden) return;
+      try { cbtResetTodayForNewDay(); } catch(e1) {}
+      cbtScheduleTodayBoundary();
+    });
+    window.addEventListener('focus', function() {
+      try { cbtResetTodayForNewDay(); } catch(e2) {}
+      cbtScheduleTodayBoundary();
+    });
+  }
+
   function loadHistory() {
     try {
-      var sd = localStorage.getItem(DATE_KEY) || gmGet(DATE_KEY, null);
-      if (sd !== todayStr()) {
-        rollDailyIntoWeekly();
-        localStorage.removeItem(STORAGE_KEY); gmSet(STORAGE_KEY, '{}');
-        localStorage.setItem(DATE_KEY, todayStr()); gmSet(DATE_KEY, todayStr());
-        return {};
-      }
+      if (cbtResetTodayForNewDay()) return {};
       // Merge GM storage + localStorage so neither source beats the other
       var result = {};
       try { var gm = gmGet(STORAGE_KEY, null); if (gm) result = (typeof gm === 'string') ? JSON.parse(gm) : gm; } catch(e) {}
@@ -3306,6 +4261,7 @@
   function saveHistory(h, skipPush) {
     // saveHistory only ever saves THIS device's own recorded batches
     _dispHistCache = null;
+    _dispWeekCache = null; /* Weekly includes Today live */
     var json = JSON.stringify(h);
     localStorage.setItem(STORAGE_KEY, json); localStorage.setItem(DATE_KEY, todayStr());
     gmSet(STORAGE_KEY, json); gmSet(DATE_KEY, todayStr());
@@ -3313,14 +4269,28 @@
   }
   // Remote history cache — other devices' data summed on pull, NEVER pushed
   function loadRemoteHistory() {
-    try { var gm = gmGet(REMOTE_HISTORY_KEY, null); if (gm) return (typeof gm === 'string') ? JSON.parse(gm) : gm; } catch(e) {}
-    try { return JSON.parse(localStorage.getItem(REMOTE_HISTORY_KEY) || '{}'); } catch(e) { return {}; }
+    /* A remote Today cache from yesterday must NEVER bleed into a new day. */
+    var cacheDate = null;
+    try { cacheDate = gmGet(REMOTE_HISTORY_DATE_KEY, null); } catch(e0) {}
+    if (!cacheDate) {
+      try { cacheDate = localStorage.getItem(REMOTE_HISTORY_DATE_KEY); } catch(e1) {}
+    }
+    if (cacheDate !== todayStr()) return {};
+
+    try { var gm = gmGet(REMOTE_HISTORY_KEY, null); if (gm) return (typeof gm === 'string') ? JSON.parse(gm) : gm; } catch(e2) {}
+    try { return JSON.parse(localStorage.getItem(REMOTE_HISTORY_KEY) || '{}'); } catch(e3) { return {}; }
   }
-  function saveRemoteHistory(h) {
+  function saveRemoteHistory(h, dateKey) {
     _dispHistCache = null;
-    var json = JSON.stringify(h);
+    _dispWeekCache = null; /* Weekly includes Today live */
+    var json = JSON.stringify(h || {});
+    var dk = dateKey || todayStr();
     gmSet(REMOTE_HISTORY_KEY, json);
-    try { localStorage.setItem(REMOTE_HISTORY_KEY, json); } catch(e) {}
+    gmSet(REMOTE_HISTORY_DATE_KEY, dk);
+    try {
+      localStorage.setItem(REMOTE_HISTORY_KEY, json);
+      localStorage.setItem(REMOTE_HISTORY_DATE_KEY, dk);
+    } catch(e) {}
     // Never push — display-only
   }
   // Merge own + remote for display only
@@ -3335,13 +4305,18 @@
         var r = slice[a];
         if (!out[a]) {
           out[a] = { assoc: r.assoc||a, totalPkgs: r.totalPkgs||0, totalSec: r.totalSec||0,
-            runs: r.runs||0, totalMissing: r.totalMissing||0, totalExpected: r.totalExpected||0 };
+            runs: r.runs||0, totalMissing: r.totalMissing||0, totalExpected: r.totalExpected||0,
+            bestRate: null, lastRate: null, lastAt: 0 };
+          cbtMergeBestFields(out[a], r);
+          cbtMergeLatestFields(out[a], r);
         } else {
           out[a].totalPkgs    += r.totalPkgs    || 0;
           out[a].totalSec     += r.totalSec     || 0;
           out[a].runs         += r.runs         || 0;
           out[a].totalMissing += r.totalMissing || 0;
           out[a].totalExpected+= r.totalExpected|| 0;
+          cbtMergeBestFields(out[a], r);
+          cbtMergeLatestFields(out[a], r);
         }
       }
     }
@@ -3361,12 +4336,12 @@
      Top 30 all-time peak rates. Two kinds of data, stored differently for
      good reason:
 
-       peaks  -> ONE shared record per associate at /como_hof/peaks/{login}.
+       peaks  -> ONE shared record per associate at /como_hof_v2/peaks/{login}.
                  A device only writes when its value is strictly higher than
                  what the server currently holds, so a saved best can only
                  ever ratchet upward — a stale device can never lower it.
 
-       totals -> per-device slices at /como_hof/totals/devices/{deviceId},
+       totals -> per-device slices at /como_hof_v2/totals/devices/{deviceId},
                  summed for display. Same architecture as Today and Weekly:
                  each machine owns its own slice, so nobody overwrites or
                  double-counts anyone else's history.
@@ -3379,13 +4354,31 @@
   ══════════════════════════════════════ */
   var HOF_MIN_PKGS = 20;      /* a record needs a real batch behind it */
   var HOF_MIN_SEC  = 120;
-  var HOF_MAX_RATE = 20;      /* existing impossible-rate ceiling */
+  var HOF_MAX_RATE = CBT_MAX_VALID_RATE; /* shared trusted-rate ceiling */
   var HOF_TOP      = 30;
-  var HOF_PEAKS_KEY   = 'cbt_hof_peaks';
-  var HOF_OWN_KEY     = 'cbt_hof_own_totals';
-  var HOF_REMOTE_KEY  = 'cbt_hof_remote_totals';
+
+  /* v23.9.45 TRUSTED FASTEST RESET
+     --------------------------------
+     Legacy Fastest records were calculated before the full-span timing fix.
+     They cannot be safely repaired because each historical record did not
+     retain enough raw timing evidence. Rather than guessing, Fastest starts a
+     clean generation here. Old Firebase/local records are left untouched but
+     are no longer read by this version.
+
+     Every updated computer now shares /como_hof_v2. */
+  var HOF_SCHEMA          = 2;
+  var HOF_FIREBASE_ROOT   = '/como_hof_v2';
+  var HOF_PEAKS_KEY       = 'cbt_hof_v2_peaks';
+  var HOF_LATEST_KEY      = 'cbt_hof_v2_latest';
+  var HOF_OWN_KEY         = 'cbt_hof_v2_own_totals';
+  var HOF_REMOTE_KEY      = 'cbt_hof_v2_remote_totals';
 
   function hofUrl(path)      { return FIREBASE_URL + path + '.json'; }
+  function hofRootPath(path) {
+    path = String(path || '');
+    if (path && path.charAt(0) !== '/') path = '/' + path;
+    return HOF_FIREBASE_ROOT + path;
+  }
   function hofKey(assoc) {
     /* Firebase keys may not contain . $ # [ ] / */
     return String(assoc || '').trim().toLowerCase().replace(/[.$#\[\]\/]/g, '_');
@@ -3402,28 +4395,139 @@
   }
   function hofLoadPeaks()        { return hofLoadJson(HOF_PEAKS_KEY) || {}; }
   function hofSavePeaks(p)       { hofSaveJson(HOF_PEAKS_KEY, p); }
+  function hofLoadLatest()       { return hofLoadJson(HOF_LATEST_KEY) || {}; }
+  function hofSaveLatest(p)      { hofSaveJson(HOF_LATEST_KEY, p); }
   function hofLoadOwnTotals()    { return hofLoadJson(HOF_OWN_KEY) || {}; }
   function hofSaveOwnTotals(t)   { hofSaveJson(HOF_OWN_KEY, t); }
   function hofLoadRemoteTotals() { return hofLoadJson(HOF_REMOTE_KEY) || {}; }
   function hofSaveRemoteTotals(t){ hofSaveJson(HOF_REMOTE_KEY, t); }
 
+  /* Latest is different from Peak: it ALWAYS follows the newest completed
+     batch, even if that rate is lower than the associate's personal best. */
+  function hofMergeLatest(key, rec) {
+    if (!key || !rec) return false;
+    var rate = Number(rec.rate), at = Number(rec.at) || 0;
+    if (Number(rec.schema) !== HOF_SCHEMA) return false;
+    if (!(Number(rec.pkgs) > 0) || Number(rec.elapsedSec) < 30) return false;
+    if (!(rate > 0) || !isFinite(rate) || rate > CBT_MAX_VALID_RATE) return false;
+
+    var latest = hofLoadLatest();
+    var cur = latest[key];
+    var curAt = cur ? (Number(cur.at) || 0) : -1;
+
+    if (cur && curAt > at) return false;
+    if (cur && curAt === at && Number(cur.rate) === rate && (cur.assoc || '') === (rec.assoc || '')) return false;
+
+    latest[key] = {
+      assoc: rec.assoc || (cur && cur.assoc) || key,
+      rate: rate,
+      at: at,
+      pkgs: Number(rec.pkgs) || 0,
+      elapsedSec: Number(rec.elapsedSec) || 0,
+      schema: Number(rec.schema) || HOF_SCHEMA,
+      calc: rec.calc || 'packagesBatched/fullBatchingSpan'
+    };
+    hofSaveLatest(latest);
+    return true;
+  }
+
+  function hofPushLatest(key, assoc, rate, ts, pkgs, elapsedSec) {
+    rate = Number(rate);
+    ts = Number(ts) || Date.now();
+    pkgs = Number(pkgs) || 0;
+    elapsedSec = Number(elapsedSec) || 0;
+    if (!key || !(rate > 0) || !isFinite(rate) || rate > CBT_MAX_VALID_RATE) return;
+    if (!(elapsedSec >= 30) || !(pkgs > 0)) return;
+
+    var rec = {
+      assoc: assoc || key,
+      rate: rate,
+      at: ts,
+      pkgs: pkgs,
+      elapsedSec: elapsedSec,
+      schema: HOF_SCHEMA,
+      calc: 'packagesBatched/fullBatchingSpan'
+    };
+    hofMergeLatest(key, rec);
+
+    if (!syncEnabled()) {
+      if (activeTab === 'hof') renderHallOfFame();
+      return;
+    }
+
+    /* Read-before-write prevents an older/slower computer from overwriting a
+       newer latest rate that another computer already published. */
+    try {
+      GM_xmlhttpRequest({
+        method: 'GET', url: hofUrl(hofRootPath('/latest/' + key)),
+        headers: { 'Content-Type': 'application/json' },
+        onload: function(res) {
+          var remote = null;
+          try {
+            if (res.status >= 200 && res.status < 300 && res.responseText && res.responseText !== 'null') {
+              remote = JSON.parse(res.responseText);
+            }
+          } catch(e) {}
+
+          if (remote && (Number(remote.at) || 0) > ts) {
+            hofMergeLatest(key, remote);
+            if (activeTab === 'hof') renderHallOfFame();
+            return;
+          }
+
+          GM_xmlhttpRequest({
+            method: 'PUT', url: hofUrl(hofRootPath('/latest/' + key)),
+            headers: { 'Content-Type': 'application/json' },
+            data: JSON.stringify(rec),
+            onload: function() {
+              hofMergeLatest(key, rec);
+              if (activeTab === 'hof') renderHallOfFame();
+            },
+            onerror: function() {
+              if (activeTab === 'hof') renderHallOfFame();
+            }
+          });
+        },
+        onerror: function() {
+          if (activeTab === 'hof') renderHallOfFame();
+        }
+      });
+    } catch(e) {}
+  }
+
   /* Local cache only ever moves a peak upward. */
   function hofMergePeak(key, rec) {
     if (!key || !rec || typeof rec.rate !== 'number' || !(rec.rate > 0)) return false;
+    if (Number(rec.schema) !== HOF_SCHEMA) return false;
+    if (Number(rec.rate) > HOF_MAX_RATE) return false;
+    if (Number(rec.pkgs) < HOF_MIN_PKGS || Number(rec.elapsedSec) < HOF_MIN_SEC) return false;
     var peaks = hofLoadPeaks();
     var cur = peaks[key];
     if (cur && typeof cur.rate === 'number' && cur.rate >= rec.rate) return false;
-    peaks[key] = { assoc: rec.assoc || (cur && cur.assoc) || key, rate: rec.rate, at: rec.at || null };
+    peaks[key] = {
+      assoc: rec.assoc || (cur && cur.assoc) || key,
+      rate: rec.rate,
+      at: rec.at || null,
+      pkgs: Number(rec.pkgs) || 0,
+      elapsedSec: Number(rec.elapsedSec) || 0,
+      schema: Number(rec.schema) || HOF_SCHEMA,
+      calc: rec.calc || 'packagesBatched/fullBatchingSpan'
+    };
     hofSavePeaks(peaks);
     return true;
   }
 
   /* Read the server value, then write ONLY if ours is strictly higher. */
-  function hofPushPeak(key, assoc, rate, ts) {
+  function hofPushPeak(key, assoc, rate, ts, pkgs, elapsedSec) {
+    rate = Number(rate);
+    pkgs = Number(pkgs) || 0;
+    elapsedSec = Number(elapsedSec) || 0;
+    if (!(rate > 0) || !isFinite(rate) || rate > HOF_MAX_RATE) return;
+    if (pkgs < HOF_MIN_PKGS || elapsedSec < HOF_MIN_SEC) return;
     if (!syncEnabled()) return;
     try {
       GM_xmlhttpRequest({
-        method: 'GET', url: hofUrl('/como_hof/peaks/' + key),
+        method: 'GET', url: hofUrl(hofRootPath('/peaks/' + key)),
         headers: { 'Content-Type': 'application/json' },
         onload: function(res){
           var remote = null;
@@ -3437,9 +4541,17 @@
             if (activeTab === 'hof') renderHallOfFame();
             return;
           }
-          var rec = { assoc: assoc, rate: rate, at: ts };
+          var rec = {
+            assoc: assoc,
+            rate: rate,
+            at: ts,
+            pkgs: pkgs,
+            elapsedSec: elapsedSec,
+            schema: HOF_SCHEMA,
+            calc: 'packagesBatched/fullBatchingSpan'
+          };
           GM_xmlhttpRequest({
-            method: 'PUT', url: hofUrl('/como_hof/peaks/' + key),
+            method: 'PUT', url: hofUrl(hofRootPath('/peaks/' + key)),
             headers: { 'Content-Type': 'application/json' },
             data: JSON.stringify(rec),
             onload: function(){
@@ -3449,7 +4561,14 @@
             onerror: function(){ hofMergePeak(key, rec); }   /* keep it locally, retry next record */
           });
         },
-        onerror: function(){ hofMergePeak(key, { assoc: assoc, rate: rate, at: ts }); }
+        onerror: function(){
+          hofMergePeak(key, {
+            assoc: assoc, rate: rate, at: ts,
+            pkgs: pkgs, elapsedSec: elapsedSec,
+            schema: HOF_SCHEMA,
+            calc: 'packagesBatched/fullBatchingSpan'
+          });
+        }
       });
     } catch(e) {}
   }
@@ -3463,7 +4582,7 @@
       try {
         var devId = MY_DEVICE_ID || getDeviceId();
         GM_xmlhttpRequest({
-          method: 'PUT', url: hofUrl('/como_hof/totals/devices/' + devId),
+          method: 'PUT', url: hofUrl(hofRootPath('/totals/devices/' + devId)),
           headers: { 'Content-Type': 'application/json' },
           data: JSON.stringify(hofLoadOwnTotals()),
           onload: function(){}, onerror: function(){}
@@ -3472,11 +4591,14 @@
     }, 2500);
   }
 
+  var _hofPullInFlight = false;
   function hofPull(cb) {
     if (!syncEnabled()) { if (cb) cb(); return; }
+    if (_hofPullInFlight) { if (cb) cb(); return; }
+    _hofPullInFlight = true;
     try {
       GM_xmlhttpRequest({
-        method: 'GET', url: hofUrl('/como_hof'),
+        method: 'GET', url: hofUrl(HOF_FIREBASE_ROOT),
         headers: { 'Content-Type': 'application/json' },
         onload: function(res){
           try {
@@ -3485,6 +4607,10 @@
               var changed = false;
               var peaks = data.peaks || {};
               for (var k in peaks) { if (hofMergePeak(k, peaks[k])) changed = true; }
+
+              var latest = data.latest || {};
+              for (var lk in latest) { if (hofMergeLatest(lk, latest[lk])) changed = true; }
+
               /* remote totals = every device except this one */
               var devId = MY_DEVICE_ID || getDeviceId();
               var devices = (data.totals && data.totals.devices) || {};
@@ -3504,11 +4630,12 @@
               if (activeTab === 'hof') renderHallOfFame();
             }
           } catch(e) {}
+          _hofPullInFlight = false;
           if (cb) cb();
         },
-        onerror: function(){ if (cb) cb(); }
+        onerror: function(){ _hofPullInFlight = false; if (cb) cb(); }
       });
-    } catch(e) { if (cb) cb(); }
+    } catch(e) { _hofPullInFlight = false; if (cb) cb(); }
   }
 
   /* Called for every completed batch. Totals always advance; the peak only
@@ -3526,13 +4653,20 @@
     hofSaveOwnTotals(own);
     hofPushTotals();
 
-    if ((pkgs || 0) < HOF_MIN_PKGS) return;          /* too few packages */
+    /* Latest records EVERY valid completed rate, regardless of whether it is
+       higher/lower than Peak or whether the batch meets Fastest thresholds. */
+    var latestTs = Date.now();
+    if (Number(rate) > 0 && isFinite(Number(rate)) && Number(rate) <= CBT_MAX_VALID_RATE) {
+      hofPushLatest(key, assoc, Number(rate), latestTs, pkgs, elapsedSec);
+    }
+
+    if ((pkgs || 0) < HOF_MIN_PKGS) return;          /* too few packages for Peak only */
     if ((elapsedSec || 0) < HOF_MIN_SEC) return;     /* too short */
     if (!(rate > 0) || rate > HOF_MAX_RATE) return;  /* missing or impossible */
     var peaks = hofLoadPeaks();
     var cur = peaks[key];
     if (cur && typeof cur.rate === 'number' && cur.rate >= rate) return;  /* never decreases */
-    hofPushPeak(key, assoc, rate, Date.now());
+    hofPushPeak(key, assoc, rate, Date.now(), pkgs, elapsedSec);
     if (activeTab === 'hof') renderHallOfFame();
   }
 
@@ -3552,35 +4686,70 @@
     var emptyEl = document.getElementById('cbt-hof-empty');
     var noteEl  = document.getElementById('cbt-hof-note');
 
-    var peaks  = hofLoadPeaks();
-    var own    = hofLoadOwnTotals();
-    var remote = hofLoadRemoteTotals();
+    var peaks   = hofLoadPeaks();
+    var latest  = hofLoadLatest();
+    var own     = hofLoadOwnTotals();
+    var remote  = hofLoadRemoteTotals();
+
+    /* Fastest is no longer Peak-only. Keep Peak as the ranking metric, while
+       also admitting associates who have a Latest rate but have not yet met
+       the Peak qualification threshold. Those rows remain unranked (—). */
+    var allKeys = Object.create(null);
+    for (var pk in peaks) allKeys[pk] = true;
+    for (var lk0 in latest) allKeys[lk0] = true;
 
     var rows = [];
-    for (var k in peaks) {
-      var p = peaks[k];
-      if (!p || typeof p.rate !== 'number' || !(p.rate > 0)) continue;
+    for (var k in allKeys) {
+      var p = peaks[k] || null;
+      var l = latest[k] || null;
       var o = own[k] || {}, r = remote[k] || {};
+      var peakRate =
+        p && Number(p.schema) === HOF_SCHEMA &&
+        Number(p.rate) > 0 && Number(p.rate) <= CBT_MAX_VALID_RATE &&
+        Number(p.pkgs) >= HOF_MIN_PKGS && Number(p.elapsedSec) >= HOF_MIN_SEC
+          ? Number(p.rate) : null;
+      var latestRate =
+        l && Number(l.schema) === HOF_SCHEMA &&
+        Number(l.rate) > 0 && Number(l.rate) <= CBT_MAX_VALID_RATE &&
+        Number(l.pkgs) > 0 && Number(l.elapsedSec) >= 30
+          ? Number(l.rate) : null;
+      if (!(peakRate > 0) && !(latestRate > 0)) continue;
+
       rows.push({
         key: k,
-        assoc: p.assoc || o.assoc || r.assoc || k,
-        rate: p.rate,
-        at: p.at || null,
+        assoc: (p && p.assoc) || (l && l.assoc) || o.assoc || r.assoc || k,
+        rate: peakRate,
+        at: p && p.at ? p.at : null,
+        latestRate: latestRate,
+        latestAt: l && l.at ? l.at : null,
         runs: (o.runs || 0) + (r.runs || 0),
         pkgs: (o.pkgs || 0) + (r.pkgs || 0)
       });
     }
-    /* rank is derived, never stored */
+
+    /* Peak rows stay first and keep the existing Fastest ranking. Latest-only
+       rows come afterward, newest completion first, and have rank "—". */
     rows.sort(function(a, b){
-      if (b.rate !== a.rate) return b.rate - a.rate;
-      if (b.pkgs !== a.pkgs) return b.pkgs - a.pkgs;
+      var ap = Number(a.rate) > 0, bp = Number(b.rate) > 0;
+      if (ap && !bp) return -1;
+      if (!ap && bp) return 1;
+      if (ap && bp) {
+        if (b.rate !== a.rate) return b.rate - a.rate;
+        if (b.pkgs !== a.pkgs) return b.pkgs - a.pkgs;
+      } else {
+        var ad = Number(a.latestAt) || 0, bd = Number(b.latestAt) || 0;
+        if (bd !== ad) return bd - ad;
+      }
       return a.assoc.toLowerCase().localeCompare(b.assoc.toLowerCase());
     });
     var total = rows.length;
     /* Rank is stamped from the FULL ordering before any filtering, so a
        searched associate keeps the position they actually hold on the board
        rather than being renumbered 1, 2, 3 within the results. */
-    for (var ri = 0; ri < rows.length; ri++) rows[ri].rank = ri + 1;
+    var peakRank = 0;
+    for (var ri = 0; ri < rows.length; ri++) {
+      rows[ri].rank = Number(rows[ri].rate) > 0 ? (++peakRank) : null;
+    }
     var hofTerm = (hofSearchTerm || '').toLowerCase().trim();
     if (hofTerm) {
       /* Fastest search must work like Today / Weekly: a person can be found
@@ -3595,7 +4764,15 @@
         if (!key || seenKey[key]) return;
         var cur = extraByKey[key];
         if (!cur) {
-          cur = extraByKey[key] = { key:key, assoc:assoc||key, rate:null, at:null, rank:null, runs:0, pkgs:0, _priority:-1 };
+          var lr = latest[key] || null;
+          cur = extraByKey[key] = {
+            key:key, assoc:assoc||key, rate:null, at:null, rank:null,
+            latestRate:lr && Number(lr.schema)===HOF_SCHEMA &&
+              Number(lr.rate)>0 && Number(lr.rate)<=CBT_MAX_VALID_RATE &&
+              Number(lr.pkgs)>0 && Number(lr.elapsedSec)>=30 ? Number(lr.rate) : null,
+            latestAt:lr && lr.at ? lr.at : null,
+            runs:0, pkgs:0, _priority:-1
+          };
         }
         if (assoc) cur.assoc = assoc;
         /* Prefer Hall-of-Fame totals, then Weekly, then Today, then a saved
@@ -3663,9 +4840,7 @@
         emptyEl.style.display = 'block';
         emptyEl.textContent = hofTerm
           ? ('No records match "' + hofSearchTerm + '"')
-          : ('No records yet. A batch counts once it reaches ' +
-             HOF_MIN_PKGS + ' packages over at least ' + (HOF_MIN_SEC / 60) +
-             ' minutes, so the board fills in as shifts complete.');
+          : 'No records yet.';
       }
       if (noteEl) noteEl.textContent = '';
       requestUnifiedSearchCount();
@@ -3689,6 +4864,11 @@
         '<td>' + (typeof e.rate === 'number'
           ? ('<span class="cbt-hof-peak">' + e.rate.toFixed(1) + '</span>')
           : '<span class="cbt-hist-meta">\u2014</span>') + '</td>' +
+        '<td>' + (Number(e.latestRate) > 0
+          ? ('<span class="cbt-hist-rate ' +
+              (Number(e.latestRate)>=WARN_RATE?'good':Number(e.latestRate)>=ALERT_RATE?'warn':'alert') +
+              '">' + Number(e.latestRate).toFixed(1) + '</span>')
+          : '<span class="cbt-hist-meta">\u2014</span>') + '</td>' +
         '<td><span class="cbt-hof-when">' + hofWhen(e.at) + '</span></td>' +
       '</tr>';
     }
@@ -3696,7 +4876,7 @@
     if (noteEl) {
       noteEl.textContent = hofTerm
         ? 'Ranked positions stay unchanged while searching.'
-        : ('Personal-best rates, shared across every computer. ' +
+        : ('Peak = highest verified rate · Last Avg = newest verified rate. ' +
            (total > HOF_TOP ? ('Showing the top ' + HOF_TOP + ' of ' + total + ' associates.')
                             : ('' + total + ' associate' + (total === 1 ? '' : 's') + ' on the board.')));
     }
@@ -3759,6 +4939,48 @@
     if (el && el._cbtLastHTML !== html) { el._cbtLastHTML = html; el.innerHTML = html; }
   }
 
+  function cbtObservedProgressRate(data, nowMs) {
+    if (!data || data.shortClientRef == null) return null;
+
+    var ref = String(data.shortClientRef);
+    var generation = cbtTaskGeneration(data);
+    var pkgs = Number(data.packagesBatched);
+    if (!isFinite(pkgs) || pkgs < 0) return null;
+
+    nowMs = Number(nowMs) || cbtNowMs();
+    var cur = _cbtObservedProgressByRef[ref];
+
+    /* New job / first observation / counter reset: establish a baseline.
+       IMPORTANT: packages already present at this moment are NOT credited to
+       the future observation window. */
+    if (!cur || (generation && cur.generation && generation !== cur.generation) ||
+        pkgs < cur.lastPkgs) {
+      cur = _cbtObservedProgressByRef[ref] = {
+        generation: generation,
+        basePkgs: pkgs,
+        baseAt: nowMs,
+        lastPkgs: pkgs,
+        lastAt: nowMs
+      };
+      return null;
+    }
+
+    if (!cur.generation && generation) cur.generation = generation;
+
+    if (pkgs > cur.lastPkgs) {
+      cur.lastPkgs = pkgs;
+      cur.lastAt = nowMs;
+    }
+
+    var elapsedMs = nowMs - cur.baseAt;
+    var deltaPkgs = pkgs - cur.basePkgs;
+    if (elapsedMs < CBT_OBS_RATE_MIN_WINDOW_MS || deltaPkgs <= 0) return null;
+
+    var rate = deltaPkgs / (elapsedMs / 60000);
+    if (!(rate > 0) || !isFinite(rate) || rate > CBT_MAX_VALID_RATE) return null;
+    return rate;
+  }
+
   function computeRow(data, forceFinished) {
     var inProg = forceFinished ? false : cbtIsLiveBatch(data);
     var info = cbtBatchingOpInfo(data, inProg);
@@ -3770,37 +4992,117 @@
     var nowMs = cbtNowMs();
 
     /* Active batches always advance from the same monotonic/server-calibrated
-       clock. An operation end timestamp is used only after completion. */
+       clock. For a completed batch, the latest BATCHING end is used. */
     var clockMs = (!inProg && endMs && startMs && endMs >= startMs) ? endMs : nowMs;
     var elapsedSec = startMs ? Math.max(0, (clockMs - startMs) / 1000) : null;
-    var scanRate = (batchedN > 0 && elapsedSec > 30) ? batchedN / (elapsedSec / 60) : null;
+
+    var fullRate = (batchedN > 0 && elapsedSec > 30)
+      ? batchedN / (elapsedSec / 60)
+      : null;
+
+    var scanRate = null;
+    var rateSource = 'pending';
+
+    /* Trust the API full-span calculation only when it is physically plausible
+       under the dashboard's existing <=20 bags/min validity ceiling. */
+    if (fullRate != null && isFinite(fullRate) && fullRate > 0 &&
+        fullRate <= CBT_MAX_VALID_RATE) {
+      scanRate = fullRate;
+      rateSource = 'api-full-span';
+    } else if (inProg) {
+      /* If API timing is incomplete or mismatched, estimate from only the
+         package INCREASE actually observed while this page has been watching.
+         This prevents "35 existing packages / 30 seconds" fake spikes. */
+      var observedRate = cbtObservedProgressRate(data, nowMs);
+      if (observedRate != null) {
+        scanRate = observedRate;
+        rateSource = 'observed-delta';
+      } else if (fullRate != null && fullRate > CBT_MAX_VALID_RATE) {
+        rateSource = 'invalid-api-span';
+      }
+    } else if (fullRate != null && fullRate > CBT_MAX_VALID_RATE) {
+      rateSource = 'invalid-api-span';
+    }
 
     return {
       startMs: startMs,
       elapsedSec: elapsedSec,
       scanRate: scanRate,
+      fullRate: fullRate,
+      rateSource: rateSource,
       inProgress: inProg
     };
   }
 
+  function ensureActiveAssociateInToday(data) {
+    if (!data || !cbtIsLiveBatch(data)) return false;
+
+    var assoc = data.associateId || data.associate || data.driverAssignment;
+    if (typeof assoc !== 'string') return false;
+    assoc = assoc.trim();
+    if (!assoc || assoc.length > 80) return false;
+
+    var history = loadHistory();
+    if (history[assoc]) return false;
+
+    /* Presence-only row. It is intentionally zeroed so we do not invent a
+       completed rate/run. When the batch finishes, recordCompletedBatch()
+       adds the real packages/time/runs to this same associate record. */
+    history[assoc] = {
+      assoc: assoc,
+      totalPkgs: 0,
+      totalSec: 0,
+      runs: 0,
+      avgRate: 0,
+      bestRate: null,
+      lastRate: null,
+      lastAt: 0,
+      totalMissing: 0,
+      totalExpected: 0,
+      activeSeen: true,
+      firstSeenDate: todayStr()
+    };
+
+    captureName(data);
+    saveHistory(history);
+
+    if (activeTab === 'history') {
+      try { renderHistory(); } catch(e0) {}
+    }
+    if (activeTab === 'weekly') {
+      try { renderWeekly(); } catch(e1) {}
+    }
+    return true;
+  }
+
   function recordCompletedBatch(data, elapsedSec) {
     if (!data.associateId&&!data.associate) return;
-    var pkgs = data.packagesBatched||0;
+    var pkgs = Number(data.packagesBatched)||0;
     if (pkgs===0||!elapsedSec||elapsedSec<30) return;
     var assoc = data.associateId||data.associate;
     captureName(data);
     var rate = pkgs/(elapsedSec/60);
+
+    /* Never let a timing mismatch contaminate Today / Weekly / Best /
+       Latest Avg / Fastest history. Live can fall back to observed delta,
+       but a completed batch is only stored when its complete API span itself
+       produces a valid rate. */
+    if (!(rate > 0) || !isFinite(rate) || rate > CBT_MAX_VALID_RATE) return;
     var expected = data.totalExpectedPackages||0;
     var collected = data.packagesCollected||data.packagesBatched||0;
     var missing = expected>collected ? expected-collected : 0;
     var history = loadHistory();
     if (history[assoc]) {
       var e2=history[assoc], tp=e2.totalPkgs+pkgs, ts=e2.totalSec+elapsedSec;
+      var priorBest = Math.max(Number(e2.bestRate)||0, Number(e2.lastRate)||0, Number(e2.avgRate)||0);
       history[assoc] = { assoc:assoc, totalPkgs:tp, totalSec:ts, runs:e2.runs+1,
-        avgRate:tp/(ts/60), lastRate:rate, totalMissing:(e2.totalMissing||0)+missing, totalExpected:(e2.totalExpected||0)+expected };
+        avgRate:tp/(ts/60), bestRate:Math.max(priorBest, rate),
+        lastRate:rate, lastAt:Date.now(),
+        totalMissing:(e2.totalMissing||0)+missing, totalExpected:(e2.totalExpected||0)+expected };
     } else {
       history[assoc] = { assoc:assoc, totalPkgs:pkgs, totalSec:elapsedSec, runs:1,
-        avgRate:rate, lastRate:rate, totalMissing:missing, totalExpected:expected };
+        avgRate:rate, bestRate:rate, lastRate:rate, lastAt:Date.now(),
+        totalMissing:missing, totalExpected:expected };
     }
     saveHistory(history);
     try { hofRecordBatch(assoc, pkgs, elapsedSec, rate); } catch(e) {}
@@ -3865,6 +5167,10 @@
     merged.packagesBatched = Math.max(Number(existing && existing.packagesBatched)||0, Number(incoming.packagesBatched)||0);
     merged.packagesCollected = Math.max(Number(existing && existing.packagesCollected)||0, Number(incoming.packagesCollected)||0);
     if (!merged.associateId && !merged.associate && merged.driverAssignment) merged.associate = merged.driverAssignment;
+
+    /* Today/Weekly name presence is event-driven from real BATCHING records.
+       No new observer or polling loop is added. */
+    try { ensureActiveAssociateInToday(merged); } catch(e) {}
 
     taskCache.set(ref, merged);
     return true;
@@ -4058,7 +5364,7 @@
         '</div>' +
         '<div class="cbt-stat-card">' +
           '<div class="cbt-stat-icon">\uD83D\uDCCA</div>' +
-          '<div class="cbt-stat-label">Recommended</div>' +
+          '<div class="cbt-stat-label">Recommended This Hour</div>' +
           '<div class="cbt-stat-value"><span id="cbt-stat-rec">\u2014</span><span id="cbt-stat-dot"></span></div>' +
         '</div>' +
         '<div class="cbt-stat-card">' +
@@ -4096,9 +5402,10 @@
           '<div id="cbt-hist-summary"></div>' +
           '<table id="cbt-hist-table"><thead><tr>' +
             '<th class="cbt-sortable-hist" data-sort="assoc">Associate</th>' +
-            '<th class="cbt-sortable-hist" data-sort="runs">Runs</th>' +
+            '<th class="cbt-sortable-hist" data-sort="runs">Batch</th>' +
             '<th class="cbt-sortable-hist" data-sort="pkgs">Pkgs</th>' +
-            '<th class="cbt-sortable-hist" data-sort="avgRate">Avg Rate \u25BC</th>' +
+            '<th class="cbt-sortable-hist" data-sort="bestRate">Best \u25BC</th>' +
+            '<th class="cbt-sortable-hist" data-sort="lastRate">Latest Avg</th>' +
           '</tr></thead><tbody id="cbt-hist-tbody"></tbody></table>' +
           '<div id="cbt-hist-empty">No history yet today</div>' +
           '<div id="cbt-hist-cross"></div>' +
@@ -4107,10 +5414,10 @@
           '<div id="cbt-weekly-summary"></div>' +
           '<table id="cbt-weekly-table"><thead><tr>' +
             '<th class="cbt-sortable" data-sort="assoc">Associate</th>' +
-            '<th class="cbt-sortable" data-sort="days">Days</th>' +
-            '<th class="cbt-sortable" data-sort="runs">Runs</th>' +
+            '<th class="cbt-sortable" data-sort="runs">Batch</th>' +
             '<th class="cbt-sortable" data-sort="pkgs">Pkgs</th>' +
-            '<th class="cbt-sortable" data-sort="avgRate">Avg Rate \u25BC</th>' +
+            '<th class="cbt-sortable" data-sort="bestRate">Best \u25BC</th>' +
+            '<th class="cbt-sortable" data-sort="lastRate">Last Avg</th>' +
             '<th class="cbt-sortable" data-sort="hrs">Hrs</th>' +
           '</tr></thead><tbody id="cbt-weekly-tbody"></tbody></table>' +
           '<div id="cbt-weekly-empty">No weekly data yet</div>' +
@@ -4129,6 +5436,7 @@
             '<th>Batch</th>' +
             '<th>Pkgs</th>' +
             '<th>Peak</th>' +
+            '<th>Last Avg</th>' +
             '<th>Date</th>' +
           '</tr></thead><tbody id="cbt-hof-tbody"></tbody></table>' +
           '<div id="cbt-hof-empty"></div>' +
@@ -4428,6 +5736,15 @@
         if (hofView) hofView.style.display = activeTab==='hof' ? '' : 'none';
         if (activeTab==='hof') { try { hofPull(); } catch(e) {} }
         renderActiveSearchTab();
+
+        /* A new computer should never sit on an empty Weekly/Today view while
+           waiting for the 10-second background sync. Render cache instantly,
+           then refresh shared Firebase data in the background. */
+        if (activeTab === 'weekly' && (Date.now() - _lastWeeklyPullAt > 2500)) {
+          try { syncWeeklyPull(); } catch(e2) {}
+        } else if (activeTab === 'history' && (Date.now() - _lastHistoryPullAt > 2500)) {
+          try { syncHistoryPull(); } catch(e3) {}
+        }
       });
     });
 
@@ -4452,6 +5769,21 @@
 
       try { afaConfirm(); } catch(err) {}
     });
+
+    /* v23.9.45: restore the original VERTICAL dashboard length.
+       Width stays exactly as before. The compact 240px default from older
+       versions is migrated back to 350px once. If someone manually made the
+       board taller than 350px, keep that larger custom height. */
+    try {
+      var restoreHeightKey = 'cbt_body_h_restore_v23944';
+      if (!localStorage.getItem(restoreHeightKey)) {
+        var savedBodyH = parseFloat(localStorage.getItem('cbt_body_h') || '350');
+        if (!isFinite(savedBodyH) || savedBodyH <= 350) {
+          localStorage.setItem('cbt_body_h', '350');
+        }
+        localStorage.setItem(restoreHeightKey, '1');
+      }
+    } catch(eRestore) {}
 
     var isCollapsed = false;
     var collapseBtn = panel2.querySelector('#cbt-collapse-btn');
@@ -4815,10 +6147,15 @@
       var elTxt=r.elapsedSec!=null?fmt(r.elapsedSec):'--:--';
       var rateCls=r.scanRate!=null?(r.scanRate<ALERT_RATE?'alert':r.scanRate<WARN_RATE?'warn':''):'pending';
       var rateTxt=r.scanRate!=null?r.scanRate.toFixed(1):'\u2014';
+      var rateTitle =
+        r.rateSource==='api-full-span' ? 'Rate: packages batched / full BATCHING elapsed time' :
+        r.rateSource==='observed-delta' ? 'Rate fallback: package increase observed by this dashboard' :
+        r.rateSource==='invalid-api-span' ? 'Rate hidden: API timing/count combination produced an invalid spike' :
+        'Rate pending until enough trusted timing/progress is available';
       var slowAlert=(r.scanRate!==null&&r.scanRate<ALERT_RATE&&r.elapsedSec>120)?'<span class="cbt-live-status-slot"><span class="cbt-slow-alert">⚠ SLOW</span></span>':'';
       html+='<tr><td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-assoc">'+assoc+'</span>'+slowAlert+'</span><span class="cbt-ref">'+shortRef+'</span></span></td>';
       html+='<td><span class="cbt-elapsed '+elCls+'" data-start="'+(r.startMs||'')+'" data-live="'+(r.inProgress?'1':'0')+'">'+elTxt+'</span></td>';
-      html+='<td><span class="cbt-rate '+rateCls+'">'+rateTxt+'</span></td></tr>';
+      html+='<td><span class="cbt-rate '+rateCls+'" title="'+rateTitle+'">'+rateTxt+'</span></td></tr>';
     }
     setHTML(tbody, html);
     lockLiveRowGeometry();
@@ -4859,7 +6196,9 @@
       if(historySortKey==='assoc'){va=a.assoc.toLowerCase();vb=b.assoc.toLowerCase();return historySortAsc?va.localeCompare(vb):vb.localeCompare(va);}
       else if(historySortKey==='runs'){va=a.runs;vb=b.runs;}
       else if(historySortKey==='pkgs'){va=a.totalPkgs;vb=b.totalPkgs;}
-      else{va=a.avgRate;vb=b.avgRate;}
+      else if(historySortKey==='lastRate'){va=Number(a.lastRate)||0;vb=Number(b.lastRate)||0;}
+      else if(historySortKey==='bestRate'){va=Number(a.bestRate)||0;vb=Number(b.bestRate)||0;}
+      else{va=Number(a.bestRate)||0;vb=Number(b.bestRate)||0;}
       return historySortAsc?va-vb:vb-va;
     });
     for(var ri=0;ri<ranked.length;ri++) ranked[ri]._displayRank=ri+1;
@@ -4868,12 +6207,15 @@
     if(historySearchTerm){var term=historySearchTerm.toLowerCase();filtered=ranked.filter(function(e){return e.assoc.toLowerCase().indexOf(term)!==-1;});filtered=prioritizeNameMatches(filtered,term,function(e){return e.assoc;});}
     var html='';
     for(var i=0;i<filtered.length;i++){
-      var e=filtered[i],rateCls=e.avgRate>=WARN_RATE?'good':e.avgRate>=ALERT_RATE?'warn':'alert';
+      var e=filtered[i],bestRate=Number(e.bestRate)||0;
+      var rateCls=bestRate>=WARN_RATE?'good':bestRate>=ALERT_RATE?'warn':'alert';
       var rk=e._displayRank||0;
       var rankCls=rk===1?'gold':rk===2?'silver':rk===3?'bronze':'';
       html+='<tr><td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-assoc"><span class="cbt-rank '+rankCls+'">'+rk+'</span>'+e.assoc+'</span></span></span></td>';
       html+='<td><span class="cbt-hist-meta">'+e.runs+'</span></td><td><span class="cbt-hist-meta">'+e.totalPkgs+'</span></td>';
-      html+='<td><span class="cbt-hist-rate '+rateCls+'">'+e.avgRate.toFixed(1)+'</span></td></tr>';
+      html+='<td>'+(bestRate>0?'<span class="cbt-hist-rate '+rateCls+'">'+bestRate.toFixed(1)+'</span>':'<span class="cbt-hist-meta">—</span>')+'</td>';
+      var latestRate=Number(e.lastRate), latestCls=latestRate>=WARN_RATE?'good':latestRate>=ALERT_RATE?'warn':'alert';
+      html+='<td>'+(latestRate>0?'<span class="cbt-hist-rate '+latestCls+'">'+latestRate.toFixed(1)+'</span>':'<span class="cbt-hist-meta">—</span>')+'</td></tr>';
     }
     setHTML(tbody, html);
 
@@ -4923,14 +6265,26 @@
 
   function sanitizeWeekly(w) {
     var clean = {};
-    for (var dk in w) {
+    for (var dk in (w || {})) {
+      /* Weekly is CURRENT WEEK ONLY: Sunday 12:00 AM through Saturday. */
+      if (!cbtIsDateInCurrentWeek(dk)) continue;
+      if (!w[dk] || typeof w[dk] !== 'object') continue;
+
       clean[dk] = {};
       for (var a in w[dk]) {
         var e = w[dk][a];
+        if (!e || typeof e !== 'object') continue;
         if ((e.totalPkgs||0) > 50000 || (e.runs||0) > 300) continue;
-        var sec = e.totalSec || 0;
-        if (sec > 60 && (e.totalPkgs||0) / (sec / 60) > 20) continue;
-        clean[dk][a] = e;
+        var sec = Number(e.totalSec) || 0;
+        if (sec > 60 && (Number(e.totalPkgs)||0) / (sec / 60) > CBT_MAX_VALID_RATE) continue;
+
+        var c = Object.assign({}, e);
+        if (Number(c.bestRate) > CBT_MAX_VALID_RATE) c.bestRate = null;
+        if (Number(c.lastRate) > CBT_MAX_VALID_RATE) {
+          c.lastRate = null;
+          c.lastAt = 0;
+        }
+        clean[dk][a] = c;
       }
       if (!Object.keys(clean[dk]).length) delete clean[dk];
     }
@@ -4944,16 +6298,21 @@
     for(var dayKey of Object.keys(weekly)){
       for(var assoc of Object.keys(weekly[dayKey])){
         var d3=weekly[dayKey][assoc];
-        if(!agg[assoc])agg[assoc]={assoc:assoc,totalPkgs:0,totalSec:0,runs:0,totalMissing:0,totalExpected:0,daysSet:new Set()};
+        if(!agg[assoc])agg[assoc]={assoc:assoc,totalPkgs:0,totalSec:0,runs:0,totalMissing:0,totalExpected:0,daysSet:new Set(),bestRate:null,lastRate:null,lastAt:0};
         agg[assoc].totalPkgs+=d3.totalPkgs;agg[assoc].totalSec+=d3.totalSec;agg[assoc].runs+=d3.runs;
         agg[assoc].totalMissing+=(d3.totalMissing||0);agg[assoc].totalExpected+=(d3.totalExpected||0);agg[assoc].daysSet.add(dayKey);
+        cbtMergeBestFields(agg[assoc], d3);
+        cbtMergeLatestFields(agg[assoc], d3);
       }
     }
     var all=Object.values(agg).map(function(a){
       var pkgs = Math.min(a.totalPkgs, 100000);
       var sec  = Math.min(a.totalSec,  500*3600);
       var runs = Math.min(a.runs, 500);
-      return{assoc:a.assoc,totalPkgs:pkgs,totalSec:sec,runs:runs,days:a.daysSet.size,avgRate:sec>0?pkgs/(sec/60):0,hrs:sec,missPct:a.totalExpected>0?(a.totalMissing/a.totalExpected*100):0};
+      return{assoc:a.assoc,totalPkgs:pkgs,totalSec:sec,runs:runs,days:a.daysSet.size,avgRate:sec>0?pkgs/(sec/60):0,
+        bestRate:Number(a.bestRate)>0?Number(a.bestRate):null,
+        lastRate:Number(a.lastRate)>0?Number(a.lastRate):null,lastAt:Number(a.lastAt)||0,
+        hrs:sec,missPct:a.totalExpected>0?(a.totalMissing/a.totalExpected*100):0};
     });
     if(all.length===0){setHTML(tbody,'');empty.style.display='block';if(summary)summary.innerHTML='';
       if(weeklySearchTerm) renderWeeklyCrossSearch(weeklySearchTerm);
@@ -4974,9 +6333,11 @@
     ranked.sort(function(a,b){
       var va,vb;
       if(weeklySortKey==='assoc'){va=a.assoc.toLowerCase();vb=b.assoc.toLowerCase();return weeklySortAsc?va.localeCompare(vb):vb.localeCompare(va);}
-      else if(weeklySortKey==='days'){va=a.days;vb=b.days;}else if(weeklySortKey==='runs'){va=a.runs;vb=b.runs;}
-      else if(weeklySortKey==='pkgs'){va=a.totalPkgs;vb=b.totalPkgs;}else if(weeklySortKey==='avgRate'){va=a.avgRate;vb=b.avgRate;}
-      else if(weeklySortKey==='hrs'){va=a.hrs;vb=b.hrs;}else{va=a.avgRate;vb=b.avgRate;}
+      else if(weeklySortKey==='runs'){va=a.runs;vb=b.runs;}
+      else if(weeklySortKey==='pkgs'){va=a.totalPkgs;vb=b.totalPkgs;}
+      else if(weeklySortKey==='bestRate'){va=Number(a.bestRate)||0;vb=Number(b.bestRate)||0;}
+      else if(weeklySortKey==='lastRate'){va=Number(a.lastRate)||0;vb=Number(b.lastRate)||0;}
+      else if(weeklySortKey==='hrs'){va=a.hrs;vb=b.hrs;}else{va=Number(a.bestRate)||0;vb=Number(b.bestRate)||0;}
       return weeklySortAsc?va-vb:vb-va;
     });
     for(var ri=0;ri<ranked.length;ri++) ranked[ri]._displayRank=ri+1;
@@ -4985,12 +6346,16 @@
     if(weeklySearchTerm){var term=weeklySearchTerm.toLowerCase();filtered=ranked.filter(function(e){return e.assoc.toLowerCase().indexOf(term)!==-1;});filtered=prioritizeNameMatches(filtered,term,function(e){return e.assoc;});}
     var html='';
     for(var i=0;i<filtered.length;i++){
-      var e=filtered[i],rateCls=e.avgRate>=WARN_RATE?'good':e.avgRate>=ALERT_RATE?'warn':'alert';
+      var e=filtered[i],bestRate=Number(e.bestRate)||0;
+      var rateCls=bestRate>=WARN_RATE?'good':bestRate>=ALERT_RATE?'warn':'alert';
       var rk=e._displayRank||0;
       var rankCls=rk===1?'gold':rk===2?'silver':rk===3?'bronze':'';
       html+='<tr><td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-assoc"><span class="cbt-rank '+rankCls+'">'+rk+'</span>'+e.assoc+'</span></span></span></td>';
-      html+='<td><span class="cbt-hist-meta">'+e.days+'</span></td><td><span class="cbt-hist-meta">'+e.runs+'</span></td>';
-      html+='<td><span class="cbt-hist-meta">'+e.totalPkgs+'</span></td><td><span class="cbt-hist-rate '+rateCls+'">'+e.avgRate.toFixed(1)+'</span></td>';
+      html+='<td><span class="cbt-hist-meta">'+e.runs+'</span></td>';
+      html+='<td><span class="cbt-hist-meta">'+e.totalPkgs+'</span></td>';
+      html+='<td>'+(bestRate>0?'<span class="cbt-hist-rate '+rateCls+'">'+bestRate.toFixed(1)+'</span>':'<span class="cbt-hist-meta">—</span>')+'</td>';
+      var latestRate=Number(e.lastRate), latestCls=latestRate>=WARN_RATE?'good':latestRate>=ALERT_RATE?'warn':'alert';
+      html+='<td>'+(latestRate>0?'<span class="cbt-hist-rate '+latestCls+'">'+latestRate.toFixed(1)+'</span>':'<span class="cbt-hist-meta">—</span>')+'</td>';
       html+='<td><span class="cbt-hist-meta">'+fmtHours(e.totalSec)+'</span></td></tr>';
     }
     setHTML(tbody, html);
@@ -6381,7 +7746,7 @@
     }
 
     /* The page's own DOM can lag behind a successful Force Assign/Complete
-       request. When returning with ← Back, hide tasks that THIS run already
+       request. When returning with Back, hide tasks that THIS run already
        succeeded on so the menu immediately reflects the completed action
        instead of offering the same cart again. */
     list = (list || []).filter(function(x){ return !isSuppressed('force', x); });
@@ -6586,7 +7951,7 @@
         ? '<div class="cbt-afa-warn">' + retryable + ' cart(s) are still listed under Partially Batched. Press the Partially Batched button again to retry them.</div>'
         : '') +
       (results.length ? afaRowsHtml(results) : '<div style="color:var(--cb-text2)">Nothing was processed.</div>'),
-      '<button class="cbt-afa-act" data-afa="back">← Back</button>' +
+      '<button class="cbt-afa-act" data-afa="back">Back</button>' +
       '<button class="cbt-afa-act go" data-afa="close">Done</button>');
     var card = _afaOverlay.querySelector('#cbt-afa-card');
     card.addEventListener('click', function(e){
@@ -7517,6 +8882,65 @@
 
   var _cbtStartupDone = false;
 
+  function cbtTrustedRateMigration() {
+    var KEY = 'cbt_trusted_rate_migration_v23940';
+    try {
+      if (gmGet(KEY, null) || localStorage.getItem(KEY)) return;
+    } catch(e0) {}
+
+    /* Re-save local Today through the new sanitizer. */
+    try {
+      var h = null;
+      var gh = gmGet(STORAGE_KEY, null);
+      if (gh) h = typeof gh === 'string' ? JSON.parse(gh) : gh;
+      if (!h) h = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+      if (h && typeof h === 'object') {
+        var cleanH = sanitizeHistory(h);
+        var hJson = JSON.stringify(cleanH);
+        gmSet(STORAGE_KEY, hJson);
+        localStorage.setItem(STORAGE_KEY, hJson);
+      }
+    } catch(e1) {}
+
+    /* Re-save local Weekly through the new sanitizer. */
+    try {
+      var wk = null;
+      var gw = gmGet(OWN_WEEKLY_KEY, null);
+      if (gw) wk = typeof gw === 'string' ? JSON.parse(gw) : gw;
+      if (!wk) wk = JSON.parse(localStorage.getItem(OWN_WEEKLY_KEY) || '{}');
+      if (wk && typeof wk === 'object') {
+        var cleanW = sanitizeWeekly(wk);
+        var wJson = JSON.stringify(cleanW);
+        gmSet(OWN_WEEKLY_KEY, wJson);
+        localStorage.setItem(OWN_WEEKLY_KEY, wJson);
+      }
+    } catch(e2) {}
+
+    /* Legacy Fastest cleanup is retained only for backward compatibility.
+       v23.9.45 reads the clean v2 Fastest namespace instead. */
+    try {
+      var peaks = hofLoadPeaks(), cleanP = {};
+      for (var pk in peaks) {
+        if (Number(peaks[pk] && peaks[pk].rate) > 0 &&
+            Number(peaks[pk].rate) <= CBT_MAX_VALID_RATE) cleanP[pk] = peaks[pk];
+      }
+      hofSavePeaks(cleanP);
+
+      var latest = hofLoadLatest(), cleanL = {};
+      for (var lk in latest) {
+        if (Number(latest[lk] && latest[lk].rate) > 0 &&
+            Number(latest[lk].rate) <= CBT_MAX_VALID_RATE) cleanL[lk] = latest[lk];
+      }
+      hofSaveLatest(cleanL);
+    } catch(e3) {}
+
+    _dispHistCache = null;
+    _dispWeekCache = null;
+
+    gmSet(KEY, '1');
+    try { localStorage.setItem(KEY, '1'); } catch(e4) {}
+  }
+
   function runLegacyDataMigration() {
     /* One-time migration kept exactly for compatibility with older installs. */
     var CLEAN_KEY = 'cbt_cleaned_v21_9';
@@ -7536,7 +8960,11 @@
         if (Object.keys(cleanedOld).length > 0) {
           var json = JSON.stringify(cleanedOld);
           gmSet(OWN_WEEKLY_KEY, json);
-          try { localStorage.setItem(OWN_WEEKLY_KEY, json); } catch(e3) {}
+          gmSet(WEEKLY_PERIOD_KEY, currentWeekStartStr());
+          try {
+            localStorage.setItem(OWN_WEEKLY_KEY, json);
+            localStorage.setItem(WEEKLY_PERIOD_KEY, currentWeekStartStr());
+          } catch(e3) {}
         }
       }
     } catch(e4) {}
@@ -7560,7 +8988,7 @@
       }
     } catch(e8) {}
 
-    saveRemoteHistory({});
+    saveRemoteHistory({}, todayStr());
     saveRemoteWeekly({});
     gmSet(CLEAN_KEY, '1');
   }
@@ -7645,6 +9073,9 @@
     /* Start associate-field autocomplete only after the main page has painted. */
     try { startAutocompleteWatch(); } catch(e9) {}
 
+    /* Store-midnight Today reset is one scheduled timer, not a polling loop. */
+    try { cbtStartTodayBoundaryClock(); } catch(e10) {}
+
     if (isComoSite()) {
       try {
         timerWatcher.observe(document.documentElement, { childList: true, subtree: true });
@@ -7672,6 +9103,7 @@
   function startBackgroundFeatures() {
     /* These are important, but none of them needs to compete with the website's
        first paint. They are started after the visible board is already usable. */
+    try { cbtTrustedRateMigration(); } catch(e0) {}
     try { runLegacyDataMigration(); } catch(e) {}
 
     try { syncPull(function(){ syncPush(); }); } catch(e2) {}
@@ -7688,10 +9120,20 @@
     try { syncWeeklyPull(function(){ syncWeeklyPush(); }); } catch(e6) {}
     try { hofPull(); } catch(e7) {}
 
-    setInterval(function(){ if (!document.hidden) syncPull(); }, 60000);
-    setInterval(function(){ if (!document.hidden) syncHistoryPull(); }, 60000);
-    setInterval(function(){ if (!document.hidden) syncWeeklyPull(); }, 60000);
-    setInterval(function(){ if (!document.hidden) { try { hofPull(); } catch(e8) {} } }, 60000);
+    setInterval(function(){ if (!document.hidden) syncPull(); }, 30000);
+    setInterval(function(){ if (!document.hidden) syncHistoryPull(); }, 10000);
+    setInterval(function(){ if (!document.hidden) syncWeeklyPull(); }, 10000);
+    setInterval(function(){ if (!document.hidden) { try { hofPull(); } catch(e8) {} } }, 15000);
+
+    /* When returning to the tab, refresh shared Today/Weekly immediately.
+       Network work is asynchronous and the pull functions only touch the DOM
+       when data actually changed. */
+    document.addEventListener('visibilitychange', function(){
+      if (document.hidden) return;
+      try { syncHistoryPull(); } catch(e9a) {}
+      try { syncWeeklyPull(); } catch(e9b) {}
+      try { syncPull(); } catch(e9c) {}
+    });
 
     if (isComoSite()) {
       try {
