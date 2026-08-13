@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.45
+// @version      23.9.49
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -1354,10 +1354,6 @@
       display: none; text-align: center; color: var(--cb-text3);
       padding: 16px 12px; font-style: italic; font-size: 13px; line-height: 1.5;
     }
-    #cbt-hof-note {
-      font-size: 11px; color: var(--cb-text3); text-align: center;
-      padding: 6px 10px 8px; line-height: 1.45;
-    }
     /* night mode */
     #cbt-panel.dark #cbt-hof-table thead tr { background: #161b22 !important; border-bottom-color: #21262d !important; }
     #cbt-panel.dark #cbt-hof-table th { background: #161b22 !important; color: #8faac0 !important; }
@@ -1370,7 +1366,7 @@
     #cbt-panel.dark #cbt-hof-table tbody tr.cbt-hof-3 td { background: linear-gradient(90deg, rgba(232,185,122,.16), rgba(232,185,122,.02) 60%) !important; }
     #cbt-panel.dark .cbt-hof-peak { color: #3fb950 !important; background: rgba(0,200,83,.07) !important; }
     #cbt-panel.dark .cbt-hof-when { color: #7a8fa3 !important; }
-    #cbt-panel.dark #cbt-hof-empty, #cbt-panel.dark #cbt-hof-note { color: #6e7b8d !important; }
+    #cbt-panel.dark #cbt-hof-empty { color: #6e7b8d !important; }
 
 
     /* ══════════════════════════════════════
@@ -2066,7 +2062,7 @@
      The old recommendation divided remaining PACKAGES by live batcher speed.
      That could recommend "1" even when many carts were due soon.
 
-     v23.9.45 deliberately does NOT use individual associate speed/rate.
+     v23.9.49 deliberately does NOT use individual associate speed/rate.
 
      It treats each open batching job/cart as one unit of work and asks:
        "How many concurrent batchers are needed to clear these carts before
@@ -2090,11 +2086,18 @@
          not one permanently assigned batcher per cart.
        - Keep 5 minutes of deadline safety.
        - Reserve 12% extra cart capacity (1–4 carts) for mid-hour rush work.
+       - Normal task waves begin around :55 and are finalized at :57.
+       - Normal hourly waves run from 2:55 AM through the final 8:55 PM wave.
+       - From 9:00 PM until 2:55 AM, no NORMAL hourly wave/reserve is assumed;
+         only carts actually present are staffed. Unexpected real carts still count.
        - Overdue carts are treated as needing attention within 8 minutes.
   */
 
   var CBT_REC_RELEASE_MINUTE       = 57;
   var CBT_REC_RELEASE_FREEZE_START = 55;
+  var CBT_REC_FIRST_DROP_HOUR      = 2;   /* 2:55 AM */
+  var CBT_REC_LAST_DROP_HOUR       = 20;  /* 8:55 PM */
+  var CBT_REC_QUIET_START_HOUR     = 21;  /* 9:00 PM */
   var CBT_REC_CART_MINUTES         = 20;
   var CBT_REC_DEADLINE_BUFFER_MIN  = 5;
   var CBT_REC_OVERDUE_WINDOW_MIN   = 8;
@@ -2102,7 +2105,7 @@
   var CBT_REC_RUSH_MIN             = 1;
   var CBT_REC_RUSH_MAX             = 4;
   var CBT_REC_MAX_BATCHERS         = 38;
-  var CBT_REC_STATE_PREFIX         = 'cbt_hourly_recommend_v2_slow_';
+  var CBT_REC_STATE_PREFIX         = 'cbt_hourly_recommend_v3_schedule_';
 
   /* Kept only because an older background Drive pull still assigns it.
      Recommendation no longer reads this value. */
@@ -2169,6 +2172,23 @@
 
   function cbtRecPad2(n) { return String(n).padStart(2, '0'); }
 
+  function cbtRecIsScheduledDropHour(hour) {
+    hour = Number(hour);
+    return hour >= CBT_REC_FIRST_DROP_HOUR && hour <= CBT_REC_LAST_DROP_HOUR;
+  }
+
+  function cbtRecIsQuietHours(clock) {
+    if (!clock) return false;
+    var h = Number(clock.hour) || 0;
+    var m = Number(clock.minute) || 0;
+
+    /* Quiet period starts at 9:00 PM after the final 8:55 PM wave, and lasts
+       until the next day's 2:55 AM wave begins loading. */
+    if (h >= CBT_REC_QUIET_START_HOUR || h < CBT_REC_FIRST_DROP_HOUR) return true;
+    if (h === CBT_REC_FIRST_DROP_HOUR && m < CBT_REC_RELEASE_FREEZE_START) return true;
+    return false;
+  }
+
   function cbtRecCycleInfo(nowMs) {
     var p = cbtRecStoreClock(nowMs);
     var releaseSerial = Date.UTC(p.year, p.month - 1, p.day, p.hour, 0, 0);
@@ -2193,15 +2213,25 @@
     }
 
     var toNextRelease = Math.max(0.25, 60 - minutesIntoCycle);
+    var scheduledDropHour = cbtRecIsScheduledDropHour(p.hour);
+    var quietHours = cbtRecIsQuietHours(p);
+
+    /* :55–:57 is treated as a loading window ONLY during scheduled drop hours.
+       At 9:55 PM, 10:55 PM, etc. there is no fake release window because no
+       normal task wave is expected. */
     var inReleaseWindow =
+      scheduledDropHour &&
       p.minute >= CBT_REC_RELEASE_FREEZE_START &&
       p.minute < CBT_REC_RELEASE_MINUTE;
 
     return {
       key: cycleKey,
+      hour: p.hour,
       minute: p.minute,
       minutesInto: minutesIntoCycle,
       minutesToNextRelease: toNextRelease,
+      scheduledDropHour: scheduledDropHour,
+      quietHours: quietHours,
       inReleaseWindow: inReleaseWindow
     };
   }
@@ -2322,19 +2352,24 @@
       }
     }
 
-    /* Rush reserve: plan a small amount of empty capacity before the NEXT
-       :57 release. This prevents staffing exactly to today's visible carts.
-       The reserve is intentionally disabled during :55–:57 because that is
-       when the next normal wave is expected to appear. */
-    var rushReserve = cycle.inReleaseWindow ? 0 : cbtRecRushReserve(openCount);
-    if (!cycle.inReleaseWindow) {
+    /* Rush reserve is used only while NORMAL hourly task waves are active.
+       During the :55–:57 loading window, wait for the full wave before locking.
+       From 9:00 PM until 2:55 AM, reserve is zero because no normal hourly wave
+       is expected; any unexpected cart that actually appears still enters jobs[]
+       immediately and can raise the recommendation from real workload. */
+    var allowRushReserve = !cycle.inReleaseWindow && !cycle.quietHours;
+    var rushReserve = allowRushReserve ? cbtRecRushReserve(openCount) : 0;
+    if (allowRushReserve) {
       var plannedCount = openCount + rushReserve;
       var horizonNeed = cbtRecNeedForCount(plannedCount, cycle.minutesToNextRelease);
       if (horizonNeed > maxNeed) maxNeed = horizonNeed;
     }
 
-    maxNeed = Math.max(1, Math.min(CBT_REC_MAX_BATCHERS, maxNeed));
-    urgentNeed = Math.max(0, Math.min(CBT_REC_MAX_BATCHERS, urgentNeed));
+    /* Final safety cap: never recommend more batchers than there are
+       currently open carts on the dashboard. */
+    var taskCap = Math.max(0, Math.min(CBT_REC_MAX_BATCHERS, openCount));
+    maxNeed = Math.max(1, Math.min(taskCap, maxNeed));
+    urgentNeed = Math.max(0, Math.min(taskCap, urgentNeed));
 
     return {
       raw: maxNeed,
@@ -2353,15 +2388,17 @@
 
     var state = cbtRecLoadState();
     var cycleKey = calc.cycle.key;
+    var taskCap = Math.max(0, Math.min(CBT_REC_MAX_BATCHERS, Number(calc.openCount) || 0));
 
     if (!state || state.cycleKey !== cycleKey) {
       /* New :57 cycle: create a fresh baseline from the workload that exists
          now. It can rise later, but it will not fall until the next :57. */
+      var firstLocked = Math.max(0, Math.min(taskCap, Number(calc.raw) || 0));
       state = {
         cycleKey: cycleKey,
-        locked: calc.raw,
-        baseline: calc.raw,
-        maxRaw: calc.raw,
+        locked: firstLocked,
+        baseline: firstLocked,
+        maxRaw: firstLocked,
         startedAt: Date.now(),
         updatedAt: Date.now()
       };
@@ -2369,11 +2406,20 @@
       return state.locked;
     }
 
-    /* During :55–:57, newly released NEXT-hour carts should not make the old
-       hour jump. Only work due by the imminent release / overdue work is
-       allowed to raise the old-cycle recommendation. */
+    /* If open task count falls, the locked recommendation must also fall so
+       it never exceeds the current task count visible on the dashboard. */
+    var currentLocked = Math.max(0, Math.min(taskCap, Number(state.locked) || 0));
+    if (currentLocked !== Number(state.locked)) {
+      state.locked = currentLocked;
+      state.updatedAt = Date.now();
+      cbtRecSaveState(state);
+    }
+
+    /* During a SCHEDULED :55–:57 loading window, newly released next-hour
+       carts should not make the old hour jump. Overnight :55 timestamps are
+       not release windows and therefore do not trigger this rule. */
     var candidate = calc.cycle.inReleaseWindow ? calc.urgentRaw : calc.raw;
-    candidate = Math.max(0, Math.min(CBT_REC_MAX_BATCHERS, Number(candidate) || 0));
+    candidate = Math.max(0, Math.min(taskCap, Number(candidate) || 0));
 
     if (candidate > (Number(state.locked) || 0)) {
       state.locked = candidate;
@@ -2382,7 +2428,7 @@
       cbtRecSaveState(state);
     }
 
-    return Math.max(0, Math.min(CBT_REC_MAX_BATCHERS, Number(state.locked) || 0));
+    return Math.max(0, Math.min(taskCap, Number(state.locked) || 0));
   }
 
   function cbtRecTooltip(calc, recommended) {
@@ -2400,6 +2446,7 @@
     }
 
     if (calc.rushReserve > 0) parts.push('+' + calc.rushReserve + ' rush reserve');
+    if (calc.cycle && calc.cycle.quietHours) parts.push('overnight: no normal hourly drop expected');
     parts.push('resets at next :57 store time');
 
     return parts.join(' · ');
@@ -2786,7 +2833,7 @@
       };
       delete _cbtObservedProgressByRef[ref];
     } else {
-      /* Critical v23.9.45 fix: for the SAME job, an authoritative API update
+      /* Critical v23.9.49 fix: for the SAME job, an authoritative API update
          may correct the clock only BACKWARD. It can never shorten elapsed time
          by introducing a newer BATCHING sub-operation. */
       if (info.startMs < cur.ms - 1000) {
@@ -2909,16 +2956,16 @@
   // touches its own slice; pulls read the full tree and sum other devices.
   var FIREBASE_URL          = 'https://como-sync-default-rtdb.firebaseio.com';
   var FIREBASE_NAMES_PATH   = '/como_names.json';
-  var FIREBASE_HISTORY_PATH = '/como_history.json';
-  var FIREBASE_WEEKLY_PATH  = '/como_weekly.json';
+  var FIREBASE_HISTORY_PATH = '/como_history_v2.json';
+  var FIREBASE_WEEKLY_PATH  = '/como_weekly_v2.json';
   function syncEnabled()    { return true; }
   function syncUrl()        { return FIREBASE_URL + FIREBASE_NAMES_PATH; }
   function syncHistoryUrl() { return FIREBASE_URL + FIREBASE_HISTORY_PATH; }
   function syncWeeklyUrl()  { return FIREBASE_URL + FIREBASE_WEEKLY_PATH; }
-  function syncHistoryDeviceUrl(devId) { return FIREBASE_URL + '/como_history/devices/' + devId + '.json'; }
-  function syncHistoryMetaUrl(devId)   { return FIREBASE_URL + '/como_history/meta/' + devId + '.json'; }
-  function syncWeeklyDeviceUrl(devId)  { return FIREBASE_URL + '/como_weekly/devices/'  + devId + '.json'; }
-  function syncWeeklyMetaUrl(devId)    { return FIREBASE_URL + '/como_weekly/meta/' + devId + '.json'; }
+  function syncHistoryDeviceUrl(devId) { return FIREBASE_URL + '/como_history_v2/devices/' + devId + '.json'; }
+  function syncHistoryMetaUrl(devId)   { return FIREBASE_URL + '/como_history_v2/meta/' + devId + '.json'; }
+  function syncWeeklyDeviceUrl(devId)  { return FIREBASE_URL + '/como_weekly_v2/devices/'  + devId + '.json'; }
+  function syncWeeklyMetaUrl(devId)    { return FIREBASE_URL + '/como_weekly_v2/meta/' + devId + '.json'; }
 
   // ── Own vs Remote cache keys ──
   // OWN = only this device's recorded batches (pushed to Pantry)
@@ -3135,7 +3182,7 @@
   function cbtMergeBestFields(target, source) {
     if (!target || !source) return;
 
-    /* v23.9.45+ stores bestRate explicitly. For older cached rows, use the
+    /* v23.9.49+ stores bestRate explicitly. For older cached rows, use the
        strongest recoverable value (bestRate -> lastRate -> avgRate). */
     var candidate = Math.max(
       Number(source.bestRate) || 0,
@@ -3669,7 +3716,7 @@
                   /* Legacy v23.9.31-and-older device nodes have no date
                      metadata. Keep them only while the Firebase basket has no
                      modern metadata at all, so an all-old installation still
-                     migrates once. As soon as v23.9.45 devices are present,
+                     migrates once. As soon as v23.9.49 devices are present,
                      undated stale nodes are not allowed into Today. */
                   if (!deviceDate && anyModernMeta) continue;
 
@@ -4357,7 +4404,7 @@
   var HOF_MAX_RATE = CBT_MAX_VALID_RATE; /* shared trusted-rate ceiling */
   var HOF_TOP      = 30;
 
-  /* v23.9.45 TRUSTED FASTEST RESET
+  /* v23.9.49 TRUSTED FASTEST RESET
      --------------------------------
      Legacy Fastest records were calculated before the full-span timing fix.
      They cannot be safely repaired because each historical record did not
@@ -4873,13 +4920,6 @@
       '</tr>';
     }
     setHTML(tbody, html);
-    if (noteEl) {
-      noteEl.textContent = hofTerm
-        ? 'Ranked positions stay unchanged while searching.'
-        : ('Peak = highest verified rate · Last Avg = newest verified rate. ' +
-           (total > HOF_TOP ? ('Showing the top ' + HOF_TOP + ' of ' + total + ' associates.')
-                            : ('' + total + ' associate' + (total === 1 ? '' : 's') + ' on the board.')));
-    }
     requestUnifiedSearchCount();
   }
 
@@ -5396,7 +5436,6 @@
           '</tr></thead><tbody id="cbt-tbody"></tbody></table>' +
           '<div id="cbt-empty">No active batching tasks</div>' +
           '<div id="cbt-live-results"></div>' +
-          '<div id="cbt-updated"></div>' +
         '</div>' +
         '<div id="cbt-history-view" style="display:none">' +
           '<div id="cbt-hist-summary"></div>' +
@@ -5440,7 +5479,6 @@
             '<th>Date</th>' +
           '</tr></thead><tbody id="cbt-hof-tbody"></tbody></table>' +
           '<div id="cbt-hof-empty"></div>' +
-          '<div id="cbt-hof-note"></div>' +
         '</div>' +
       '</div>' +
       '<div id="cbt-drag-bottom" title="Drag to resize"></div>';
@@ -5770,7 +5808,7 @@
       try { afaConfirm(); } catch(err) {}
     });
 
-    /* v23.9.45: restore the original VERTICAL dashboard length.
+    /* v23.9.49: restore the original VERTICAL dashboard length.
        Width stays exactly as before. The compact 240px default from older
        versions is migrated back to 350px once. If someone manually made the
        board taller than 350px, keep that larger custom height. */
@@ -6159,12 +6197,6 @@
     }
     setHTML(tbody, html);
     lockLiveRowGeometry();
-    var upd=document.querySelector('#cbt-updated');
-    if(upd) {
-      upd.textContent=_cbtBackendLastOk
-        ? 'live · backend '+new Date(_cbtBackendLastOk).toLocaleTimeString('en-US',{hour:'2-digit',minute:'2-digit',second:'2-digit'})
-        : 'live';
-    }
     requestUnifiedSearchCount();
   }
 
@@ -8882,6 +8914,50 @@
 
   var _cbtStartupDone = false;
 
+  function cbtResetTodayWeeklyV2() {
+    var RESET_KEY = 'cbt_today_weekly_reset_v23948';
+    try {
+      if (gmGet(RESET_KEY, null) || localStorage.getItem(RESET_KEY)) return;
+    } catch(e0) {}
+
+    var today = todayStr();
+    var week = currentWeekStartStr();
+    var empty = '{}';
+
+    /* Reset TODAY on this computer. */
+    try { gmSet(STORAGE_KEY, empty); } catch(e1) {}
+    try { gmSet(DATE_KEY, today); } catch(e2) {}
+    try { localStorage.setItem(STORAGE_KEY, empty); } catch(e3) {}
+    try { localStorage.setItem(DATE_KEY, today); } catch(e4) {}
+
+    /* Reset TODAY remote-display cache. */
+    try { gmSet(REMOTE_HISTORY_KEY, empty); } catch(e5) {}
+    try { gmSet(REMOTE_HISTORY_DATE_KEY, today); } catch(e6) {}
+    try { localStorage.setItem(REMOTE_HISTORY_KEY, empty); } catch(e7) {}
+    try { localStorage.setItem(REMOTE_HISTORY_DATE_KEY, today); } catch(e8) {}
+
+    /* Reset WEEKLY on this computer, including the legacy fallback key so it
+       cannot be re-imported by loadWeekly(). */
+    try { gmSet(OWN_WEEKLY_KEY, empty); } catch(e9) {}
+    try { gmSet(WEEKLY_KEY, empty); } catch(e10) {}
+    try { gmSet(WEEKLY_PERIOD_KEY, week); } catch(e11) {}
+    try { localStorage.setItem(OWN_WEEKLY_KEY, empty); } catch(e12) {}
+    try { localStorage.setItem(WEEKLY_KEY, empty); } catch(e13) {}
+    try { localStorage.setItem(WEEKLY_PERIOD_KEY, week); } catch(e14) {}
+
+    /* Reset WEEKLY remote-display cache. */
+    try { gmSet(REMOTE_WEEKLY_KEY, empty); } catch(e15) {}
+    try { gmSet(REMOTE_WEEKLY_PERIOD_KEY, week); } catch(e16) {}
+    try { localStorage.setItem(REMOTE_WEEKLY_KEY, empty); } catch(e17) {}
+    try { localStorage.setItem(REMOTE_WEEKLY_PERIOD_KEY, week); } catch(e18) {}
+
+    _dispHistCache = null;
+    _dispWeekCache = null;
+
+    gmSet(RESET_KEY, '1');
+    try { localStorage.setItem(RESET_KEY, '1'); } catch(e19) {}
+  }
+
   function cbtTrustedRateMigration() {
     var KEY = 'cbt_trusted_rate_migration_v23940';
     try {
@@ -8917,7 +8993,7 @@
     } catch(e2) {}
 
     /* Legacy Fastest cleanup is retained only for backward compatibility.
-       v23.9.45 reads the clean v2 Fastest namespace instead. */
+       v23.9.49 reads the clean v2 Fastest namespace instead. */
     try {
       var peaks = hofLoadPeaks(), cleanP = {};
       for (var pk in peaks) {
@@ -8942,6 +9018,10 @@
   }
 
   function runLegacyDataMigration() {
+    /* v23.9.49 intentionally starts Today + Weekly clean. Do not import any
+       pre-reset local history into the new shared generation. */
+    if (gmGet('cbt_today_weekly_reset_v23948', null)) return;
+
     /* One-time migration kept exactly for compatibility with older installs. */
     var CLEAN_KEY = 'cbt_cleaned_v21_9';
     if (gmGet(CLEAN_KEY, null)) return;
@@ -9103,6 +9183,7 @@
   function startBackgroundFeatures() {
     /* These are important, but none of them needs to compete with the website's
        first paint. They are started after the visible board is already usable. */
+    try { cbtResetTodayWeeklyV2(); } catch(eReset) {}
     try { cbtTrustedRateMigration(); } catch(e0) {}
     try { runLegacyDataMigration(); } catch(e) {}
 
