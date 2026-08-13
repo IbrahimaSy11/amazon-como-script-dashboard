@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.50
+// @version      23.9.52
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -110,10 +110,12 @@
     /* ── Stats bar ── */
     #cbt-stats-bar {
       display: flex; justify-content: stretch; align-items: stretch;
+      flex-wrap: nowrap;
       background: #e8eef5; border-bottom: 1px solid var(--cb-border);
     }
     .cbt-stat-card {
-      flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center;
+      flex: 1 1 0; min-width: 0;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
       padding: 12px 8px; border-right: 1px solid var(--cb-border);
       position: relative; overflow: hidden;
     }
@@ -126,11 +128,13 @@
     .cbt-stat-label {
       font-size: 11px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase;
       color: #3a5068; margin-bottom: 5px;
+      white-space: nowrap; overflow: hidden; text-overflow: clip;
     }
     .cbt-stat-value {
       font-size: 28px; font-weight: 900; color: var(--cb-navy);
       font-family: var(--cb-mono); line-height: 1; letter-spacing: -0.02em;
       display: flex; align-items: center; gap: 6px;
+      white-space: nowrap;
     }
     #cbt-stat-dot {
       display: inline-block; width: 10px; height: 10px; border-radius: 50%;
@@ -148,6 +152,7 @@
     .cbt-tab {
       flex: 1; text-align: center; padding: 9px 0; font-size: 11px;
       font-weight: 700; color: var(--cb-text2); cursor: pointer;
+      white-space: nowrap;
       text-transform: uppercase; letter-spacing: 0.1em;
       border-bottom: 2px solid transparent; transition: all 0.15s;
       position: relative;
@@ -1712,6 +1717,44 @@
     };
   }
 
+  /* Performance guard:
+     Whole-page observers must ignore DOM mutations created by this userscript
+     itself. Otherwise every timer/stat/table update can wake another observer,
+     which creates needless feedback work on the Amazon page. */
+  var CBT_OWN_UI_SELECTOR =
+    '#cbt-panel,#cbt-tp,#cbt-qr-overlay,#cbt-afa-overlay,#cbt-ac-drop,.etf-col-cell';
+
+  function cbtIsOwnUiNode(node) {
+    if (!node) return false;
+    var el = node.nodeType === 1 ? node : node.parentElement;
+    if (!el || !el.matches) return false;
+    try {
+      if (el.matches(CBT_OWN_UI_SELECTOR)) return true;
+      return !!(el.closest && el.closest(CBT_OWN_UI_SELECTOR));
+    } catch(e) {
+      return false;
+    }
+  }
+
+  function cbtMutationIsOnlyOwnUi(mutation) {
+    if (!mutation) return false;
+    if (cbtIsOwnUiNode(mutation.target)) return true;
+
+    if (mutation.type !== 'childList') return false;
+
+    var touched = [];
+    try {
+      touched = touched.concat(Array.prototype.slice.call(mutation.addedNodes || []));
+      touched = touched.concat(Array.prototype.slice.call(mutation.removedNodes || []));
+    } catch(e) {}
+
+    if (!touched.length) return false;
+    for (var i = 0; i < touched.length; i++) {
+      if (!cbtIsOwnUiNode(touched[i])) return false;
+    }
+    return true;
+  }
+
   var _storeTimezoneCache = null;
   var _storeTimezoneCacheAt = 0;
   var _storeTimezoneCacheScope = '';
@@ -1982,12 +2025,14 @@
   }
 
   function tickTimers() {
+    if (document.hidden || !isDashboardView()) return;
     document.querySelectorAll('.etf-timeleft[data-target]').forEach(function (el) {
       var targetMs = parseInt(el.dataset.target, 10);
       if (!targetMs) return;
       var result = fmtTimeLeft(targetMs);
-      el.textContent = result.text;
-      el.className = 'etf-timeleft ' + result.cls;
+      var nextClass = 'etf-timeleft ' + result.cls;
+      if (el.textContent !== result.text) el.textContent = result.text;
+      if (el.className !== nextClass) el.className = nextClass;
     });
   }
 
@@ -2039,13 +2084,18 @@
   var timerWatcher = new MutationObserver(function(mutations) {
     if (!isDashboardView()) return;
 
+    var foundRelevant = false;
     for (var i = 0; i < mutations.length; i++) {
+      /* Do not react to our own Time Left/stat/table DOM writes. */
+      if (cbtMutationIsOnlyOwnUi(mutations[i])) continue;
+
+      foundRelevant = true;
       queueTimerHost(mutations[i].target);
       var added = mutations[i].addedNodes || [];
       for (var j = 0; j < added.length; j++) queueTimerHost(added[j]);
     }
 
-    if (_timerMutationPending) return;
+    if (!foundRelevant || _timerMutationPending) return;
     _timerMutationPending = true;
     var raf = (typeof requestAnimationFrame === 'function')
       ? requestAnimationFrame
@@ -2062,7 +2112,7 @@
      The old recommendation divided remaining PACKAGES by live batcher speed.
      That could recommend "1" even when many carts were due soon.
 
-     v23.9.50 deliberately does NOT use individual associate speed/rate.
+     v23.9.52 deliberately does NOT use individual associate speed/rate.
 
      It treats each open batching job/cart as one unit of work and asks:
        "How many concurrent batchers are needed to clear these carts before
@@ -2452,29 +2502,52 @@
     return parts.join(' · ');
   }
 
+  var _statsDomCache = {
+    inProgress: null,
+    remaining: null,
+    recommended: null,
+    dotColor: null,
+    recTitle: null
+  };
+
   function updateStats(inProgress, remaining, recommended, dotColor, recTitle) {
     var elIP  = document.getElementById('cbt-stat-ip');
     var elRem = document.getElementById('cbt-stat-rem');
     var elRec = document.getElementById('cbt-stat-rec');
     var elDot = document.getElementById('cbt-stat-dot');
-    if (elIP)  elIP.textContent  = inProgress;
-    if (elRem) elRem.textContent = remaining;
-    if (elRec) {
-      elRec.textContent = recommended != null ? recommended : '—';
-      if (recTitle) elRec.title = recTitle;
+
+    var recText = recommended != null ? String(recommended) : '—';
+
+    if (elIP && _statsDomCache.inProgress !== inProgress) {
+      elIP.textContent = inProgress;
+      _statsDomCache.inProgress = inProgress;
     }
-    if (elDot && dotColor) {
+    if (elRem && _statsDomCache.remaining !== remaining) {
+      elRem.textContent = remaining;
+      _statsDomCache.remaining = remaining;
+    }
+    if (elRec && _statsDomCache.recommended !== recText) {
+      elRec.textContent = recText;
+      _statsDomCache.recommended = recText;
+    }
+    if (elRec && recTitle && _statsDomCache.recTitle !== recTitle) {
+      elRec.title = recTitle;
+      _statsDomCache.recTitle = recTitle;
+    }
+    if (elDot && dotColor && _statsDomCache.dotColor !== dotColor) {
       elDot.style.background = dotColor;
       elDot.style.boxShadow = '0 0 6px ' + dotColor;
+      _statsDomCache.dotColor = dotColor;
     }
+
     var old = document.getElementById('etf-ps-stats');
     if (old) old.remove();
   }
 
   function removeFromHeader() {
-    var h1 = document.querySelector("h1[data-dtk-test-id='job-grid-title']");
-    if (!h1) return;
-    var old = h1.querySelector('#etf-stats');
+    /* Direct ID lookup avoids re-querying/serializing the page header every
+       stats refresh. This only removes the same legacy element as before. */
+    var old = document.getElementById('etf-stats');
     if (old) old.remove();
   }
 
@@ -2833,7 +2906,7 @@
       };
       delete _cbtObservedProgressByRef[ref];
     } else {
-      /* Critical v23.9.50 fix: for the SAME job, an authoritative API update
+      /* Critical v23.9.52 fix: for the SAME job, an authoritative API update
          may correct the clock only BACKWARD. It can never shorten elapsed time
          by introducing a newer BATCHING sub-operation. */
       if (info.startMs < cur.ms - 1000) {
@@ -3182,7 +3255,7 @@
   function cbtMergeBestFields(target, source) {
     if (!target || !source) return;
 
-    /* v23.9.50+ stores bestRate explicitly. For older cached rows, use the
+    /* v23.9.52+ stores bestRate explicitly. For older cached rows, use the
        strongest recoverable value (bestRate -> lastRate -> avgRate). */
     var candidate = Math.max(
       Number(source.bestRate) || 0,
@@ -3286,6 +3359,7 @@
      Deliberately a NEW storage key, so everyone starts at a clean 100%.
   ══════════════════════════════════════ */
   var HEADER_FIXED_SCALE = 1.3;   /* header bar: constant, never scaled */
+  var STATS_FIXED_SCALE  = 1.3;   /* Batchers / Recommended / Remaining: constant 130% */
   var UI_SCALE_KEY  = 'cbt_ui_scale';
   var UI_SCALE_MIN  = 0.7, UI_SCALE_MAX = 2.0, UI_SCALE_STEP = 0.1, UI_SCALE_DEFAULT = 1;
   var _uiScale = UI_SCALE_DEFAULT;
@@ -3325,8 +3399,16 @@
          so it stays a constant anchor while the content below resizes. */
       var hdr = panel.querySelector('#cbt-header');
       if (hdr) hdr.style.zoom = HEADER_FIXED_SCALE;
-      /* Everything below the header follows the scale controls. */
-      ['#cbt-stats-bar', '#cbt-tabs', '#cbt-unified-search', '#cbt-body', '#cbt-drag-bottom'].forEach(function(sel){
+
+      /* v23.9.52: pin the three-number stats row at the same 130% as the
+         header. A- / A+ must never resize Batchers, Recommended This Hour,
+         or Remaining. */
+      var stats = panel.querySelector('#cbt-stats-bar');
+      if (stats) stats.style.zoom = STATS_FIXED_SCALE;
+
+      /* Only the tabs/search/table area below the fixed stats row follows
+         the A- / A+ scale controls. */
+      ['#cbt-tabs', '#cbt-unified-search', '#cbt-body', '#cbt-drag-bottom'].forEach(function(sel){
         var el = panel.querySelector(sel);
         if (el) el.style.zoom = z;
       });
@@ -3716,7 +3798,7 @@
                   /* Legacy v23.9.31-and-older device nodes have no date
                      metadata. Keep them only while the Firebase basket has no
                      modern metadata at all, so an all-old installation still
-                     migrates once. As soon as v23.9.50 devices are present,
+                     migrates once. As soon as v23.9.52 devices are present,
                      undated stale nodes are not allowed into Today. */
                   if (!deviceDate && anyModernMeta) continue;
 
@@ -4404,7 +4486,7 @@
   var HOF_MAX_RATE = CBT_MAX_VALID_RATE; /* shared trusted-rate ceiling */
   var HOF_TOP      = 30;
 
-  /* v23.9.50 TRUSTED FASTEST RESET
+  /* v23.9.52 TRUSTED FASTEST RESET
      --------------------------------
      Legacy Fastest records were calculated before the full-span timing fix.
      They cannot be safely repaired because each historical record did not
@@ -5824,7 +5906,7 @@
       try { afaConfirm(); } catch(err) {}
     });
 
-    /* v23.9.50: restore the original VERTICAL dashboard length.
+    /* v23.9.52: restore the original VERTICAL dashboard length.
        Width stays exactly as before. The compact 240px default from older
        versions is migrated back to 350px once. If someone manually made the
        board taller than 350px, keep that larger custom height. */
@@ -5839,7 +5921,7 @@
       }
     } catch(eRestore) {}
 
-    /* v23.9.50: persist the dashboard's collapsed/open state across reloads. */
+    /* v23.9.52: persist the dashboard's collapsed/open state across reloads. */
     var isCollapsed = false;
     try { isCollapsed = localStorage.getItem('cbt_panel_collapsed') === '1'; } catch(eCollapsedLoad) {}
     var collapseBtn = panel2.querySelector('#cbt-collapse-btn');
@@ -6541,12 +6623,24 @@
   }
 
   function tickLive() {
+    if (document.hidden || activeTab !== 'live') return;
+
+    var tbody = document.getElementById('cbt-tbody');
+    if (!tbody || !tbody.isConnected) return;
+
     var nowMs = cbtNowMs();
-    document.querySelectorAll('.cbt-elapsed[data-live="1"]').forEach(function(el){
-      var startMs=parseFloat(el.dataset.start); if(!startMs) return;
-      var sec=Math.max(0,(nowMs-startMs)/1000), min=sec/60;
-      el.className='cbt-elapsed '+(min>=ALERT_ELAPSED_MIN?'alert':min>=WARN_ELAPSED_MIN?'warn':'');
-      el.textContent=fmt(sec);
+    tbody.querySelectorAll('.cbt-elapsed[data-live="1"]').forEach(function(el){
+      var startMs = parseFloat(el.dataset.start);
+      if (!startMs) return;
+
+      var sec = Math.max(0, (nowMs - startMs) / 1000);
+      var min = sec / 60;
+      var nextClass = 'cbt-elapsed ' +
+        (min >= ALERT_ELAPSED_MIN ? 'alert' : min >= WARN_ELAPSED_MIN ? 'warn' : '');
+      var nextText = fmt(sec);
+
+      if (el.className !== nextClass) el.className = nextClass;
+      if (el.textContent !== nextText) el.textContent = nextText;
     });
   }
 
@@ -6851,7 +6945,7 @@
   /* Exactly one panel per page type:
        cart/task detail page -> Associate Search only
        dashboard view        -> Batcher Timers only                */
-  var panelWatcher = new MutationObserver(coalesced(function() {
+  var _panelMutationRun = coalesced(function() {
     try { ensureSortAttachment(); } catch(e0) {}
     if (shouldShowSearchPanel()) {
       /* cart/task detail, or any Outbound page -> Associate Search only */
@@ -6868,7 +6962,18 @@
 
     var mp = document.getElementById('cbt-panel');
     if (!mp || !mp.isConnected) injectPanel();
-  }, 50));
+  }, 50);
+
+  var panelWatcher = new MutationObserver(function(mutations) {
+    /* Our own Live clock, stats, QR, autocomplete, Time Left and modal updates
+       must not cause a whole-page health/mount pass. */
+    for (var i = 0; i < mutations.length; i++) {
+      if (!cbtMutationIsOnlyOwnUi(mutations[i])) {
+        _panelMutationRun();
+        return;
+      }
+    }
+  });
 
   /* ══════════════════════════════════════
      QR CODE FROM SELECTED TEXT
@@ -8929,10 +9034,19 @@
     if (_acObserver || _acWatch) return;
 
     try {
-      _acObserver = new MutationObserver(coalesced(function(){
+      var acMutationRun = coalesced(function(){
         if (!acWatchRelevant() && !_acDrop) return;
         acScanForFields();
-      }, 140));
+      }, 140);
+
+      _acObserver = new MutationObserver(function(mutations){
+        for (var i = 0; i < mutations.length; i++) {
+          if (!cbtMutationIsOnlyOwnUi(mutations[i])) {
+            acMutationRun();
+            return;
+          }
+        }
+      });
       _acObserver.observe(document.documentElement, {
         childList: true, subtree: true,
         attributes: true, attributeFilter: ['visible', 'aria-hidden', 'open', 'class', 'style']
@@ -9030,7 +9144,7 @@
     } catch(e2) {}
 
     /* Legacy Fastest cleanup is retained only for backward compatibility.
-       v23.9.50 reads the clean v2 Fastest namespace instead. */
+       v23.9.52 reads the clean v2 Fastest namespace instead. */
     try {
       var peaks = hofLoadPeaks(), cleanP = {};
       for (var pk in peaks) {
@@ -9055,7 +9169,7 @@
   }
 
   function runLegacyDataMigration() {
-    /* v23.9.50 intentionally starts Today + Weekly clean. Do not import any
+    /* v23.9.52 intentionally starts Today + Weekly clean. Do not import any
        pre-reset local history into the new shared generation. */
     if (gmGet('cbt_today_weekly_reset_v23948', null)) return;
 
@@ -9146,6 +9260,7 @@
     }, 500);
 
     setInterval(function () {
+      if (document.hidden) return;
       if (boardIsMisplaced()) detachMainPanel();
     }, 1000);
   }
@@ -9170,7 +9285,18 @@
 
     _fastMountUntil = Date.now() + 60000;
     setInterval(function(){
-      if (Date.now() > _fastMountUntil) return;
+      if (Date.now() > _fastMountUntil || document.hidden) return;
+
+      /* Once the correct UI for the current page is mounted, the normal
+         observers/2s health check are enough. Avoid duplicate 500ms scans. */
+      if (isDashboardView()) {
+        var mp = document.getElementById('cbt-panel');
+        if (mp && mp.isConnected) return;
+      } else if (shouldShowSearchPanel()) {
+        var tp = document.getElementById('cbt-tp');
+        if (tp && tp.isConnected) return;
+      }
+
       try { panelHealthCheck(); taskPanelHealthCheck(); } catch(e3) {}
     }, 500);
 
@@ -9231,7 +9357,10 @@
 
     setInterval(function(){
       if (document.hidden) return;
-      if (syncNamesFromAllTabs() && activeTab === 'names') renderNames();
+      cbtIdle(function(){
+        if (document.hidden) return;
+        if (syncNamesFromAllTabs() && activeTab === 'names') renderNames();
+      }, 700);
     }, 5000);
 
     try { syncHistoryPull(function(){ syncHistoryPush(); }); } catch(e5) {}
