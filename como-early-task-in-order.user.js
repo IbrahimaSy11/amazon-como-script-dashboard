@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.49
+// @version      23.9.50
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -2062,7 +2062,7 @@
      The old recommendation divided remaining PACKAGES by live batcher speed.
      That could recommend "1" even when many carts were due soon.
 
-     v23.9.49 deliberately does NOT use individual associate speed/rate.
+     v23.9.50 deliberately does NOT use individual associate speed/rate.
 
      It treats each open batching job/cart as one unit of work and asks:
        "How many concurrent batchers are needed to clear these carts before
@@ -2833,7 +2833,7 @@
       };
       delete _cbtObservedProgressByRef[ref];
     } else {
-      /* Critical v23.9.49 fix: for the SAME job, an authoritative API update
+      /* Critical v23.9.50 fix: for the SAME job, an authoritative API update
          may correct the clock only BACKWARD. It can never shorten elapsed time
          by introducing a newer BATCHING sub-operation. */
       if (info.startMs < cur.ms - 1000) {
@@ -3182,7 +3182,7 @@
   function cbtMergeBestFields(target, source) {
     if (!target || !source) return;
 
-    /* v23.9.49+ stores bestRate explicitly. For older cached rows, use the
+    /* v23.9.50+ stores bestRate explicitly. For older cached rows, use the
        strongest recoverable value (bestRate -> lastRate -> avgRate). */
     var candidate = Math.max(
       Number(source.bestRate) || 0,
@@ -3716,7 +3716,7 @@
                   /* Legacy v23.9.31-and-older device nodes have no date
                      metadata. Keep them only while the Firebase basket has no
                      modern metadata at all, so an all-old installation still
-                     migrates once. As soon as v23.9.49 devices are present,
+                     migrates once. As soon as v23.9.50 devices are present,
                      undated stale nodes are not allowed into Today. */
                   if (!deviceDate && anyModernMeta) continue;
 
@@ -4404,7 +4404,7 @@
   var HOF_MAX_RATE = CBT_MAX_VALID_RATE; /* shared trusted-rate ceiling */
   var HOF_TOP      = 30;
 
-  /* v23.9.49 TRUSTED FASTEST RESET
+  /* v23.9.50 TRUSTED FASTEST RESET
      --------------------------------
      Legacy Fastest records were calculated before the full-span timing fix.
      They cannot be safely repaired because each historical record did not
@@ -5641,13 +5641,29 @@
 
     try {
       var savedH = localStorage.getItem('cbt_body_h');
+      var collapsed0 = localStorage.getItem('cbt_panel_collapsed') === '1';
       var body0  = _panel2Ref.querySelector('#cbt-body');
       var tabs0  = _panel2Ref.querySelector('#cbt-tabs');
+      var search0 = _panel2Ref.querySelector('#cbt-unified-search');
+      var drag0 = _panel2Ref.querySelector('#cbt-drag-bottom');
+      var collapse0 = _panel2Ref.querySelector('#cbt-collapse-btn');
       if (savedH && body0) {
         var h0 = parseFloat(savedH);
         body0.style.height    = h0 + 'px';
         body0.style.maxHeight = h0 + 'px';
-        if (tabs0) tabs0.style.display = h0 === 0 ? 'none' : '';
+      }
+      if (collapsed0) {
+        if (body0) { body0.style.display = 'none'; body0.style.minHeight = '0'; }
+        if (tabs0) tabs0.style.display = 'none';
+        if (search0) search0.style.display = 'none';
+        if (drag0) drag0.style.display = 'none';
+        if (collapse0) collapse0.textContent = '🔽';
+      } else {
+        if (body0) { body0.style.display = ''; if (!body0.style.minHeight || body0.style.minHeight === '0px') body0.style.minHeight = (parseFloat(savedH) || 350) + 'px'; }
+        if (tabs0) tabs0.style.display = '';
+        if (search0) search0.style.display = '';
+        if (drag0) drag0.style.display = '';
+        if (collapse0) collapse0.textContent = '🔼';
       }
     } catch(ex) {}
 
@@ -5808,7 +5824,7 @@
       try { afaConfirm(); } catch(err) {}
     });
 
-    /* v23.9.49: restore the original VERTICAL dashboard length.
+    /* v23.9.50: restore the original VERTICAL dashboard length.
        Width stays exactly as before. The compact 240px default from older
        versions is migrated back to 350px once. If someone manually made the
        board taller than 350px, keep that larger custom height. */
@@ -5823,34 +5839,57 @@
       }
     } catch(eRestore) {}
 
+    /* v23.9.50: persist the dashboard's collapsed/open state across reloads. */
     var isCollapsed = false;
+    try { isCollapsed = localStorage.getItem('cbt_panel_collapsed') === '1'; } catch(eCollapsedLoad) {}
     var collapseBtn = panel2.querySelector('#cbt-collapse-btn');
-    collapseBtn.addEventListener('click', function() {
+
+    function applyMainCollapseState() {
       var body = panel2.querySelector('#cbt-body');
       var tabs = panel2.querySelector('#cbt-tabs');
       var searchBar = panel2.querySelector('#cbt-unified-search');
       var drag = panel2.querySelector('#cbt-drag-bottom');
       var savedH = parseFloat(localStorage.getItem('cbt_body_h') || '350');
+      if (!isFinite(savedH) || savedH < 350) savedH = 350;
 
       if (isCollapsed) {
-        isCollapsed = false;
-        if (body) { body.style.display = ''; body.style.height = '350px'; body.style.maxHeight = '350px'; body.style.minHeight = '350px'; }
-        if (tabs) tabs.style.display = '';
-        if (searchBar) searchBar.style.display = '';
-        if (drag) drag.style.display = '';
-        collapseBtn.textContent = '🔼';
-        try { localStorage.setItem('cbt_body_h', 350); } catch(ex) {}
-      } else if (savedH > 350) {
-        if (body) { body.style.height = '350px'; body.style.maxHeight = '350px'; body.style.minHeight = '350px'; }
-        collapseBtn.textContent = '🔼';
-        try { localStorage.setItem('cbt_body_h', 350); } catch(ex) {}
-      } else {
-        isCollapsed = true;
         if (body) { body.style.display = 'none'; body.style.minHeight = '0'; }
         if (tabs) tabs.style.display = 'none';
         if (searchBar) searchBar.style.display = 'none';
         if (drag) drag.style.display = 'none';
-        collapseBtn.textContent = '🔽';
+        if (collapseBtn) collapseBtn.textContent = '🔽';
+      } else {
+        if (body) {
+          body.style.display = '';
+          body.style.height = savedH + 'px';
+          body.style.maxHeight = savedH + 'px';
+          body.style.minHeight = savedH + 'px';
+        }
+        if (tabs) tabs.style.display = '';
+        if (searchBar) searchBar.style.display = '';
+        if (drag) drag.style.display = '';
+        if (collapseBtn) collapseBtn.textContent = '🔼';
+      }
+    }
+
+    applyMainCollapseState();
+
+    collapseBtn.addEventListener('click', function() {
+      var savedH = parseFloat(localStorage.getItem('cbt_body_h') || '350');
+
+      if (isCollapsed) {
+        isCollapsed = false;
+        try { localStorage.setItem('cbt_panel_collapsed', '0'); } catch(ex) {}
+        applyMainCollapseState();
+      } else if (savedH > 350) {
+        /* Preserve the existing first-click behavior for a manually enlarged
+           board: shrink it to the normal 350px height before fully collapsing. */
+        try { localStorage.setItem('cbt_body_h', '350'); } catch(ex) {}
+        applyMainCollapseState();
+      } else {
+        isCollapsed = true;
+        try { localStorage.setItem('cbt_panel_collapsed', '1'); } catch(ex) {}
+        applyMainCollapseState();
       }
     });
 
@@ -5906,13 +5945,11 @@
       var savedH = localStorage.getItem('cbt_body_h');
       if (savedH) {
         var body = panel2.querySelector('#cbt-body');
-        var tabs = panel2.querySelector('#cbt-tabs');
-        var searchBar3 = panel2.querySelector('#cbt-unified-search');
         var h = parseFloat(savedH);
         if (body) { body.style.height = h + 'px'; body.style.maxHeight = h + 'px'; }
-        if (tabs) tabs.style.display = h === 0 ? 'none' : '';
-        if (searchBar3) searchBar3.style.display = h === 0 ? 'none' : '';
       }
+      /* Height restoration must never override the persisted collapsed state. */
+      applyMainCollapseState();
     } catch(ex) {}
 
     document.addEventListener('click', function(e) {
@@ -8993,7 +9030,7 @@
     } catch(e2) {}
 
     /* Legacy Fastest cleanup is retained only for backward compatibility.
-       v23.9.49 reads the clean v2 Fastest namespace instead. */
+       v23.9.50 reads the clean v2 Fastest namespace instead. */
     try {
       var peaks = hofLoadPeaks(), cleanP = {};
       for (var pk in peaks) {
@@ -9018,7 +9055,7 @@
   }
 
   function runLegacyDataMigration() {
-    /* v23.9.49 intentionally starts Today + Weekly clean. Do not import any
+    /* v23.9.50 intentionally starts Today + Weekly clean. Do not import any
        pre-reset local history into the new shared generation. */
     if (gmGet('cbt_today_weekly_reset_v23948', null)) return;
 
