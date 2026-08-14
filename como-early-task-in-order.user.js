@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.53
+// @version      23.9.58
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -1391,11 +1391,8 @@
       pointer-events: none;
     }
 
-    /* QR popup can only snap to these six saved positions.
+    /* QR popup can only snap along the bottom row.
        No free-floating coordinates are kept, which makes placement stable. */
-    #cbt-qr-overlay[data-qr-pos="middle-left"]   { align-items:center; justify-content:flex-start; }
-    #cbt-qr-overlay[data-qr-pos="middle-center"] { align-items:center; justify-content:center; }
-    #cbt-qr-overlay[data-qr-pos="middle-right"]  { align-items:center; justify-content:flex-end; }
     #cbt-qr-overlay[data-qr-pos="bottom-left"]   { align-items:flex-end; justify-content:flex-start; }
     #cbt-qr-overlay[data-qr-pos="bottom-center"] { align-items:flex-end; justify-content:center; }
     #cbt-qr-overlay[data-qr-pos="bottom-right"]  { align-items:flex-end; justify-content:flex-end; }
@@ -1415,7 +1412,9 @@
       to   { opacity: 1; transform: translateY(0); }
     }
     #cbt-qr-head {
+      position: relative;
       display: flex; align-items: center; justify-content: space-between;
+      min-height: 28px;
       padding: 9px 11px; background: #f7f9fb;
       border-bottom: 1px solid #e1e7ee;
       cursor: grab;
@@ -1425,21 +1424,52 @@
     }
     #cbt-qr-head:active { cursor: grabbing; }
     #cbt-qr-title {
+      position: absolute;
+      left: 50%; top: 50%;
+      transform: translate(-50%, -50%);
       font-size: 12px; font-weight: 800; color: #0d1b2a;
       letter-spacing: .045em; text-transform: uppercase;
       display: flex; align-items: center; gap: 6px;
+      white-space: nowrap;
+      pointer-events: none;
     }
-    #cbt-qr-title::before {
-      content: ''; width: 3px; height: 16px;
-      background: var(--cb-blue); border-radius: 2px;
+    #cbt-qr-left,
+    #cbt-qr-right {
+      cursor: pointer;
+      border: none;
+      background: transparent;
+      color: #66788a;
+      width: 28px;
+      height: 28px;
+      border-radius: 6px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      line-height: 1;
+      transition: color .12s, background .12s, opacity .12s;
     }
-    #cbt-qr-close {
-      cursor: pointer; border: none; background: transparent; color: #66788a;
-      font-size: 14px; width: 24px; height: 24px; border-radius: 6px;
-      display: flex; align-items: center; justify-content: center; padding: 0;
-      transition: color .12s, background .12s;
+    #cbt-qr-left,
+    #cbt-qr-right {
+      font-size: 18px;
+      font-weight: 900;
     }
-    #cbt-qr-close:hover { color: var(--cb-red); background: rgba(255,61,61,.08); }
+    #cbt-qr-left:hover:not(:disabled),
+    #cbt-qr-right:hover:not(:disabled) {
+      color: var(--cb-blue);
+      background: rgba(41,121,255,.08);
+    }
+    #cbt-qr-left:disabled,
+    #cbt-qr-right:disabled {
+      cursor: default;
+      opacity: .28;
+    }
+    #cbt-qr-head-left,
+    #cbt-qr-head-right {
+      display: flex;
+      align-items: center;
+      z-index: 1;
+    }
     #cbt-qr-canvas-wrap {
       display: flex; align-items: center; justify-content: center;
       padding: 14px 14px 9px;
@@ -2126,7 +2156,7 @@
      The old recommendation divided remaining PACKAGES by live batcher speed.
      That could recommend "1" even when many carts were due soon.
 
-     v23.9.53 deliberately does NOT use individual associate speed/rate.
+     v23.9.58 deliberately does NOT use individual associate speed/rate.
 
      It treats each open batching job/cart as one unit of work and asks:
        "How many concurrent batchers are needed to clear these carts before
@@ -2920,7 +2950,7 @@
       };
       delete _cbtObservedProgressByRef[ref];
     } else {
-      /* Critical v23.9.53 fix: for the SAME job, an authoritative API update
+      /* Critical v23.9.58 fix: for the SAME job, an authoritative API update
          may correct the clock only BACKWARD. It can never shorten elapsed time
          by introducing a newer BATCHING sub-operation. */
       if (info.startMs < cur.ms - 1000) {
@@ -3269,7 +3299,7 @@
   function cbtMergeBestFields(target, source) {
     if (!target || !source) return;
 
-    /* v23.9.53+ stores bestRate explicitly. For older cached rows, use the
+    /* v23.9.58+ stores bestRate explicitly. For older cached rows, use the
        strongest recoverable value (bestRate -> lastRate -> avgRate). */
     var candidate = Math.max(
       Number(source.bestRate) || 0,
@@ -3414,7 +3444,7 @@
       var hdr = panel.querySelector('#cbt-header');
       if (hdr) hdr.style.zoom = HEADER_FIXED_SCALE;
 
-      /* v23.9.53: pin the three-number stats row at the same 130% as the
+      /* v23.9.58: pin the three-number stats row at the same 130% as the
          header. A- / A+ must never resize Batchers, Recommended This Hour,
          or Remaining. */
       var stats = panel.querySelector('#cbt-stats-bar');
@@ -3812,7 +3842,7 @@
                   /* Legacy v23.9.31-and-older device nodes have no date
                      metadata. Keep them only while the Firebase basket has no
                      modern metadata at all, so an all-old installation still
-                     migrates once. As soon as v23.9.53 devices are present,
+                     migrates once. As soon as v23.9.58 devices are present,
                      undated stale nodes are not allowed into Today. */
                   if (!deviceDate && anyModernMeta) continue;
 
@@ -4500,7 +4530,7 @@
   var HOF_MAX_RATE = CBT_MAX_VALID_RATE; /* shared trusted-rate ceiling */
   var HOF_TOP      = 30;
 
-  /* v23.9.53 TRUSTED FASTEST RESET
+  /* v23.9.58 TRUSTED FASTEST RESET
      --------------------------------
      Legacy Fastest records were calculated before the full-span timing fix.
      They cannot be safely repaired because each historical record did not
@@ -5920,7 +5950,7 @@
       try { afaConfirm(); } catch(err) {}
     });
 
-    /* v23.9.53: restore the original VERTICAL dashboard length.
+    /* v23.9.58: restore the original VERTICAL dashboard length.
        Width stays exactly as before. The compact 240px default from older
        versions is migrated back to 350px once. If someone manually made the
        board taller than 350px, keep that larger custom height. */
@@ -5935,7 +5965,7 @@
       }
     } catch(eRestore) {}
 
-    /* v23.9.53: persist the dashboard's collapsed/open state across reloads. */
+    /* v23.9.58: persist the dashboard's collapsed/open state across reloads. */
     var isCollapsed = false;
     try { isCollapsed = localStorage.getItem('cbt_panel_collapsed') === '1'; } catch(eCollapsedLoad) {}
     var collapseBtn = panel2.querySelector('#cbt-collapse-btn');
@@ -7012,13 +7042,9 @@
   var _qrSelectionTimer = 0;
   var _qrAutoCloseTimer = 0;
   var _qrDragCleanup = null;
-
   var QR_POSITION_KEY = 'cbt_qr_snap_position_v23953';
   var QR_DEFAULT_POSITION = 'bottom-right';
   var QR_ALLOWED_POSITIONS = {
-    'middle-left': 1,
-    'middle-center': 1,
-    'middle-right': 1,
     'bottom-left': 1,
     'bottom-center': 1,
     'bottom-right': 1
@@ -7028,32 +7054,82 @@
      never becomes a QR code — the feature is for the page's own content. */
   var QR_UI_IDS = ['cbt-panel', 'cbt-tp', 'cbt-qr-overlay', 'cbt-afa-overlay', 'cbt-ac-drop'];
 
+  function qrNormalizePosition(pos) {
+    pos = String(pos || '');
+    if (pos === 'middle-left') return 'bottom-left';
+    if (pos === 'middle-center') return 'bottom-center';
+    if (pos === 'middle-right') return 'bottom-right';
+    return QR_ALLOWED_POSITIONS[pos] ? pos : QR_DEFAULT_POSITION;
+  }
+
   function qrLoadPosition() {
     try {
-      var saved = String(localStorage.getItem(QR_POSITION_KEY) || '');
-      if (QR_ALLOWED_POSITIONS[saved]) return saved;
+      var saved = qrNormalizePosition(localStorage.getItem(QR_POSITION_KEY) || '');
+      return saved;
     } catch(e) {}
     return QR_DEFAULT_POSITION;
   }
 
   function qrSavePosition(pos) {
-    if (!QR_ALLOWED_POSITIONS[pos]) pos = QR_DEFAULT_POSITION;
+    pos = qrNormalizePosition(pos);
     try { localStorage.setItem(QR_POSITION_KEY, pos); } catch(e) {}
     return pos;
   }
 
   function qrApplyPosition(pos) {
     if (!_qrOverlay) return;
-    pos = QR_ALLOWED_POSITIONS[pos] ? pos : QR_DEFAULT_POSITION;
+    pos = qrNormalizePosition(pos);
     _qrOverlay.setAttribute('data-qr-pos', pos);
+    qrRefreshArrowState();
   }
 
-  /* Snap a dragged QR card to the nearest of exactly six allowed spots:
-     middle-left / middle-center / middle-right
+  function qrRefreshArrowState() {
+    if (!_qrOverlay) return;
+
+    var leftBtn = _qrOverlay.querySelector('#cbt-qr-left');
+    var rightBtn = _qrOverlay.querySelector('#cbt-qr-right');
+    if (!leftBtn || !rightBtn) return;
+
+    var pos = _qrOverlay.getAttribute('data-qr-pos') || qrLoadPosition();
+    var col = String(pos).split('-').pop();
+
+    leftBtn.disabled = col === 'left';
+    rightBtn.disabled = col === 'right';
+
+    leftBtn.title = 'Move QR left';
+    rightBtn.title = 'Move QR right';
+  }
+
+  function qrMoveHorizontal(direction) {
+    if (!_qrOverlay) return;
+
+    direction = direction < 0 ? -1 : 1;
+
+    var current = _qrOverlay.getAttribute('data-qr-pos') || qrLoadPosition();
+    var parts = String(current).split('-');
+    var row = 'bottom';
+    var cols = ['left', 'center', 'right'];
+    var idx = cols.indexOf(parts[1]);
+    if (idx < 0) idx = 2;
+
+    var nextIdx = Math.max(0, Math.min(2, idx + direction));
+    if (nextIdx === idx) {
+      qrRefreshArrowState();
+      return;
+    }
+
+    var nextPos = qrSavePosition(row + '-' + cols[nextIdx]);
+    qrApplyPosition(nextPos);
+
+    /* Moving the QR by arrow gives a fresh full 20 seconds. */
+    qrStartAutoClose();
+
+  }
+
+  /* Snap a dragged QR card only along the bottom row:
      bottom-left / bottom-center / bottom-right. */
   function qrSnapPositionFromPoint(clientX, clientY) {
     var vw = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
-    var vh = Math.max(1, window.innerHeight || document.documentElement.clientHeight || 1);
 
     var col = clientX < vw / 3
       ? 'left'
@@ -7061,10 +7137,8 @@
         ? 'right'
         : 'center';
 
-    /* Top positions are intentionally not supported. Anything dragged into
-       the upper half snaps to the middle row instead. */
-    var row = clientY < vh * 0.68 ? 'middle' : 'bottom';
-    return row + '-' + col;
+    /* Dragging upward never moves the QR upward. It always stays on bottom. */
+    return 'bottom-' + col;
   }
 
   function qrStartAutoClose() {
@@ -7072,7 +7146,7 @@
     _qrAutoCloseTimer = setTimeout(function(){
       _qrAutoCloseTimer = 0;
       if (_qrOverlay && _qrOverlay.isConnected) qrClose();
-    }, 10000);
+    }, 20000);
   }
 
   function qrEnableSnapDrag(card) {
@@ -7102,6 +7176,10 @@
       var pos = qrSavePosition(qrSnapPositionFromPoint(lastX, lastY));
       qrApplyPosition(pos);
 
+      /* A manual drag counts as activity: restart the full 20-second timer
+         from the moment the QR is dropped into its new snap position. */
+      qrStartAutoClose();
+
       try {
         if (pointerId !== null && head.releasePointerCapture) {
           head.releasePointerCapture(pointerId);
@@ -7112,8 +7190,9 @@
     }
 
     function onDown(e) {
-      /* Close button keeps its normal click behavior. */
-      if (e.target && e.target.closest && e.target.closest('#cbt-qr-close')) return;
+      /* Header controls keep their own click behavior and never start drag. */
+      if (e.target && e.target.closest &&
+          e.target.closest('#cbt-qr-left,#cbt-qr-right')) return;
 
       dragging = true;
       pointerId = e.pointerId;
@@ -7276,8 +7355,13 @@
     _qrOverlay.innerHTML =
       '<div id="cbt-qr-card" role="dialog" aria-label="QR Code">' +
         '<div id="cbt-qr-head">' +
+          '<span id="cbt-qr-head-left">' +
+            '<button id="cbt-qr-left" type="button" title="Move QR left" aria-label="Move QR left">←</button>' +
+          '</span>' +
           '<span id="cbt-qr-title">QR Code</span>' +
-          '<button id="cbt-qr-close" type="button" title="Close" aria-label="Close QR">✕</button>' +
+          '<span id="cbt-qr-head-right">' +
+            '<button id="cbt-qr-right" type="button" title="Move QR right" aria-label="Move QR right">→</button>' +
+          '</span>' +
         '</div>' +
         '<div id="cbt-qr-canvas-wrap"><div id="cbt-qr-svg" aria-live="polite"></div></div>' +
         '<div id="cbt-qr-err"></div>' +
@@ -7293,7 +7377,25 @@
     var input = _qrOverlay.querySelector('#cbt-qr-input');
     input.value = text;
 
-    _qrOverlay.querySelector('#cbt-qr-close').addEventListener('click', qrClose);
+    var qrLeftBtn = _qrOverlay.querySelector('#cbt-qr-left');
+    var qrRightBtn = _qrOverlay.querySelector('#cbt-qr-right');
+
+    if (qrLeftBtn) {
+      qrLeftBtn.addEventListener('click', function(e){
+        e.preventDefault();
+        e.stopPropagation();
+        qrMoveHorizontal(-1);
+      });
+    }
+    if (qrRightBtn) {
+      qrRightBtn.addEventListener('click', function(e){
+        e.preventDefault();
+        e.stopPropagation();
+        qrMoveHorizontal(1);
+      });
+    }
+
+    qrRefreshArrowState();
     qrEnableSnapDrag(card);
 
     /* Re-render at most once per animation frame while editing. */
@@ -9311,7 +9413,7 @@
     } catch(e2) {}
 
     /* Legacy Fastest cleanup is retained only for backward compatibility.
-       v23.9.53 reads the clean v2 Fastest namespace instead. */
+       v23.9.58 reads the clean v2 Fastest namespace instead. */
     try {
       var peaks = hofLoadPeaks(), cleanP = {};
       for (var pk in peaks) {
@@ -9336,7 +9438,7 @@
   }
 
   function runLegacyDataMigration() {
-    /* v23.9.53 intentionally starts Today + Weekly clean. Do not import any
+    /* v23.9.58 intentionally starts Today + Weekly clean. Do not import any
        pre-reset local history into the new shared generation. */
     if (gmGet('cbt_today_weekly_reset_v23948', null)) return;
 
