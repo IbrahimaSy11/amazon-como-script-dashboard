@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.58
+// @version      23.9.59
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -94,6 +94,9 @@
       font-weight: 800; font-size: 16px; color: var(--cb-navy);
       letter-spacing: 0.04em; text-transform: uppercase;
       display: flex; align-items: center; gap: 8px;
+      white-space: nowrap;
+      flex-wrap: nowrap;
+      flex-shrink: 0;
     }
     #cbt-title::before {
       content: ''; display: inline-block; width: 3px; height: 18px;
@@ -2156,7 +2159,7 @@
      The old recommendation divided remaining PACKAGES by live batcher speed.
      That could recommend "1" even when many carts were due soon.
 
-     v23.9.58 deliberately does NOT use individual associate speed/rate.
+     v23.9.59 deliberately does NOT use individual associate speed/rate.
 
      It treats each open batching job/cart as one unit of work and asks:
        "How many concurrent batchers are needed to clear these carts before
@@ -2950,7 +2953,7 @@
       };
       delete _cbtObservedProgressByRef[ref];
     } else {
-      /* Critical v23.9.58 fix: for the SAME job, an authoritative API update
+      /* Critical v23.9.59 fix: for the SAME job, an authoritative API update
          may correct the clock only BACKWARD. It can never shorten elapsed time
          by introducing a newer BATCHING sub-operation. */
       if (info.startMs < cur.ms - 1000) {
@@ -3299,7 +3302,7 @@
   function cbtMergeBestFields(target, source) {
     if (!target || !source) return;
 
-    /* v23.9.58+ stores bestRate explicitly. For older cached rows, use the
+    /* v23.9.59+ stores bestRate explicitly. For older cached rows, use the
        strongest recoverable value (bestRate -> lastRate -> avgRate). */
     var candidate = Math.max(
       Number(source.bestRate) || 0,
@@ -3444,7 +3447,7 @@
       var hdr = panel.querySelector('#cbt-header');
       if (hdr) hdr.style.zoom = HEADER_FIXED_SCALE;
 
-      /* v23.9.58: pin the three-number stats row at the same 130% as the
+      /* v23.9.59: pin the three-number stats row at the same 130% as the
          header. A- / A+ must never resize Batchers, Recommended This Hour,
          or Remaining. */
       var stats = panel.querySelector('#cbt-stats-bar');
@@ -3842,7 +3845,7 @@
                   /* Legacy v23.9.31-and-older device nodes have no date
                      metadata. Keep them only while the Firebase basket has no
                      modern metadata at all, so an all-old installation still
-                     migrates once. As soon as v23.9.58 devices are present,
+                     migrates once. As soon as v23.9.59 devices are present,
                      undated stale nodes are not allowed into Today. */
                   if (!deviceDate && anyModernMeta) continue;
 
@@ -4530,7 +4533,7 @@
   var HOF_MAX_RATE = CBT_MAX_VALID_RATE; /* shared trusted-rate ceiling */
   var HOF_TOP      = 30;
 
-  /* v23.9.58 TRUSTED FASTEST RESET
+  /* v23.9.59 TRUSTED FASTEST RESET
      --------------------------------
      Legacy Fastest records were calculated before the full-span timing fix.
      They cannot be safely repaired because each historical record did not
@@ -5950,7 +5953,7 @@
       try { afaConfirm(); } catch(err) {}
     });
 
-    /* v23.9.58: restore the original VERTICAL dashboard length.
+    /* v23.9.59: restore the original VERTICAL dashboard length.
        Width stays exactly as before. The compact 240px default from older
        versions is migrated back to 350px once. If someone manually made the
        board taller than 350px, keep that larger custom height. */
@@ -5965,7 +5968,7 @@
       }
     } catch(eRestore) {}
 
-    /* v23.9.58: persist the dashboard's collapsed/open state across reloads. */
+    /* v23.9.59: persist the dashboard's collapsed/open state across reloads. */
     var isCollapsed = false;
     try { isCollapsed = localStorage.getItem('cbt_panel_collapsed') === '1'; } catch(eCollapsedLoad) {}
     var collapseBtn = panel2.querySelector('#cbt-collapse-btn');
@@ -9413,7 +9416,7 @@
     } catch(e2) {}
 
     /* Legacy Fastest cleanup is retained only for backward compatibility.
-       v23.9.58 reads the clean v2 Fastest namespace instead. */
+       v23.9.59 reads the clean v2 Fastest namespace instead. */
     try {
       var peaks = hofLoadPeaks(), cleanP = {};
       for (var pk in peaks) {
@@ -9438,7 +9441,7 @@
   }
 
   function runLegacyDataMigration() {
-    /* v23.9.58 intentionally starts Today + Weekly clean. Do not import any
+    /* v23.9.59 intentionally starts Today + Weekly clean. Do not import any
        pre-reset local history into the new shared generation. */
     if (gmGet('cbt_today_weekly_reset_v23948', null)) return;
 
