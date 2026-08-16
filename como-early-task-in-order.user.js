@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.59
+// @version      23.9.63
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -145,6 +145,17 @@
       box-shadow: 0 0 0 3px rgba(0,0,0,0.08);
       transition: background 0.3s, box-shadow 0.3s;
     }
+    #cbt-stat-delta {
+      display: none;
+      flex-shrink: 0;
+      font-size: 28px;
+      font-weight: 900;
+      line-height: 1;
+      letter-spacing: 0;
+      white-space: nowrap;
+    }
+    #cbt-stat-delta.need-more { display: inline-block; color: #ff3d3d; }
+    #cbt-stat-delta.extra     { display: inline-block; color: #3fb950; }
 
     /* ── Tabs ── */
     #cbt-tabs {
@@ -2159,7 +2170,7 @@
      The old recommendation divided remaining PACKAGES by live batcher speed.
      That could recommend "1" even when many carts were due soon.
 
-     v23.9.59 deliberately does NOT use individual associate speed/rate.
+     v23.9.63 deliberately does NOT use individual associate speed/rate.
 
      It treats each open batching job/cart as one unit of work and asks:
        "How many concurrent batchers are needed to clear these carts before
@@ -2553,17 +2564,41 @@
     inProgress: null,
     remaining: null,
     recommended: null,
+    deltaText: null,
+    deltaClass: null,
     dotColor: null,
     recTitle: null
   };
 
   function updateStats(inProgress, remaining, recommended, dotColor, recTitle) {
-    var elIP  = document.getElementById('cbt-stat-ip');
-    var elRem = document.getElementById('cbt-stat-rem');
-    var elRec = document.getElementById('cbt-stat-rec');
-    var elDot = document.getElementById('cbt-stat-dot');
+    var elIP    = document.getElementById('cbt-stat-ip');
+    var elRem   = document.getElementById('cbt-stat-rem');
+    var elRec   = document.getElementById('cbt-stat-rec');
+    var elDot   = document.getElementById('cbt-stat-dot');
+    var elDelta = document.getElementById('cbt-stat-delta');
 
     var recText = recommended != null ? String(recommended) : '—';
+
+    /* +N = need N more batchers; -N = N extra batchers. */
+    var actualNum = Number(inProgress);
+    var recNum = Number(recommended);
+    var deltaText = '';
+    var deltaClass = '';
+    var deltaTitle = '';
+
+    if (isFinite(actualNum) && isFinite(recNum) && recNum >= 0) {
+      var diff = recNum - actualNum;
+      if (diff > 0) {
+        deltaText = '+' + diff;
+        deltaClass = 'need-more';
+        deltaTitle = 'Need ' + diff + ' more batcher' + (diff === 1 ? '' : 's');
+      } else if (diff < 0) {
+        var extra = Math.abs(diff);
+        deltaText = '-' + extra;
+        deltaClass = 'extra';
+        deltaTitle = extra + ' extra batcher' + (extra === 1 ? '' : 's');
+      }
+    }
 
     if (elIP && _statsDomCache.inProgress !== inProgress) {
       elIP.textContent = inProgress;
@@ -2576,6 +2611,14 @@
     if (elRec && _statsDomCache.recommended !== recText) {
       elRec.textContent = recText;
       _statsDomCache.recommended = recText;
+    }
+    if (elDelta &&
+        (_statsDomCache.deltaText !== deltaText || _statsDomCache.deltaClass !== deltaClass)) {
+      elDelta.textContent = deltaText;
+      elDelta.className = deltaClass;
+      elDelta.title = deltaTitle;
+      _statsDomCache.deltaText = deltaText;
+      _statsDomCache.deltaClass = deltaClass;
     }
     if (elRec && recTitle && _statsDomCache.recTitle !== recTitle) {
       elRec.title = recTitle;
@@ -2953,7 +2996,7 @@
       };
       delete _cbtObservedProgressByRef[ref];
     } else {
-      /* Critical v23.9.59 fix: for the SAME job, an authoritative API update
+      /* Critical v23.9.63 fix: for the SAME job, an authoritative API update
          may correct the clock only BACKWARD. It can never shorten elapsed time
          by introducing a newer BATCHING sub-operation. */
       if (info.startMs < cur.ms - 1000) {
@@ -3302,7 +3345,7 @@
   function cbtMergeBestFields(target, source) {
     if (!target || !source) return;
 
-    /* v23.9.59+ stores bestRate explicitly. For older cached rows, use the
+    /* v23.9.63+ stores bestRate explicitly. For older cached rows, use the
        strongest recoverable value (bestRate -> lastRate -> avgRate). */
     var candidate = Math.max(
       Number(source.bestRate) || 0,
@@ -3447,7 +3490,7 @@
       var hdr = panel.querySelector('#cbt-header');
       if (hdr) hdr.style.zoom = HEADER_FIXED_SCALE;
 
-      /* v23.9.59: pin the three-number stats row at the same 130% as the
+      /* v23.9.63: pin the three-number stats row at the same 130% as the
          header. A- / A+ must never resize Batchers, Recommended This Hour,
          or Remaining. */
       var stats = panel.querySelector('#cbt-stats-bar');
@@ -3845,7 +3888,7 @@
                   /* Legacy v23.9.31-and-older device nodes have no date
                      metadata. Keep them only while the Firebase basket has no
                      modern metadata at all, so an all-old installation still
-                     migrates once. As soon as v23.9.59 devices are present,
+                     migrates once. As soon as v23.9.63 devices are present,
                      undated stale nodes are not allowed into Today. */
                   if (!deviceDate && anyModernMeta) continue;
 
@@ -4533,7 +4576,7 @@
   var HOF_MAX_RATE = CBT_MAX_VALID_RATE; /* shared trusted-rate ceiling */
   var HOF_TOP      = 30;
 
-  /* v23.9.59 TRUSTED FASTEST RESET
+  /* v23.9.63 TRUSTED FASTEST RESET
      --------------------------------
      Legacy Fastest records were calculated before the full-span timing fix.
      They cannot be safely repaired because each historical record did not
@@ -5529,7 +5572,7 @@
         '<div class="cbt-stat-card">' +
           '<div class="cbt-stat-icon">\uD83E\uDDBA</div>' +
           '<div class="cbt-stat-label">Batchers</div>' +
-          '<div class="cbt-stat-value" id="cbt-stat-ip">\u2014</div>' +
+          '<div class="cbt-stat-value"><span id="cbt-stat-ip">\u2014</span><span id="cbt-stat-delta"></span></div>' +
         '</div>' +
         '<div class="cbt-stat-card">' +
           '<div class="cbt-stat-icon">\uD83D\uDCCA</div>' +
@@ -5953,7 +5996,7 @@
       try { afaConfirm(); } catch(err) {}
     });
 
-    /* v23.9.59: restore the original VERTICAL dashboard length.
+    /* v23.9.63: restore the original VERTICAL dashboard length.
        Width stays exactly as before. The compact 240px default from older
        versions is migrated back to 350px once. If someone manually made the
        board taller than 350px, keep that larger custom height. */
@@ -5968,7 +6011,7 @@
       }
     } catch(eRestore) {}
 
-    /* v23.9.59: persist the dashboard's collapsed/open state across reloads. */
+    /* v23.9.63: persist the dashboard's collapsed/open state across reloads. */
     var isCollapsed = false;
     try { isCollapsed = localStorage.getItem('cbt_panel_collapsed') === '1'; } catch(eCollapsedLoad) {}
     var collapseBtn = panel2.querySelector('#cbt-collapse-btn');
@@ -7124,7 +7167,7 @@
     var nextPos = qrSavePosition(row + '-' + cols[nextIdx]);
     qrApplyPosition(nextPos);
 
-    /* Moving the QR by arrow gives a fresh full 20 seconds. */
+    /* Moving the QR by arrow gives a fresh full 60 seconds. */
     qrStartAutoClose();
 
   }
@@ -7149,7 +7192,7 @@
     _qrAutoCloseTimer = setTimeout(function(){
       _qrAutoCloseTimer = 0;
       if (_qrOverlay && _qrOverlay.isConnected) qrClose();
-    }, 20000);
+    }, 60000);
   }
 
   function qrEnableSnapDrag(card) {
@@ -7179,7 +7222,7 @@
       var pos = qrSavePosition(qrSnapPositionFromPoint(lastX, lastY));
       qrApplyPosition(pos);
 
-      /* A manual drag counts as activity: restart the full 20-second timer
+      /* A manual drag counts as activity: restart the full 60-second timer
          from the moment the QR is dropped into its new snap position. */
       qrStartAutoClose();
 
@@ -9416,7 +9459,7 @@
     } catch(e2) {}
 
     /* Legacy Fastest cleanup is retained only for backward compatibility.
-       v23.9.59 reads the clean v2 Fastest namespace instead. */
+       v23.9.63 reads the clean v2 Fastest namespace instead. */
     try {
       var peaks = hofLoadPeaks(), cleanP = {};
       for (var pk in peaks) {
@@ -9441,7 +9484,7 @@
   }
 
   function runLegacyDataMigration() {
-    /* v23.9.59 intentionally starts Today + Weekly clean. Do not import any
+    /* v23.9.63 intentionally starts Today + Weekly clean. Do not import any
        pre-reset local history into the new shared generation. */
     if (gmGet('cbt_today_weekly_reset_v23948', null)) return;
 
