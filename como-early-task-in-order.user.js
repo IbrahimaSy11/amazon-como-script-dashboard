@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.75
+// @version      23.9.76
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -22,7 +22,7 @@
      inside those probe frames. The Amazon page inside the frame still loads
      normally, but duplicate timers, observers and polling are prevented. */
   if (window.top !== window.self &&
-      /[?&](?:cbtAfaProbe|cbtMissingQrProbe|cbtEarlyAssignProbe)=1(?:&|$)/.test(window.location.search)) return;
+      /[?&](?:cbtAfaProbe|cbtMissingQrProbe)=1(?:&|$)/.test(window.location.search)) return;
 
   var STORE_ID  = (window.location.href.split('store/')[1] || '').split('/')[0];
   var DRIVE_URL = 'https://drive.corp.amazon.com/view/jsermar@/COMO_Dashboard_BatchRate_NA.json?download=true';
@@ -1946,7 +1946,7 @@
      itself. Otherwise every timer/stat/table update can wake another observer,
      which creates needless feedback work on the Amazon page. */
   var CBT_OWN_UI_SELECTOR =
-    '#cbt-panel,#cbt-tp,#cbt-qr-overlay,#cbt-afa-overlay,#cbt-ac-drop,.etf-col-cell,.cbt-missing-probe-frame,.cbt-early-assign-probe-frame';
+    '#cbt-panel,#cbt-tp,#cbt-qr-overlay,#cbt-afa-overlay,#cbt-ac-drop,.etf-col-cell,.cbt-missing-probe-frame';
 
   function cbtIsOwnUiNode(node) {
     if (!node) return false;
@@ -2111,9 +2111,6 @@
     _attached = container;
     sortNow(container);
 
-    /* Establish an Early Task baseline for this Tasks container.
-       Existing assigned rows are remembered but NEVER acted on at load time. */
-    try { cbtEarlyAssignBaseline(); } catch(eEarlyBase) {}
     _sortObserver = new MutationObserver(function (mutations) {
       if (_sorting) return;
       for (var i = 0; i < mutations.length; i++) {
@@ -2319,13 +2316,6 @@
 
       foundRelevant = true;
 
-      /* Early-task rerouting piggybacks on this existing observer, but only
-         schedules work for Task Assignment / Cart/s mutations (or a replaced
-         job-card). Progress-bar/package-count changes are ignored. */
-      try {
-        if (cbtEarlyAssignMutationRelevant(mutations[i])) cbtEarlyAssignScheduleScan();
-      } catch(eEarlyMut) {}
-
       queueTimerHost(mutations[i].target);
       var added = mutations[i].addedNodes || [];
       for (var j = 0; j < added.length; j++) queueTimerHost(added[j]);
@@ -2348,7 +2338,7 @@
      The old recommendation divided remaining PACKAGES by live batcher speed.
      That could recommend "1" even when many carts were due soon.
 
-     v23.9.75 deliberately does NOT use individual associate speed/rate.
+     v23.9.76 deliberately does NOT use individual associate speed/rate.
 
      It treats each open batching job/cart as one unit of work and asks:
        "How many concurrent batchers are needed to clear these carts before
@@ -3174,7 +3164,7 @@
       };
       delete _cbtObservedProgressByRef[ref];
     } else {
-      /* Critical v23.9.75 fix: for the SAME job, an authoritative API update
+      /* Critical v23.9.76 fix: for the SAME job, an authoritative API update
          may correct the clock only BACKWARD. It can never shorten elapsed time
          by introducing a newer BATCHING sub-operation. */
       if (info.startMs < cur.ms - 1000) {
@@ -3523,7 +3513,7 @@
   function cbtMergeBestFields(target, source) {
     if (!target || !source) return;
 
-    /* v23.9.75+ stores bestRate explicitly. For older cached rows, use the
+    /* v23.9.76+ stores bestRate explicitly. For older cached rows, use the
        strongest recoverable value (bestRate -> lastRate -> avgRate). */
     var candidate = Math.max(
       Number(source.bestRate) || 0,
@@ -3669,7 +3659,7 @@
       var hdr = panel.querySelector('#cbt-header');
       if (hdr) hdr.style.zoom = HEADER_FIXED_SCALE;
 
-      /* v23.9.75: pin the three-number stats row at the same 130% as the
+      /* v23.9.76: pin the three-number stats row at the same 130% as the
          header. A- / A+ must never resize Batchers, Recommended This Hour,
          or Remaining. */
       var stats = panel.querySelector('#cbt-stats-bar');
@@ -4074,7 +4064,7 @@
                   /* Legacy v23.9.31-and-older device nodes have no date
                      metadata. Keep them only while the Firebase basket has no
                      modern metadata at all, so an all-old installation still
-                     migrates once. As soon as v23.9.75 devices are present,
+                     migrates once. As soon as v23.9.76 devices are present,
                      undated stale nodes are not allowed into Today. */
                   if (!deviceDate && anyModernMeta) continue;
 
@@ -4762,7 +4752,7 @@
   var HOF_MAX_RATE = CBT_MAX_VALID_RATE; /* shared trusted-rate ceiling */
   var HOF_TOP      = 30;
 
-  /* v23.9.75 TRUSTED FASTEST RESET
+  /* v23.9.76 TRUSTED FASTEST RESET
      --------------------------------
      Legacy Fastest records were calculated before the full-span timing fix.
      They cannot be safely repaired because each historical record did not
@@ -6182,7 +6172,7 @@
       try { afaConfirm(); } catch(err) {}
     });
 
-    /* v23.9.75: restore the original VERTICAL dashboard length.
+    /* v23.9.76: restore the original VERTICAL dashboard length.
        Width stays exactly as before. The compact 240px default from older
        versions is migrated back to 350px once. If someone manually made the
        board taller than 350px, keep that larger custom height. */
@@ -6197,7 +6187,7 @@
       }
     } catch(eRestore) {}
 
-    /* v23.9.75: persist the dashboard's collapsed/open state across reloads. */
+    /* v23.9.76: persist the dashboard's collapsed/open state across reloads. */
     var isCollapsed = false;
     try { isCollapsed = localStorage.getItem('cbt_panel_collapsed') === '1'; } catch(eCollapsedLoad) {}
     var collapseBtn = panel2.querySelector('#cbt-collapse-btn');
@@ -7809,777 +7799,6 @@
     if (e && e.key === 'Escape' && _qrOverlay) qrClose();
   }, true);
 
-
-  /* ══════════════════════════════════════════════════════════════════════
-     EXPERIMENTAL — EARLIEST TASK AUTO-REROUTE
-     ══════════════════════════════════════════════════════════════════════
-
-     User-confirmed workflow rule:
-       - When a batcher presses Accept Task, their login appears in
-         Task Assignment while Cart/s is still blank.
-       - Once they scan a cart, Cart/s becomes populated and that task must
-         never be touched by this feature.
-
-     Requested behavior:
-       1) Observe a LIVE transition from ASSIGNABLE -> associate while Cart/s
-          is blank. Existing assignments present at page load are baseline only.
-       2) Find the earliest currently ASSIGNABLE task by Batch Target.
-       3) If the accepted task is already earliest, do nothing.
-       4) Otherwise assign the random accepted task to "ibrahsyw".
-       5) Immediately assign the earliest task to the captured batcher.
-       6) If the early task disappears/becomes unavailable after step 4,
-          attempt to put the original task back on the original batcher.
-
-     Performance design:
-       - NO new polling interval.
-       - NO new document-wide MutationObserver.
-       - Uses the timerWatcher's existing mutation feed and reacts only when
-         Task Assignment / Cart/s changes.
-       - Hidden job-details assignment pages exist only while a real reroute is
-         occurring, and this userscript is blocked from starting inside them.
-
-     Important limitation:
-       From the dashboard alone, a manual manager assignment and Accept Task
-       both look like ASSIGNABLE -> associate with a blank Cart/s cell.
-       Self-generated assignments are suppressed, but an unrelated manual
-       manager assignment can still look like an Accept Task event.
-  ══════════════════════════════════════════════════════════════════════ */
-
-  var CBT_EARLY_AUTO_ENABLED = true;
-  var CBT_EARLY_PARK_ASSOCIATE = 'ibrahsyw';
-  var CBT_EARLY_SCAN_DELAY_MS = 90;
-  var CBT_EARLY_ACTION_TIMEOUT_MS = 9000;
-  var CBT_EARLY_SUPPRESS_MS = 20000;
-
-  var _cbtEarlyPrev = Object.create(null);
-  var _cbtEarlyQueue = [];
-  var _cbtEarlyQueued = Object.create(null);
-  var _cbtEarlySuppress = Object.create(null);
-  var _cbtEarlyBusy = false;
-  var _cbtEarlyScanTimer = 0;
-
-  function cbtEarlyNormText(v) {
-    return String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
-  }
-
-  function cbtEarlyHeaderMap() {
-    var header = document.querySelector('div.row.job-card-header');
-    if (!header) return null;
-
-    var cols;
-    try { cols = Array.prototype.slice.call(header.querySelectorAll(':scope > div[class*="col-"]')); }
-    catch(e) { cols = Array.prototype.slice.call(header.children || []); }
-
-    var map = { cart: -1, assignment: -1, batch: -1 };
-    for (var i = 0; i < cols.length; i++) {
-      var t = cbtEarlyNormText(cols[i].textContent || '').toLowerCase();
-      if (map.cart < 0 && /^cart(?:\/s)?$|^carts?$/.test(t)) map.cart = i;
-      if (map.assignment < 0 && /task\s*assignment/.test(t)) map.assignment = i;
-      if (map.batch < 0 && /batch\s*target/.test(t)) map.batch = i;
-    }
-
-    return (map.cart >= 0 && map.assignment >= 0 && map.batch >= 0) ? map : null;
-  }
-
-  function cbtEarlyDirectCols(row) {
-    if (!row) return [];
-    try {
-      return Array.prototype.slice.call(row.querySelectorAll(':scope > div[class*="col-"]'));
-    } catch(e) {
-      return Array.prototype.slice.call(row.children || []).filter(function(el){
-        return el && /(^|\s)col-(?:xs|sm|md|lg)-/.test(String(el.className || ''));
-      });
-    }
-  }
-
-  function cbtEarlyCartIsBlank(v) {
-    var s = cbtEarlyNormText(v).toUpperCase();
-    return !s || s === '-' || s === '—' || s === 'N/A' || s === 'NA' || s === 'NONE';
-  }
-
-  function cbtEarlyAssignmentKind(v) {
-    var s = cbtEarlyNormText(v);
-    var u = s.toUpperCase();
-
-    if (!s) return { kind: 'blank', value: '' };
-    if (u === 'ASSIGNABLE') return { kind: 'assignable', value: 'ASSIGNABLE' };
-    if (u === 'UNASSIGNABLE') return { kind: 'unassignable', value: 'UNASSIGNABLE' };
-
-    /* A few non-person state words should never be interpreted as logins. */
-    if (/^(NONE|CREATED|BATCHING|NOT STARTED|NOT_STARTED|PENDING|COMPLETE|COMPLETED)$/i.test(s)) {
-      return { kind: 'state', value: s };
-    }
-
-    return { kind: 'associate', value: s };
-  }
-
-  function cbtEarlyJobIdFromCard(card, ref) {
-    var a = null;
-    try { a = card.querySelector('a'); } catch(e) {}
-    if (a) {
-      var href = a.getAttribute('href') || '';
-      var m = href.match(/jobId=([^&#]+)/i);
-      if (m) {
-        try { return decodeURIComponent(m[1]); }
-        catch(e2) { return m[1]; }
-      }
-    }
-    return (ref && _afaJobIndex && _afaJobIndex[ref]) ? _afaJobIndex[ref] : null;
-  }
-
-  function cbtEarlyReadRows() {
-    var map = cbtEarlyHeaderMap();
-    if (!map) return [];
-
-    var out = [];
-    var cards = document.querySelectorAll('job-card');
-
-    for (var i = 0; i < cards.length; i++) {
-      var card = cards[i];
-      try { if (isInExcludedSection(card)) continue; } catch(e) {}
-
-      var row = null;
-      try { row = card.querySelector('div.row'); } catch(e2) {}
-      if (!row) continue;
-
-      var cols = cbtEarlyDirectCols(row);
-      if (cols.length <= Math.max(map.cart, map.assignment, map.batch)) continue;
-
-      var a = null;
-      try { a = card.querySelector('a'); } catch(e3) {}
-      var ref = a ? cbtEarlyNormText(a.textContent || '') : '';
-      if (!ref) continue;
-
-      var id = cbtEarlyJobIdFromCard(card, ref);
-      if (!id) continue;  /* no write is ever attempted without a real job id */
-
-      var cart = cbtEarlyNormText(cols[map.cart].textContent || '');
-      var assignmentRaw = cbtEarlyNormText(cols[map.assignment].textContent || '');
-      var assignment = cbtEarlyAssignmentKind(assignmentRaw);
-      var batchRaw = cbtEarlyNormText(cols[map.batch].textContent || '');
-      var batchMatch = batchRaw.match(/\d{1,2}:\d{2}\s*(?:AM|PM)/i);
-      var batchMs = batchMatch ? parseTime(batchMatch[0]) : null;
-
-      out.push({
-        key: String(id),
-        id: id,
-        ref: ref,
-        card: card,
-        cart: cart,
-        cartBlank: cbtEarlyCartIsBlank(cart),
-        assignmentRaw: assignmentRaw,
-        assignmentKind: assignment.kind,
-        assignment: assignment.value,
-        batchMs: batchMs
-      });
-    }
-
-    return out;
-  }
-
-  function cbtEarlyMapRows(rows) {
-    var out = Object.create(null);
-    for (var i = 0; i < rows.length; i++) out[rows[i].key] = rows[i];
-    return out;
-  }
-
-  function cbtEarlyAssignBaseline() {
-    if (!CBT_EARLY_AUTO_ENABLED || !isDashboardView()) return;
-    _cbtEarlyPrev = cbtEarlyMapRows(cbtEarlyReadRows());
-  }
-
-  function cbtEarlyCurrentRow(key) {
-    var rows = cbtEarlyReadRows();
-    for (var i = 0; i < rows.length; i++) {
-      if (rows[i].key === key) return rows[i];
-    }
-    return null;
-  }
-
-  function cbtEarlySuppressed(key) {
-    var until = Number(_cbtEarlySuppress[key] || 0);
-    if (!until) return false;
-    if (until <= Date.now()) {
-      delete _cbtEarlySuppress[key];
-      return false;
-    }
-    return true;
-  }
-
-  function cbtEarlySuppressKey(key, ms) {
-    if (!key) return;
-    _cbtEarlySuppress[key] = Date.now() + (Number(ms) || CBT_EARLY_SUPPRESS_MS);
-  }
-
-  function cbtEarlyMutationRelevant(mutation) {
-    if (!CBT_EARLY_AUTO_ENABLED || !isDashboardView() || !mutation) return false;
-
-    var node = mutation.target;
-    if (node && node.nodeType === 3) node = node.parentElement;
-    if (!node || node.nodeType !== 1) return false;
-
-    /* Entire job-card replaced/added: re-scan so a transition is not lost. */
-    var added = mutation.addedNodes || [];
-    for (var a = 0; a < added.length; a++) {
-      var ad = added[a];
-      if (!ad || ad.nodeType !== 1) continue;
-      try {
-        if ((ad.matches && ad.matches('job-card')) ||
-            (ad.querySelector && ad.querySelector('job-card'))) return true;
-      } catch(e) {}
-    }
-
-    var card = null;
-    try { card = node.closest && node.closest('job-card'); } catch(e2) {}
-    if (!card) return false;
-    try { if (isInExcludedSection(card)) return false; } catch(e3) {}
-
-    var row = null;
-    try { row = card.querySelector('div.row'); } catch(e4) {}
-    if (!row) return false;
-
-    var map = cbtEarlyHeaderMap();
-    if (!map) return false;
-
-    var cols = cbtEarlyDirectCols(row);
-    if (!cols.length) return false;
-
-    var directCol = null;
-    var n = node;
-    while (n && n !== row) {
-      if (n.parentElement === row && /(^|\s)col-(?:xs|sm|md|lg)-/.test(String(n.className || ''))) {
-        directCol = n;
-        break;
-      }
-      n = n.parentElement;
-    }
-    if (!directCol) return false;
-
-    var idx = cols.indexOf(directCol);
-    return idx === map.cart || idx === map.assignment;
-  }
-
-  function cbtEarlyAssignScheduleScan() {
-    if (!CBT_EARLY_AUTO_ENABLED || document.hidden || !isDashboardView()) return;
-    if (_cbtEarlyScanTimer) clearTimeout(_cbtEarlyScanTimer);
-    _cbtEarlyScanTimer = setTimeout(function(){
-      _cbtEarlyScanTimer = 0;
-      cbtEarlyAssignScan();
-    }, CBT_EARLY_SCAN_DELAY_MS);
-  }
-
-  function cbtEarlyEarliestCandidate(rows, sourceKey) {
-    var best = null;
-    for (var i = 0; i < rows.length; i++) {
-      var r = rows[i];
-      if (r.key === sourceKey) continue;
-      if (r.assignmentKind !== 'assignable') continue;
-      if (!r.cartBlank) continue;
-      if (!r.batchMs) continue;
-
-      if (!best || r.batchMs < best.batchMs ||
-          (r.batchMs === best.batchMs && String(r.ref).localeCompare(String(best.ref)) < 0)) {
-        best = r;
-      }
-    }
-    return best;
-  }
-
-  function cbtEarlyAssignScan() {
-    if (!CBT_EARLY_AUTO_ENABLED || document.hidden || !isDashboardView()) return;
-
-    var rows = cbtEarlyReadRows();
-    var nowMap = cbtEarlyMapRows(rows);
-    var prev = _cbtEarlyPrev || Object.create(null);
-
-    /* Update baseline first. That way DOM work caused by our queued action
-       cannot make the same transition appear twice. */
-    _cbtEarlyPrev = nowMap;
-
-    for (var i = 0; i < rows.length; i++) {
-      var cur = rows[i];
-      var old = prev[cur.key];
-      if (!old) continue;  /* newly visible row = baseline, not an Accept event */
-
-      if (cbtEarlySuppressed(cur.key)) continue;
-
-      var accepted =
-        old.assignmentKind === 'assignable' &&
-        cur.assignmentKind === 'associate' &&
-        cur.cartBlank;
-
-      if (!accepted) continue;
-
-      var associate = cbtEarlyNormText(cur.assignment);
-      if (!associate) continue;
-      if (associate.toLowerCase() === CBT_EARLY_PARK_ASSOCIATE.toLowerCase()) continue;
-
-      var earliest = cbtEarlyEarliestCandidate(rows, cur.key);
-      if (!earliest || !earliest.batchMs || !cur.batchMs) continue;
-
-      /* Already got the earliest target (or same target) -> leave it alone. */
-      if (cur.batchMs <= earliest.batchMs) {
-        console.info('[CBT-EARLY] Accepted task is already earliest:', associate, cur.ref);
-        continue;
-      }
-
-      var queueKey = cur.key + '|' + associate.toLowerCase();
-      if (_cbtEarlyQueued[queueKey]) continue;
-      _cbtEarlyQueued[queueKey] = true;
-
-      _cbtEarlyQueue.push({
-        queueKey: queueKey,
-        associate: associate,
-        sourceKey: cur.key,
-        sourceId: cur.id,
-        sourceRef: cur.ref,
-        sourceBatchMs: cur.batchMs,
-        targetKey: earliest.key,
-        targetId: earliest.id,
-        targetRef: earliest.ref,
-        targetBatchMs: earliest.batchMs,
-        detectedAt: Date.now()
-      });
-    }
-
-    cbtEarlyProcessQueue();
-  }
-
-  function cbtEarlyVisible(el) {
-    if (!el || !el.isConnected) return false;
-    try {
-      var s = el.ownerDocument.defaultView.getComputedStyle(el);
-      if (s.display === 'none' || s.visibility === 'hidden') return false;
-    } catch(e) {}
-    try {
-      var r = el.getBoundingClientRect();
-      return r.width > 0 && r.height > 0;
-    } catch(e2) {}
-    return true;
-  }
-
-  function cbtEarlyWait(test, timeoutMs, intervalMs) {
-    timeoutMs = Number(timeoutMs) || CBT_EARLY_ACTION_TIMEOUT_MS;
-    intervalMs = Number(intervalMs) || 100;
-
-    return new Promise(function(resolve, reject){
-      var started = Date.now();
-
-      function step() {
-        var value = null;
-        try { value = test(); } catch(e) {}
-
-        if (value) {
-          resolve(value);
-          return;
-        }
-        if (Date.now() - started >= timeoutMs) {
-          reject(new Error('timeout'));
-          return;
-        }
-        setTimeout(step, intervalMs);
-      }
-
-      step();
-    });
-  }
-
-  function cbtEarlySetInput(input, value) {
-    if (!input) return;
-    var win = input.ownerDocument && input.ownerDocument.defaultView;
-
-    try {
-      var proto = (input.tagName === 'TEXTAREA')
-        ? win.HTMLTextAreaElement.prototype
-        : win.HTMLInputElement.prototype;
-      var desc = Object.getOwnPropertyDescriptor(proto, 'value');
-      if (desc && desc.set) desc.set.call(input, value);
-      else input.value = value;
-    } catch(e) {
-      try { input.value = value; } catch(e2) {}
-    }
-
-    ['input','change','keyup'].forEach(function(type){
-      try {
-        var Ev = (win && win.Event) ? win.Event : Event;
-        input.dispatchEvent(new Ev(type, { bubbles: true, composed: true }));
-      } catch(e3) {}
-    });
-  }
-
-  function cbtEarlyFindAssignButton(doc) {
-    var direct = null;
-    try {
-      direct = doc.querySelector(
-        'button[ng-click*="showAssignToAssociateDialog"],' +
-        'button[data-ng-click*="showAssignToAssociateDialog"]'
-      );
-    } catch(e) {}
-    if (direct) return direct;
-
-    var buttons = [];
-    try { buttons = Array.prototype.slice.call(doc.querySelectorAll('button')); } catch(e2) {}
-    for (var i = 0; i < buttons.length; i++) {
-      var t = cbtEarlyNormText(buttons[i].textContent || '');
-      if (/^Assign to Associate$/i.test(t)) return buttons[i];
-    }
-    return null;
-  }
-
-  function cbtEarlyFindAssignDialog(doc) {
-    var nodes = [];
-    try {
-      nodes = Array.prototype.slice.call(
-        doc.querySelectorAll('.modal.in,.modal.show,[role="dialog"],[role="alertdialog"],.modal-dialog')
-      );
-    } catch(e) {}
-
-    for (var i = nodes.length - 1; i >= 0; i--) {
-      if (!cbtEarlyVisible(nodes[i])) continue;
-      var t = cbtEarlyNormText(nodes[i].textContent || '');
-      if (/assign/i.test(t) && /associate|login|user\s*id/i.test(t)) return nodes[i];
-    }
-    return null;
-  }
-
-  function cbtEarlyFindAssociateInput(scope) {
-    if (!scope) return null;
-    var inputs = [];
-    try { inputs = Array.prototype.slice.call(scope.querySelectorAll('input:not([type="hidden"]),textarea')); }
-    catch(e) {}
-
-    var fallback = null;
-    for (var i = 0; i < inputs.length; i++) {
-      var el = inputs[i];
-      if (!cbtEarlyVisible(el) || el.disabled || el.readOnly) continue;
-      if (!fallback) fallback = el;
-
-      var meta = [
-        el.getAttribute('placeholder'),
-        el.getAttribute('aria-label'),
-        el.getAttribute('name'),
-        el.getAttribute('id'),
-        el.getAttribute('ng-model'),
-        el.getAttribute('data-ng-model')
-      ].filter(Boolean).join(' ');
-
-      var parentText = '';
-      try { parentText = cbtEarlyNormText((el.parentElement && el.parentElement.textContent) || ''); } catch(e2) {}
-      var hay = (meta + ' ' + parentText).toLowerCase();
-      if (/associate|login|user\s*id|userid|employee/.test(hay)) return el;
-    }
-
-    return fallback;
-  }
-
-  function cbtEarlyFindDialogSubmit(scope) {
-    if (!scope) return null;
-    var buttons = [];
-    try { buttons = Array.prototype.slice.call(scope.querySelectorAll('button,input[type="button"],input[type="submit"]')); }
-    catch(e) {}
-
-    var scored = [];
-    for (var i = 0; i < buttons.length; i++) {
-      var b = buttons[i];
-      if (!cbtEarlyVisible(b) || b.disabled) continue;
-
-      var t = cbtEarlyNormText(b.textContent || b.value || '');
-      if (/cancel|close|back/i.test(t)) continue;
-
-      var ng = [
-        b.getAttribute && b.getAttribute('ng-click'),
-        b.getAttribute && b.getAttribute('data-ng-click')
-      ].filter(Boolean).join(' ');
-
-      var score = 0;
-      if (/^assign$/i.test(t)) score += 100;
-      else if (/^confirm$/i.test(t)) score += 90;
-      else if (/^save$/i.test(t)) score += 80;
-      else if (/^ok$/i.test(t)) score += 70;
-      else if (/assign/i.test(t)) score += 50;
-      if (/assign/i.test(ng) && !/showAssign/i.test(ng)) score += 30;
-
-      if (score) scored.push({ b: b, score: score });
-    }
-
-    scored.sort(function(a, b){ return b.score - a.score; });
-    return scored.length ? scored[0].b : null;
-  }
-
-  function cbtEarlyExtractAssociateDeep(obj, depth) {
-    if (obj == null || depth > 7) return null;
-
-    if (Array.isArray(obj)) {
-      for (var i = 0; i < obj.length && i < 500; i++) {
-        var a = cbtEarlyExtractAssociateDeep(obj[i], depth + 1);
-        if (a) return a;
-      }
-      return null;
-    }
-    if (typeof obj !== 'object') return null;
-
-    var preferred = ['associateId','associateID','associate','assignedAssociate','assignedTo','assignee'];
-    for (var p = 0; p < preferred.length; p++) {
-      var v = obj[preferred[p]];
-      if (typeof v === 'string') {
-        var s = cbtEarlyNormText(v);
-        if (s && !/^(ASSIGNABLE|UNASSIGNABLE|NONE)$/i.test(s)) return s;
-      }
-    }
-
-    for (var k in obj) {
-      var value = obj[k];
-      if (typeof value === 'string' &&
-          /associate|assignee|assigned.*to/i.test(k)) {
-        var s2 = cbtEarlyNormText(value);
-        if (s2 && !/^(ASSIGNABLE|UNASSIGNABLE|NONE)$/i.test(s2)) return s2;
-      }
-    }
-
-    for (var k2 in obj) {
-      var child = obj[k2];
-      if (child && typeof child === 'object') {
-        var r = cbtEarlyExtractAssociateDeep(child, depth + 1);
-        if (r) return r;
-      }
-    }
-    return null;
-  }
-
-  function cbtEarlyVerifyAssociate(jobId, login) {
-    var tries = 0;
-    login = String(login || '').toLowerCase();
-
-    function once() {
-      tries++;
-      return afaFetchJobInfo(jobId).then(function(info){
-        var got = info ? cbtEarlyExtractAssociateDeep(info, 0) : null;
-        if (got && String(got).toLowerCase() === login) return true;
-        if (tries >= 4) return got ? false : null;
-        return new Promise(function(resolve){
-          setTimeout(function(){ resolve(once()); }, 280);
-        });
-      });
-    }
-    return once();
-  }
-
-  function cbtEarlyAssignViaUi(jobId, associate, guardFn) {
-    return new Promise(function(resolve){
-      if (!jobId || !associate || !document.body) {
-        resolve({ ok: false, reason: 'missing job/associate' });
-        return;
-      }
-
-      if (guardFn) {
-        try {
-          if (!guardFn()) {
-            resolve({ ok: false, reason: 'guard changed before open' });
-            return;
-          }
-        } catch(eGuard) {
-          resolve({ ok: false, reason: 'guard error before open' });
-          return;
-        }
-      }
-
-      var frame = document.createElement('iframe');
-      frame.className = 'cbt-early-assign-probe-frame';
-      frame.setAttribute('aria-hidden', 'true');
-      frame.tabIndex = -1;
-      frame.style.cssText =
-        'position:fixed!important;left:-12000px!important;top:-12000px!important;' +
-        'width:1px!important;height:1px!important;opacity:0!important;' +
-        'pointer-events:none!important;border:0!important;';
-
-      var done = false;
-
-      function finish(result) {
-        if (done) return;
-        done = true;
-        try { frame.remove(); }
-        catch(e) {
-          try { frame.parentNode && frame.parentNode.removeChild(frame); } catch(e2) {}
-        }
-        resolve(result);
-      }
-
-      function guardStillOk() {
-        if (!guardFn) return true;
-        try { return !!guardFn(); } catch(e) { return false; }
-      }
-
-      document.body.appendChild(frame);
-
-      var url = COMO_BASE + '/store/' + encodeURIComponent(STORE_ID) +
-        '/jobdetails?jobId=' + encodeURIComponent(jobId) +
-        '&cbtEarlyAssignProbe=1&_cbt=' + Date.now();
-
-      frame.src = url;
-
-      cbtEarlyWait(function(){
-        var doc = null;
-        try { doc = frame.contentDocument || (frame.contentWindow && frame.contentWindow.document); }
-        catch(e) {}
-        if (!doc || !doc.body) return null;
-
-        var b = cbtEarlyFindAssignButton(doc);
-        if (!b || b.disabled || !cbtEarlyVisible(b)) return null;
-        return { doc: doc, button: b };
-      }, CBT_EARLY_ACTION_TIMEOUT_MS, 120)
-      .then(function(openStep){
-        if (!guardStillOk()) throw new Error('guard changed before dialog');
-        try { openStep.button.click(); } catch(e) { throw new Error('could not open assign dialog'); }
-
-        return cbtEarlyWait(function(){
-          var dialog = cbtEarlyFindAssignDialog(openStep.doc);
-          if (!dialog) return null;
-          var input = cbtEarlyFindAssociateInput(dialog);
-          if (!input) return null;
-          return { doc: openStep.doc, dialog: dialog, input: input };
-        }, 5000, 90);
-      })
-      .then(function(formStep){
-        if (!guardStillOk()) throw new Error('guard changed before submit');
-
-        cbtEarlySetInput(formStep.input, associate);
-
-        return cbtEarlyWait(function(){
-          if (!guardStillOk()) throw new Error('guard changed while waiting submit');
-          var submit = cbtEarlyFindDialogSubmit(formStep.dialog);
-          return submit ? { doc: formStep.doc, dialog: formStep.dialog, submit: submit } : null;
-        }, 4500, 100);
-      })
-      .then(function(submitStep){
-        if (!guardStillOk()) throw new Error('guard changed at submit');
-        try { submitStep.submit.click(); }
-        catch(e) { throw new Error('submit click failed'); }
-
-        var successSeen = false;
-
-        return cbtEarlyWait(function(){
-          var bodyText = '';
-          try { bodyText = cbtEarlyNormText(submitStep.doc.body.textContent || ''); } catch(e) {}
-
-          if (/assigned to associate successfully/i.test(bodyText) ||
-              /job was assigned to associate successfully/i.test(bodyText)) {
-            successSeen = true;
-            return true;
-          }
-
-          /* Some builds close the modal immediately after a successful POST.
-             Verification below still checks the job record before trusting it. */
-          var dialogNow = cbtEarlyFindAssignDialog(submitStep.doc);
-          if (!dialogNow) return true;
-
-          if (/error|failed|unable to assign/i.test(bodyText)) {
-            throw new Error('site reported assignment failure');
-          }
-          return null;
-        }, 6500, 120).then(function(){
-          return cbtEarlyVerifyAssociate(jobId, associate).then(function(verified){
-            if (verified === true) return { ok: true, verified: true };
-            if (verified === false) return { ok: false, reason: 'job shows another associate' };
-            if (successSeen) return { ok: true, verified: false };
-            return { ok: false, reason: 'could not verify assignment' };
-          });
-        });
-      })
-      .then(function(result){ finish(result); })
-      .catch(function(err){
-        finish({
-          ok: false,
-          reason: (err && err.message) ? String(err.message) : 'assignment UI failed'
-        });
-      });
-    });
-  }
-
-  function cbtEarlyProcessQueue() {
-    if (_cbtEarlyBusy || !_cbtEarlyQueue.length || !CBT_EARLY_AUTO_ENABLED) return;
-
-    var ev = _cbtEarlyQueue.shift();
-    _cbtEarlyBusy = true;
-
-    function finish() {
-      delete _cbtEarlyQueued[ev.queueKey];
-      _cbtEarlyBusy = false;
-      cbtEarlyAssignScheduleScan();
-      setTimeout(cbtEarlyProcessQueue, 80);
-    }
-
-    function sourceGuard() {
-      var cur = cbtEarlyCurrentRow(ev.sourceKey);
-      return !!cur &&
-        cur.cartBlank &&
-        cur.assignmentKind === 'associate' &&
-        cur.assignment.toLowerCase() === ev.associate.toLowerCase();
-    }
-
-    function targetGuard() {
-      var cur = cbtEarlyCurrentRow(ev.targetKey);
-      return !!cur &&
-        cur.cartBlank &&
-        cur.assignmentKind === 'assignable';
-    }
-
-    /* Revalidate everything immediately before changing anything. */
-    var sourceNow = cbtEarlyCurrentRow(ev.sourceKey);
-    var targetNow = cbtEarlyCurrentRow(ev.targetKey);
-
-    if (!sourceNow || !targetNow ||
-        !sourceGuard() || !targetGuard() ||
-        !sourceNow.batchMs || !targetNow.batchMs ||
-        sourceNow.batchMs <= targetNow.batchMs) {
-      console.info('[CBT-EARLY] Reroute skipped because the live task state changed.');
-      finish();
-      return;
-    }
-
-    cbtEarlySuppressKey(ev.sourceKey);
-    cbtEarlySuppressKey(ev.targetKey);
-
-    console.info(
-      '[CBT-EARLY] Rerouting', ev.associate,
-      'from', ev.sourceRef, 'to earlier task', ev.targetRef
-    );
-
-    /* Step 1 — park Amazon's random assignment on ibrahsyw. */
-    cbtEarlyAssignViaUi(ev.sourceId, CBT_EARLY_PARK_ASSOCIATE, sourceGuard)
-      .then(function(parkResult){
-        if (!parkResult || !parkResult.ok) {
-          console.warn('[CBT-EARLY] Could not park random task:', parkResult && parkResult.reason);
-          return { done: true, ok: false };
-        }
-
-        /* Step 2 — only take the early task if it is STILL assignable. */
-        if (!targetGuard()) {
-          console.warn('[CBT-EARLY] Early task changed before second assignment; restoring original task.');
-
-          return cbtEarlyAssignViaUi(ev.sourceId, ev.associate, null).then(function(rollback){
-            return { done: true, ok: false, rollback: rollback };
-          });
-        }
-
-        return cbtEarlyAssignViaUi(ev.targetId, ev.associate, targetGuard).then(function(targetResult){
-          if (targetResult && targetResult.ok) {
-            console.info('[CBT-EARLY] Success:', ev.associate, '->', ev.targetRef);
-            return { done: true, ok: true };
-          }
-
-          /* If the second half failed, make a best-effort rollback so the
-             batcher is not left with no intended task. */
-          console.warn('[CBT-EARLY] Early assignment failed; restoring original task.');
-          return cbtEarlyAssignViaUi(ev.sourceId, ev.associate, null).then(function(rollback){
-            return { done: true, ok: false, rollback: rollback };
-          });
-        });
-      })
-      .catch(function(err){
-        console.warn('[CBT-EARLY] Reroute error:', err);
-      })
-      .then(finish);
-  }
 
   /* ══════════════════════════════════════
      AUTO FORCE ASSIGN
@@ -11283,7 +10502,7 @@
     } catch(e2) {}
 
     /* Legacy Fastest cleanup is retained only for backward compatibility.
-       v23.9.75 reads the clean v2 Fastest namespace instead. */
+       v23.9.76 reads the clean v2 Fastest namespace instead. */
     try {
       var peaks = hofLoadPeaks(), cleanP = {};
       for (var pk in peaks) {
@@ -11308,7 +10527,7 @@
   }
 
   function runLegacyDataMigration() {
-    /* v23.9.75 intentionally starts Today + Weekly clean. Do not import any
+    /* v23.9.76 intentionally starts Today + Weekly clean. Do not import any
        pre-reset local history into the new shared generation. */
     if (gmGet('cbt_today_weekly_reset_v23948', null)) return;
 
@@ -11462,7 +10681,6 @@
       try {
         timerWatcher.observe(document.documentElement, { childList: true, subtree: true });
         injectAllTimers();
-        try { cbtEarlyAssignBaseline(); } catch(eEarlyInit) {}
 
         /* Visible Time Left values still tick every second. The expensive
            whole-page safety scan is only every 5s; mutations are handled
