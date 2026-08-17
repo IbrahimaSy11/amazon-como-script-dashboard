@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.63
+// @version      23.9.72
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -17,11 +17,12 @@
 (function () {
   'use strict';
 
-  /* Hidden Auto Complete eligibility probes load a real job-details page in
-     a same-origin iframe. Do not run this userscript inside that probe frame;
-     the site itself still loads normally so its own Complete Task button state
-     can be inspected without opening a visible cart page. */
-  if (window.top !== window.self && /[?&]cbtAfaProbe=1(?:&|$)/.test(window.location.search)) return;
+  /* Hidden eligibility / Missing Package probes load real job-details pages
+     in same-origin iframes. NEVER start a second copy of this full userscript
+     inside those probe frames. The Amazon page inside the frame still loads
+     normally, but duplicate timers, observers and polling are prevented. */
+  if (window.top !== window.self &&
+      /[?&](?:cbtAfaProbe|cbtMissingQrProbe)=1(?:&|$)/.test(window.location.search)) return;
 
   var STORE_ID  = (window.location.href.split('store/')[1] || '').split('/')[0];
   var DRIVE_URL = 'https://drive.corp.amazon.com/view/jsermar@/COMO_Dashboard_BatchRate_NA.json?download=true';
@@ -696,6 +697,27 @@
       background: #161b22; border-color: #30363d;
     }
     #cbt-afa-overlay.cbt-dark .cbt-afa-action-copy { color: #8b99aa; }
+    #cbt-afa-overlay.cbt-dark .cbt-missing-qr-tile {
+      background: #161b22;
+      border-color: #30363d;
+    }
+    #cbt-afa-overlay.cbt-dark .cbt-missing-qr-kind,
+    #cbt-afa-overlay.cbt-dark .cbt-missing-qr-summary { color: #8b99aa; }
+    #cbt-afa-overlay.cbt-dark .cbt-missing-qr-value {
+      background: #0d1117;
+      color: #e6edf3;
+    }
+    #cbt-afa-overlay.cbt-dark .cbt-missing-qr-count { color: #e6edf3; }
+    #cbt-afa-overlay.cbt-dark .cbt-missing-qr-nav-btn {
+      background: #161b22;
+      border-color: #30363d;
+      color: #e6edf3;
+    }
+    #cbt-afa-overlay.cbt-dark .cbt-missing-qr-nav-btn:hover {
+      border-color: #58a6ff;
+      color: #58a6ff;
+      background: #0d1117;
+    }
     #cbt-afa-overlay.cbt-dark .cbt-afa-opt {
       background: #161b22; border-color: #30363d; color: #c9d1d9;
     }
@@ -1649,6 +1671,150 @@
       min-width: 0;
       align-self: center;
       font-size: 12px; line-height: 1.45; color: var(--cb-text2);
+      overflow-wrap: anywhere;
+      word-break: normal;
+    }
+
+    /* Missing Package QR is a read-only helper inside the existing Run menu.
+       It intentionally uses the same red alert language as the dashboard. */
+    .cbt-afa-missing-btn {
+      background: #d93025 !important;
+      border-color: #d93025 !important;
+      color: #ffffff !important;
+      font-size: 12px !important;
+      overflow: hidden !important;
+      text-overflow: clip !important;
+    }
+    .cbt-afa-missing-btn:hover {
+      background: #b3261e !important;
+      border-color: #b3261e !important;
+    }
+    .cbt-afa-missing-triangle {
+      display: inline-block;
+      margin-right: 7px;
+      color: #ffffff;
+      font-size: 15px;
+      line-height: 1;
+      transform: translateY(-1px);
+    }
+    #cbt-afa-card.cbt-afa-missing-qr-card { width: 1180px; }
+    .cbt-missing-qr-summary {
+      margin-bottom: 10px;
+      color: var(--cb-text2);
+      font-size: 12px;
+      line-height: 1.5;
+      text-align: center;
+    }
+    .cbt-missing-qr-nav {
+      display: grid;
+      grid-template-columns: 54px 1fr 54px;
+      align-items: center;
+      width: 100%;
+      margin: 2px 0 14px;
+      min-height: 38px;
+    }
+    .cbt-missing-qr-count {
+      grid-column: 2;
+      justify-self: center;
+      font-family: var(--cb-mono);
+      font-size: 17px;
+      font-weight: 900;
+      color: var(--cb-navy);
+      white-space: nowrap;
+    }
+    .cbt-missing-qr-nav-btn {
+      width: 42px;
+      height: 34px;
+      padding: 0;
+      border: 1px solid var(--cb-border);
+      border-radius: 7px;
+      background: var(--cb-row-alt);
+      color: var(--cb-navy);
+      font-size: 23px;
+      font-weight: 900;
+      line-height: 1;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .cbt-missing-qr-nav-btn:hover {
+      border-color: var(--cb-blue);
+      color: var(--cb-blue);
+      background: #edf2fb;
+    }
+    .cbt-missing-qr-prev { grid-column: 1; justify-self: start; }
+    .cbt-missing-qr-next { grid-column: 3; justify-self: end; }
+    .cbt-missing-qr-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 300px));
+      justify-content: center;
+      /* Keep the two scanner targets very far apart so aiming at one QR does
+         not easily place the other QR inside the scanner's field of view. */
+      column-gap: clamp(220px, 24vw, 360px);
+      row-gap: 50px;
+      align-items: start;
+    }
+    .cbt-missing-qr-grid.single {
+      grid-template-columns: minmax(0, 330px);
+      justify-content: center;
+    }
+    .cbt-missing-qr-tile {
+      border: 1px solid var(--cb-border);
+      border-radius: 10px;
+      background: #ffffff;
+      padding: 12px;
+      min-width: 0;
+    }
+    .cbt-missing-qr-kind {
+      font-size: 11px;
+      font-weight: 900;
+      letter-spacing: .055em;
+      text-transform: uppercase;
+      color: var(--cb-text2);
+      margin-bottom: 7px;
+      text-align: center;
+      white-space: nowrap;
+    }
+    .cbt-missing-qr-svg {
+      width: 270px;
+      min-width: 270px;
+      max-width: 270px;
+      height: 270px;
+      min-height: 270px;
+      max-height: 270px;
+      aspect-ratio: 1 / 1;
+      margin: 0 auto;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #ffffff;
+    }
+    .cbt-missing-qr-svg svg {
+      display: block;
+      width: 100%;
+      height: 100%;
+    }
+    .cbt-missing-qr-value {
+      margin-top: 8px;
+      padding: 7px 8px;
+      border-radius: 6px;
+      background: var(--cb-row-alt);
+      color: var(--cb-navy);
+      font-family: var(--cb-mono);
+      font-size: 11px;
+      font-weight: 800;
+      text-align: center;
+      word-break: break-all;
+    }
+    @media (max-width: 760px) {
+      .cbt-missing-qr-grid,
+      .cbt-missing-qr-grid.single {
+        grid-template-columns: minmax(0, 330px);
+        justify-content: center;
+        row-gap: 50px;
+      }
+      #cbt-afa-card.cbt-afa-missing-qr-card { width: 94vw; }
     }
     .cbt-afa-opt {
       display: flex; align-items: flex-start; gap: 9px; cursor: pointer;
@@ -1780,7 +1946,7 @@
      itself. Otherwise every timer/stat/table update can wake another observer,
      which creates needless feedback work on the Amazon page. */
   var CBT_OWN_UI_SELECTOR =
-    '#cbt-panel,#cbt-tp,#cbt-qr-overlay,#cbt-afa-overlay,#cbt-ac-drop,.etf-col-cell';
+    '#cbt-panel,#cbt-tp,#cbt-qr-overlay,#cbt-afa-overlay,#cbt-ac-drop,.etf-col-cell,.cbt-missing-probe-frame';
 
   function cbtIsOwnUiNode(node) {
     if (!node) return false;
@@ -2170,7 +2336,7 @@
      The old recommendation divided remaining PACKAGES by live batcher speed.
      That could recommend "1" even when many carts were due soon.
 
-     v23.9.63 deliberately does NOT use individual associate speed/rate.
+     v23.9.72 deliberately does NOT use individual associate speed/rate.
 
      It treats each open batching job/cart as one unit of work and asks:
        "How many concurrent batchers are needed to clear these carts before
@@ -2996,7 +3162,7 @@
       };
       delete _cbtObservedProgressByRef[ref];
     } else {
-      /* Critical v23.9.63 fix: for the SAME job, an authoritative API update
+      /* Critical v23.9.72 fix: for the SAME job, an authoritative API update
          may correct the clock only BACKWARD. It can never shorten elapsed time
          by introducing a newer BATCHING sub-operation. */
       if (info.startMs < cur.ms - 1000) {
@@ -3345,7 +3511,7 @@
   function cbtMergeBestFields(target, source) {
     if (!target || !source) return;
 
-    /* v23.9.63+ stores bestRate explicitly. For older cached rows, use the
+    /* v23.9.72+ stores bestRate explicitly. For older cached rows, use the
        strongest recoverable value (bestRate -> lastRate -> avgRate). */
     var candidate = Math.max(
       Number(source.bestRate) || 0,
@@ -3448,8 +3614,9 @@
      itself is never zoomed, and the browser's own zoom is untouched.
      Deliberately a NEW storage key, so everyone starts at a clean 100%.
   ══════════════════════════════════════ */
-  var HEADER_FIXED_SCALE = 1.3;   /* header bar: constant, never scaled */
-  var STATS_FIXED_SCALE  = 1.3;   /* Batchers / Recommended / Remaining: constant 130% */
+  var HEADER_FIXED_SCALE = 1.3;      /* header bar: constant, never scaled */
+  var STATS_FIXED_SCALE  = 1.3;      /* Batchers / Recommended / Remaining: constant 130% */
+  var MISSING_QR_FIXED_SCALE = 1.3;  /* Missing Package QR results: constant 130% */
   var UI_SCALE_KEY  = 'cbt_ui_scale';
   var UI_SCALE_MIN  = 0.7, UI_SCALE_MAX = 2.0, UI_SCALE_STEP = 0.1, UI_SCALE_DEFAULT = 1;
   var _uiScale = UI_SCALE_DEFAULT;
@@ -3490,7 +3657,7 @@
       var hdr = panel.querySelector('#cbt-header');
       if (hdr) hdr.style.zoom = HEADER_FIXED_SCALE;
 
-      /* v23.9.63: pin the three-number stats row at the same 130% as the
+      /* v23.9.72: pin the three-number stats row at the same 130% as the
          header. A- / A+ must never resize Batchers, Recommended This Hour,
          or Remaining. */
       var stats = panel.querySelector('#cbt-stats-bar');
@@ -3510,9 +3677,16 @@
        and its plain white styling in both day and night mode. */
     var afa = document.getElementById('cbt-afa-card');
     if (afa) {
-      afa.style.zoom = z;
-      afa.style.maxHeight = Math.round((window.innerHeight * 0.82) / z) + 'px';
-      afa.style.maxWidth  = Math.round((window.innerWidth  * 0.92) / z) + 'px';
+      /* Only the Missing Package QR result view is pinned at 130%.
+         A- / A+ can continue resizing the normal Cart Actions menu, but they
+         can never resize the generated Missing/Cart QR codes. */
+      var afaScale = afa.classList.contains('cbt-afa-missing-qr-card')
+        ? MISSING_QR_FIXED_SCALE
+        : z;
+
+      afa.style.zoom = afaScale;
+      afa.style.maxHeight = Math.round((window.innerHeight * 0.82) / afaScale) + 'px';
+      afa.style.maxWidth  = Math.round((window.innerWidth  * 0.92) / afaScale) + 'px';
     }
     var drop = document.getElementById('cbt-ac-drop');
     if (drop) {
@@ -3888,7 +4062,7 @@
                   /* Legacy v23.9.31-and-older device nodes have no date
                      metadata. Keep them only while the Firebase basket has no
                      modern metadata at all, so an all-old installation still
-                     migrates once. As soon as v23.9.63 devices are present,
+                     migrates once. As soon as v23.9.72 devices are present,
                      undated stale nodes are not allowed into Today. */
                   if (!deviceDate && anyModernMeta) continue;
 
@@ -4576,7 +4750,7 @@
   var HOF_MAX_RATE = CBT_MAX_VALID_RATE; /* shared trusted-rate ceiling */
   var HOF_TOP      = 30;
 
-  /* v23.9.63 TRUSTED FASTEST RESET
+  /* v23.9.72 TRUSTED FASTEST RESET
      --------------------------------
      Legacy Fastest records were calculated before the full-span timing fix.
      They cannot be safely repaired because each historical record did not
@@ -5996,7 +6170,7 @@
       try { afaConfirm(); } catch(err) {}
     });
 
-    /* v23.9.63: restore the original VERTICAL dashboard length.
+    /* v23.9.72: restore the original VERTICAL dashboard length.
        Width stays exactly as before. The compact 240px default from older
        versions is migrated back to 350px once. If someone manually made the
        board taller than 350px, keep that larger custom height. */
@@ -6011,7 +6185,7 @@
       }
     } catch(eRestore) {}
 
-    /* v23.9.63: persist the dashboard's collapsed/open state across reloads. */
+    /* v23.9.72: persist the dashboard's collapsed/open state across reloads. */
     var isCollapsed = false;
     try { isCollapsed = localStorage.getItem('cbt_panel_collapsed') === '1'; } catch(eCollapsedLoad) {}
     var collapseBtn = panel2.querySelector('#cbt-collapse-btn');
@@ -7651,6 +7825,11 @@
   var _afaDone     = Object.create(null);  /* job id -> claimed during THIS run */
   var _afaRunning  = false, _afaStop = false, _afaOverlay = null;
 
+  /* Missing QR availability is verified only when ▶ Run opens.
+     The button remains disabled unless a real MISSING package is confirmed. */
+  var _afaMissingMenuInfo = null;
+  var _afaMissingMenuCheckSeq = 0;
+
   /* Job ids look like {storeId}_CHECKIN_SERVICE_PUP-C-{uuid} */
   function afaLooksLikeJobId(v) {
     if (typeof v !== 'string' || v.length < 30 || v.indexOf('_') === -1) return false;
@@ -7878,6 +8057,769 @@
       found.push({ ref: ref || '(unknown)', id: id, unassignable: true });
     }
     return found;
+  }
+
+  /* ── Missing Package QR — READ ONLY ──
+     This helper runs only after the user deliberately clicks the red action
+     in ▶ Run. It checks the normal Tasks list PLUS Problem Solve and
+     Partially Batched, then finds the first job whose details contain a
+     package with Status = MISSING.
+
+     QR #1 = the Scannable Id from the SAME MISSING package row.
+     QR #2 = the first CART_... Last Known Location found in that job.
+     If the job has no CART_... value, only QR #1 is generated.
+
+     Discovery checks only alert-looking rows in the main Tasks list for
+     performance, but checks EVERY readable row in Problem Solve and Partially
+     Batched because missing packages can move there without the same warning
+     marker. No writes, assignment changes, completion calls, or background
+     observers are added by this feature. */
+
+  function afaMissingText(v) {
+    return String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
+  }
+
+  function afaMissingCartValue(v) {
+    var s = afaMissingText(v);
+    var m = s.match(/\bCART_[A-Z0-9][A-Z0-9_-]*\b/i);
+    return m ? m[0] : '';
+  }
+
+  function afaMissingScannableFromObject(obj) {
+    if (!obj || typeof obj !== 'object') return '';
+
+    var preferred = [
+      'scannableId', 'scannableID', 'scannable_id',
+      'packageScannableId', 'packageScannableID',
+      'bagScannableId', 'bagScannableID'
+    ];
+
+    for (var i = 0; i < preferred.length; i++) {
+      var v = obj[preferred[i]];
+      if (typeof v === 'string' && afaMissingText(v)) return afaMissingText(v);
+    }
+
+    for (var k in obj) {
+      if (!/scannable.*id/i.test(k)) continue;
+      var v2 = obj[k];
+      if (typeof v2 === 'string' && afaMissingText(v2)) return afaMissingText(v2);
+    }
+    return '';
+  }
+
+  function afaMissingStatusFromObject(obj) {
+    if (!obj || typeof obj !== 'object') return '';
+    for (var k in obj) {
+      if (!/status/i.test(k)) continue;
+      var v = obj[k];
+      if (typeof v === 'string' && /^MISSING$/i.test(v.trim())) return 'MISSING';
+    }
+    return '';
+  }
+
+  function afaMissingInfoFromJson(root) {
+    var missingIds = [];
+    var cart = '';
+    var sawPackageSignals = false;
+    var seenMissing = Object.create(null);
+
+    function walk(obj, depth) {
+      if (obj == null || depth > 8) return;
+
+      if (Array.isArray(obj)) {
+        for (var i = 0; i < obj.length && i < 3000; i++) walk(obj[i], depth + 1);
+        return;
+      }
+      if (typeof obj !== 'object') return;
+
+      var hasStatusKey = false;
+      var hasScannableKey = false;
+      for (var k in obj) {
+        if (/status/i.test(k)) hasStatusKey = true;
+        if (/scannable.*id/i.test(k)) hasScannableKey = true;
+
+        if (!cart && typeof obj[k] === 'string') {
+          var cv = afaMissingCartValue(obj[k]);
+          if (cv) cart = cv;
+        }
+      }
+
+      if (hasStatusKey || hasScannableKey) sawPackageSignals = true;
+
+      if (afaMissingStatusFromObject(obj) === 'MISSING') {
+        var sid = afaMissingScannableFromObject(obj);
+        if (sid && !seenMissing[sid]) {
+          seenMissing[sid] = true;
+          missingIds.push(sid);
+        }
+      }
+
+      for (var k2 in obj) {
+        var child = obj[k2];
+        if (child && typeof child === 'object') walk(child, depth + 1);
+      }
+    }
+
+    walk(root, 0);
+    return {
+      missingIds: missingIds,
+      cart: cart,
+      sawPackageSignals: sawPackageSignals
+    };
+  }
+
+  function afaMissingInfoFromDocument(doc) {
+    if (!doc) return { missingIds: [], cart: '' };
+
+    var missingIds = [];
+    var cart = '';
+    var seen = Object.create(null);
+    var rows = [];
+
+    try { rows = Array.prototype.slice.call(doc.querySelectorAll('tr')); } catch(e) {}
+
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      var cells = [];
+      try { cells = Array.prototype.slice.call(row.querySelectorAll('td')); } catch(e2) {}
+      if (!cells.length) continue;
+
+      for (var c = 0; c < cells.length; c++) {
+        if (!cart) {
+          var cv = afaMissingCartValue(cells[c].textContent || '');
+          if (cv) cart = cv;
+        }
+      }
+
+      var statusIdx = -1;
+      for (var s = 0; s < cells.length; s++) {
+        var cellText = afaMissingText(cells[s].textContent || '');
+        if (/^MISSING$/i.test(cellText)) {
+          statusIdx = s;
+          break;
+        }
+      }
+      if (statusIdx < 0) continue;
+
+      /* The inspected COMO markup places Scannable Id immediately after the
+         MISSING status cell. Prefer that exact relationship. */
+      var sid = '';
+      if (cells[statusIdx + 1]) sid = afaMissingText(cells[statusIdx + 1].textContent || '');
+
+      /* Fallback to the known Scannable Id class if table order ever shifts. */
+      if (!sid) {
+        try {
+          var statusCell = row.querySelector('.jobdetails-package-status');
+          if (statusCell && statusCell.nextElementSibling) {
+            sid = afaMissingText(statusCell.nextElementSibling.textContent || '');
+          }
+        } catch(e3) {}
+      }
+
+      if (sid && !seen[sid]) {
+        seen[sid] = true;
+        missingIds.push(sid);
+      }
+    }
+
+    return { missingIds: missingIds, cart: cart };
+  }
+
+  function afaMissingCandidateFromAnchor(a, section, order, baseScore) {
+    if (!a) return null;
+
+    var ref = afaMissingText(a.textContent || '');
+    if (!ref || ref.length > 40) return null;
+
+    var id = null;
+    var href = a.getAttribute('href') || '';
+    var m = href.match(/jobId=([^&#]+)/i);
+    if (m) {
+      try { id = decodeURIComponent(m[1]); }
+      catch(e) { id = m[1]; }
+    }
+    if (!id && ref && _afaJobIndex[ref]) id = _afaJobIndex[ref];
+    if (!id) return null;
+
+    return {
+      ref: ref,
+      id: id,
+      section: section || 'Tasks',
+      alertScore: Number(baseScore) || 0,
+      domOrder: Number(order) || 0
+    };
+  }
+
+  function afaHasMissingPackageSignal(node) {
+    if (!node) return false;
+
+    var txt = '';
+    try { txt = afaMissingText(node.innerText || node.textContent || ''); } catch(e) {}
+
+    /* Explicit package status if the dashboard ever renders it directly. */
+    if (/\bMISSING\b/i.test(txt)) return true;
+
+    /* Current COMO alert badge can render as a warning triangle + count
+       (for example ▲1 / ⚠1) rather than the literal characters A1. */
+    if (/(?:▲|⚠|❗|⛔)\s*\d*/.test(txt)) return true;
+
+    /* Keep backward compatibility with deployments that expose A1/A2 text. */
+    if (/\bA\d+\b/i.test(txt)) return true;
+
+    /* Icon fonts often render no useful textContent at all. Check only a
+       handful of alert-ish class names inside THIS task row. This is cheap and
+       does not open any job page or start any observer. */
+    try {
+      if (node.querySelector(
+        '[class*="warning-sign"],[class*="warning"],' +
+        '[class*="exclamation"],[class*="triangle"],' +
+        '[class*="danger"],[class*="alert"]'
+      )) {
+        return true;
+      }
+    } catch(e2) {}
+
+    /* Last cheap fallback for Bootstrap / FontAwesome warning icons. */
+    try {
+      var html = String(node.innerHTML || '');
+      if (/glyphicon-(?:warning-sign|exclamation-sign)|fa-(?:exclamation|triangle-exclamation|exclamation-triangle)|warning-sign|exclamation-triangle/i.test(html)) {
+        return true;
+      }
+    } catch(e3) {}
+
+    return false;
+  }
+
+  function afaScanMissingCandidates() {
+    var found = [], seen = Object.create(null);
+    var cards = document.querySelectorAll('job-card');
+
+    function pushCandidate(item) {
+      if (!item || !item.id) return;
+      var key = String(item.id);
+      if (seen[key]) return;
+      seen[key] = true;
+      found.push(item);
+    }
+
+    /* 1) Normal Tasks list.
+       Keep the existing Time Left exclusions untouched elsewhere; Missing QR
+       has its own read-only scan and intentionally does not use those rules. */
+    for (var i = 0; i < cards.length; i++) {
+      var card = cards[i];
+
+      /* job-card rows under Problem Solve / Partially Batched, if a page
+         version renders them that way, are handled by the explicit section
+         scans below so section labeling stays correct. */
+      try {
+        if (isInExcludedSection(card)) continue;
+      } catch(e) {}
+
+      var a = card.querySelector('a');
+      var item = afaMissingCandidateFromAnchor(a, 'Tasks', i, 0);
+      if (!item) continue;
+
+      var txt = afaMissingText(card.innerText || card.textContent || '');
+
+      /* Do not open every task's job-details page. Only rows with the actual
+         dashboard warning signal are deep-checked, then Status=MISSING is
+         still verified from the job details before the button enables. */
+      if (!afaHasMissingPackageSignal(card)) continue;
+
+      item.alertScore += 20;
+      if (/\bMISSING\b/i.test(txt)) item.alertScore += 30;
+
+      pushCandidate(item);
+    }
+
+    /* 2) Problem Solve.
+       Completed carts with an unstaged missing package can move here, so this
+       section MUST be searched even though normal Time Left/Force actions
+       intentionally exclude it. This remains read-only. */
+    var psStops = [
+      /^Partially\s+Batched/i,
+      /^Staged\s+for\s+Pickup/i,
+      /^Unassigned/i,
+      /^Assigned/i,
+      /^Utilization/i,
+      /^Late\s+Batch/i
+    ];
+    var psAnchors = afaSectionAnchors(/^Problem\s+Solve(\s*\(\d+\))?$/i, psStops);
+    for (var p = 0; p < psAnchors.length; p++) {
+      /* Check EVERY readable Problem Solve job. A finished cart with an
+         unstaged missing package can move here even if the row's alert icon
+         is rendered differently or is temporarily absent. */
+      pushCandidate(afaMissingCandidateFromAnchor(
+        psAnchors[p],
+        'Problem Solve',
+        10000 + p,
+        15
+      ));
+    }
+
+    /* 3) Partially Batched.
+       A completed/partially-finished cart can also land here before staging,
+       so Missing Package QR checks it too. Staged for Pickup remains excluded
+       because the user only requested Problem Solve + Partially Batched. */
+    var partialStops = [
+      /^Staged\s+for\s+Pickup/i,
+      /^Problem\s+Solve/i,
+      /^Unassigned/i,
+      /^Assigned/i,
+      /^Utilization/i,
+      /^Late\s+Batch/i
+    ];
+    var partialAnchors = afaSectionAnchors(
+      /^Partially\s+Batched(\s*\(\d+\))?$/i,
+      partialStops
+    );
+    for (var q = 0; q < partialAnchors.length; q++) {
+      /* Check EVERY readable Partially Batched job. Missing-package rows in
+         this section do not always carry the same red warning triangle because
+         the whole cart itself may simply not be ready yet. */
+      pushCandidate(afaMissingCandidateFromAnchor(
+        partialAnchors[q],
+        'Partially Batched',
+        20000 + q,
+        10
+      ));
+    }
+
+    found.sort(function(a, b){
+      if (b.alertScore !== a.alertScore) return b.alertScore - a.alertScore;
+      return a.domOrder - b.domOrder;
+    });
+
+    return found;
+  }
+
+  function afaProbeMissingJobPage(item) {
+    return new Promise(function(resolve){
+      if (!item || !item.id || !document.body) {
+        resolve(null);
+        return;
+      }
+
+      var frame = document.createElement('iframe');
+      var done = false;
+      var started = Date.now();
+
+      frame.setAttribute('aria-hidden', 'true');
+      frame.className = 'cbt-missing-probe-frame';
+      frame.tabIndex = -1;
+      frame.style.cssText =
+        'position:fixed!important;left:-10000px!important;top:-10000px!important;' +
+        'width:1px!important;height:1px!important;opacity:0!important;' +
+        'pointer-events:none!important;border:0!important;';
+
+      function finish(result) {
+        if (done) return;
+        done = true;
+        try { frame.remove(); }
+        catch(e) {
+          try { frame.parentNode && frame.parentNode.removeChild(frame); } catch(e2) {}
+        }
+        resolve(result);
+      }
+
+      function poll() {
+        if (done) return;
+        if (Date.now() - started > 5500) {
+          finish(null);
+          return;
+        }
+
+        var doc = null;
+        try { doc = frame.contentDocument || (frame.contentWindow && frame.contentWindow.document); }
+        catch(e) {}
+
+        if (doc) {
+          var info = afaMissingInfoFromDocument(doc);
+          if (info.missingIds.length) {
+            info.ref = item.ref;
+            info.id = item.id;
+            info.section = item.section || 'Tasks';
+            info.source = 'job-details-page';
+            finish(info);
+            return;
+          }
+
+          /* If the package table has clearly rendered and contains rows but no
+             MISSING status, there is no need to wait the full timeout. */
+          try {
+            var renderedRows = doc.querySelectorAll('tr.ng-scope, tr');
+            var renderedText = afaMissingText(doc.body && doc.body.textContent || '');
+            if (renderedRows.length >= 2 &&
+                /Scannable\s*Id/i.test(renderedText) &&
+                /Packages/i.test(renderedText) &&
+                Date.now() - started > 900) {
+              finish(null);
+              return;
+            }
+          } catch(e2) {}
+        }
+        setTimeout(poll, 140);
+      }
+
+      frame.src = COMO_BASE + '/store/' + encodeURIComponent(STORE_ID) +
+        '/jobdetails?jobId=' + encodeURIComponent(item.id) + '&cbtMissingQrProbe=1';
+      document.body.appendChild(frame);
+      setTimeout(poll, 140);
+    });
+  }
+
+  function afaProbeMissingJob(item) {
+    return afaFetchJobInfo(item.id).then(function(info){
+      if (info) {
+        var parsed = afaMissingInfoFromJson(info);
+        if (parsed.missingIds.length) {
+          parsed.ref = item.ref;
+          parsed.id = item.id;
+          parsed.section = item.section || 'Tasks';
+          parsed.source = 'job-json';
+          return parsed;
+        }
+
+        /* If this JSON clearly contained package/status data and none was
+           MISSING, trust it and skip the heavier page probe. */
+        if (parsed.sawPackageSignals) return null;
+      }
+
+      /* Some deployments keep package rows in the Angular job-details page
+         rather than the JSON endpoint. Fall back to a short hidden same-origin
+         page probe only for this explicit user action. */
+      return afaProbeMissingJobPage(item);
+    }, function(){
+      return afaProbeMissingJobPage(item);
+    });
+  }
+
+  function afaFindFirstMissingJob(candidates, onProgress) {
+    candidates = candidates || [];
+    var idx = 0;
+
+    function next() {
+      if (idx >= candidates.length) return Promise.resolve(null);
+      var item = candidates[idx++];
+
+      if (typeof onProgress === 'function') {
+        try { onProgress(idx, candidates.length, item); } catch(e) {}
+      }
+
+      return afaProbeMissingJob(item).then(function(info){
+        if (info && info.missingIds && info.missingIds.length) return info;
+        return next();
+      });
+    }
+
+    return next();
+  }
+
+  /* Collect every verified missing-package ID across every requested section.
+     Each entry keeps its own task/cart context so the carousel can show one
+     missing package at a time without mixing carts between jobs. */
+  function afaFindAllMissingJobs(candidates, onProgress) {
+    candidates = candidates || [];
+    var idx = 0;
+    var entries = [];
+    var seen = Object.create(null);
+
+    function next() {
+      if (idx >= candidates.length) {
+        return Promise.resolve({ entries: entries });
+      }
+
+      var item = candidates[idx++];
+
+      if (typeof onProgress === 'function') {
+        try { onProgress(idx, candidates.length, item); } catch(e) {}
+      }
+
+      return afaProbeMissingJob(item).then(function(info){
+        if (info && info.missingIds && info.missingIds.length) {
+          for (var i = 0; i < info.missingIds.length; i++) {
+            var sid = afaMissingText(info.missingIds[i]);
+            if (!sid) continue;
+
+            var key = String(info.id || item.id || '') + '|' + sid;
+            if (seen[key]) continue;
+            seen[key] = true;
+
+            entries.push({
+              missingId: sid,
+              cart: info.cart || '',
+              ref: info.ref || item.ref || '',
+              id: info.id || item.id || '',
+              section: info.section || item.section || 'Tasks'
+            });
+          }
+        }
+        return new Promise(function(resolveNext){
+          setTimeout(function(){ resolveNext(next()); }, 35);
+        });
+      }, function(){
+        return new Promise(function(resolveNext){
+          setTimeout(function(){ resolveNext(next()); }, 35);
+        });
+      });
+    }
+
+    return next();
+  }
+
+  function afaMissingQrEntries(info) {
+    if (!info) return [];
+
+    if (Array.isArray(info.entries)) {
+      return info.entries.filter(function(entry){
+        return entry && afaMissingText(entry.missingId);
+      });
+    }
+
+    var out = [];
+    var ids = Array.isArray(info.missingIds) ? info.missingIds : [];
+    for (var i = 0; i < ids.length; i++) {
+      var sid = afaMissingText(ids[i]);
+      if (!sid) continue;
+      out.push({
+        missingId: sid,
+        cart: info.cart || '',
+        ref: info.ref || '',
+        id: info.id || '',
+        section: info.section || 'Tasks'
+      });
+    }
+    return out;
+  }
+
+  function afaQrSvgMarkup(value) {
+    value = String(value == null ? '' : value);
+    if (!value.trim()) return '';
+
+    try {
+      var qr = qrcode(0, 'M');
+      qr.addData(value);
+      qr.make();
+
+      var n = qr.getModuleCount();
+      var quiet = 4;
+      var size = n + quiet * 2;
+      var path = '';
+
+      for (var r = 0; r < n; r++) {
+        for (var c = 0; c < n; c++) {
+          if (!qr.isDark(r, c)) continue;
+          var x = c + quiet;
+          var y = r + quiet;
+          path += 'M' + x + ' ' + y + 'h1v1h-1z';
+        }
+      }
+
+      return '<svg xmlns="http://www.w3.org/2000/svg" ' +
+               'viewBox="0 0 ' + size + ' ' + size + '" ' +
+               'preserveAspectRatio="xMidYMid meet" role="img" aria-label="Generated QR code">' +
+               '<rect width="' + size + '" height="' + size + '" fill="#ffffff"/>' +
+               '<path d="' + path + '" fill="#000000"/>' +
+             '</svg>';
+    } catch(e) {
+      return '';
+    }
+  }
+
+  function afaMissingQrTile(kind, value) {
+    var svg = afaQrSvgMarkup(value);
+    if (!svg) return '';
+
+    return '<div class="cbt-missing-qr-tile">' +
+      '<div class="cbt-missing-qr-kind">' + afaEsc(kind) + '</div>' +
+      '<div class="cbt-missing-qr-svg">' + svg + '</div>' +
+      '<div class="cbt-missing-qr-value">' + afaEsc(value) + '</div>' +
+    '</div>';
+  }
+
+  function afaMissingQrResult(info) {
+    var entries = afaMissingQrEntries(info);
+
+    if (!entries.length) {
+      afaShell(
+        'Missing Package QR',
+        '<div id="cbt-afa-lead">No MISSING package was found in Tasks, Problem Solve, or Partially Batched.</div>' +
+        '<div class="cbt-afa-note">Nothing was changed. This action is read-only.</div>',
+        '<button class="cbt-afa-act" data-afa="back">Back</button>'
+      );
+
+      var emptyCard = _afaOverlay && _afaOverlay.querySelector('#cbt-afa-card');
+      if (emptyCard) {
+        emptyCard.addEventListener('click', function(e){
+          var b = e.target.closest('[data-afa="back"]');
+          if (b) afaConfirm();
+        });
+      }
+      return;
+    }
+
+    var currentIndex = 0;
+
+    afaShell(
+      'Missing Package QR',
+      '<div id="cbt-missing-qr-stage"></div>',
+      '<button class="cbt-afa-act" data-afa="back">Back</button>' +
+      '<button class="cbt-afa-act go" data-afa="close">Done</button>'
+    );
+
+    var card = _afaOverlay && _afaOverlay.querySelector('#cbt-afa-card');
+    if (!card) return;
+    card.classList.add('cbt-afa-missing-qr-card');
+
+    /* afaShell creates/scales the card before this result class exists.
+       Re-apply once here so the very first QR frame is already fixed at 130%. */
+    try { applyUiScale(); } catch(eScale) {}
+
+    function renderCurrent() {
+      if (!_afaOverlay || !card.isConnected) return;
+
+      var stage = card.querySelector('#cbt-missing-qr-stage');
+      if (!stage) return;
+
+      var entry = entries[currentIndex];
+      var total = entries.length;
+      var hasPrev = currentIndex > 0;
+      var hasNext = currentIndex < total - 1;
+
+      /* Only render an arrow when there is actually somewhere to go.
+         The empty grid cell is just spacing; no hidden/disabled arrow exists. */
+      var nav =
+        '<div class="cbt-missing-qr-nav">' +
+          (hasPrev
+            ? '<button type="button" class="cbt-missing-qr-nav-btn cbt-missing-qr-prev" data-afa="missing-prev" aria-label="Previous missing package">←</button>'
+            : '') +
+          '<div class="cbt-missing-qr-count">' + (currentIndex + 1) + '/' + total + '</div>' +
+          (hasNext
+            ? '<button type="button" class="cbt-missing-qr-nav-btn cbt-missing-qr-next" data-afa="missing-next" aria-label="Next missing package">→</button>'
+            : '') +
+        '</div>';
+
+      var tiles = afaMissingQrTile('Missing Package', entry.missingId);
+      var hasCart = !!entry.cart;
+
+      if (hasCart) {
+        tiles += afaMissingQrTile('Cart', entry.cart);
+      }
+
+      var note = hasCart
+        ? 'Missing package QR + cart QR.'
+        : 'No CART_ location was found, so only the missing package QR is shown.';
+
+      stage.innerHTML =
+        '<div class="cbt-missing-qr-summary">' +
+          afaEsc(entry.section || 'Tasks') + ' · Task <b>' +
+          afaEsc(entry.ref || '') + '</b> · ' + afaEsc(note) +
+        '</div>' +
+        nav +
+        '<div class="cbt-missing-qr-grid' + (hasCart ? '' : ' single') + '">' +
+          tiles +
+        '</div>';
+    }
+
+    renderCurrent();
+
+    card.addEventListener('click', function(e){
+      var b = e.target.closest('[data-afa]');
+      if (!b) return;
+
+      var action = b.getAttribute('data-afa');
+
+      if (action === 'missing-prev') {
+        if (currentIndex > 0) {
+          currentIndex--;
+          renderCurrent();
+        }
+        return;
+      }
+
+      if (action === 'missing-next') {
+        if (currentIndex < entries.length - 1) {
+          currentIndex++;
+          renderCurrent();
+        }
+        return;
+      }
+
+      if (action === 'close') {
+        afaClose();
+      } else if (action === 'back') {
+        afaConfirm();
+      }
+    });
+  }
+
+  function afaMissingQrChecking() {
+    afaShell(
+      'Missing Package QR',
+      '<div id="cbt-afa-lead">Finding the MISSING package…</div>' +
+      '<div id="cbt-afa-bar"><div id="cbt-afa-fill"></div></div>' +
+      '<div id="cbt-afa-live" style="color:var(--cb-text2);font-size:12px;">Checking Tasks alerts + all Problem Solve + all Partially Batched.</div>',
+      '<button class="cbt-afa-act" data-afa="close">Cancel</button>'
+    );
+
+    var card = _afaOverlay && _afaOverlay.querySelector('#cbt-afa-card');
+    if (!card) return;
+    card.addEventListener('click', function(e){
+      var b = e.target.closest('[data-afa="close"]');
+      if (b) afaClose();
+    });
+  }
+
+  function afaRunMissingQr() {
+    if (_afaRunning) return;
+
+    var candidates = afaScanMissingCandidates();
+    if (!candidates.length) {
+      afaMissingQrResult(null);
+      return;
+    }
+
+    afaMissingQrChecking();
+
+    afaRefreshJobData().then(function(){
+      if (!_afaOverlay) return;
+
+      /* Re-scan after the fresh dashboard response so job IDs are current. */
+      var freshCandidates = afaScanMissingCandidates();
+      if (freshCandidates.length) candidates = freshCandidates;
+
+      return afaFindAllMissingJobs(candidates, function(done, total, item){
+        if (!_afaOverlay) return;
+        var lead = document.getElementById('cbt-afa-lead');
+        var fill = document.getElementById('cbt-afa-fill');
+        var live = document.getElementById('cbt-afa-live');
+
+        if (lead) lead.innerHTML =
+          'Finding the MISSING package… <b>' + done + '</b> of <b>' + total + '</b>';
+        if (fill) fill.style.width = Math.round((done / Math.max(1, total)) * 100) + '%';
+        if (live) {
+          live.textContent = 'Checking ' + (item.section || 'Tasks') +
+            ' · task ' + (item.ref || '');
+        }
+      });
+    }).then(function(info){
+      if (!_afaOverlay) return;
+      afaMissingQrResult(info || null);
+    }).catch(function(){
+      if (!_afaOverlay) return;
+      afaShell(
+        'Missing Package QR',
+        '<div id="cbt-afa-lead">Could not read the package details right now.</div>' +
+        '<div class="cbt-afa-note">Nothing was changed. Try again after the dashboard finishes loading.</div>',
+        '<button class="cbt-afa-act" data-afa="back">Back</button>'
+      );
+      var card = _afaOverlay && _afaOverlay.querySelector('#cbt-afa-card');
+      if (card) {
+        card.addEventListener('click', function(e){
+          if (e.target.closest('[data-afa="back"]')) afaConfirm();
+        });
+      }
+    });
   }
 
   /* ── Complete Task eligibility — NO time rule ──
@@ -8158,6 +9100,8 @@
 
   function afaClose() {
     if (_afaRunning) return;                    /* never vanish mid-run */
+    _afaMissingMenuInfo = null;
+    _afaMissingMenuCheckSeq++;
     if (_afaOverlay && _afaOverlay.parentNode) _afaOverlay.parentNode.removeChild(_afaOverlay);
     _afaOverlay = null;
     afaSetBtn('▶ Run', false);
@@ -8300,6 +9244,23 @@
             : 'Runs Complete Task only. It never Force Assigns and never includes Partially Batched.')
     );
 
+    var missingCandidates = afaScanMissingCandidates();
+    _afaMissingMenuInfo = null;
+
+    var missingBlock =
+      '<div class="cbt-afa-action-block off" id="cbt-afa-missing-block">' +
+        '<button type="button" class="cbt-afa-act cbt-afa-action-btn cbt-afa-missing-btn" ' +
+          'id="cbt-afa-missing-btn" data-afa="missingqr" disabled>' +
+          '<span class="cbt-afa-missing-triangle">▲</span>' +
+          (missingCandidates.length ? 'Checking…' : 'No Missing Package') +
+        '</button>' +
+        '<span class="cbt-afa-action-copy" id="cbt-afa-missing-copy">' +
+          (missingCandidates.length
+            ? 'Checking warning rows in Tasks plus every Problem Solve and Partially Batched row. The button enables only if a real MISSING package is found.'
+            : 'No readable task IDs are available in Tasks, Problem Solve, or Partially Batched right now. This button is disabled.') +
+        '</span>' +
+      '</div>';
+
     var warnings = '';
     if (noId.length) {
       warnings += '<div class="cbt-afa-warn">' + noId.length +
@@ -8323,14 +9284,82 @@
       forceBlock +
       partialBlock +
       completeBlock +
+      missingBlock +
       warnings +
       listHtml +
-      '<div class="cbt-afa-note">Problem Solve is never touched. Button counts are refreshed again when you click an action, so switching Batcher tabs does not leave the action using an old list.</div>',
+      '<div class="cbt-afa-note">Problem Solve is never touched. Missing Package QR is read-only. Button counts are refreshed again when you click an action, so switching Batcher tabs does not leave the action using an old list.</div>',
       '<button class="cbt-afa-act" data-afa="close">Close</button>'
     );
 
     var card = _afaOverlay.querySelector('#cbt-afa-card');
     if (!card) return;
+
+    /* Confirm an actual MISSING package before enabling this action.
+       This runs only when ▶ Run is opened, not in the background. */
+    var missingCheckSeq = ++_afaMissingMenuCheckSeq;
+    var missingOverlay = _afaOverlay;
+
+    function setMissingMenuState(info, finished) {
+      if (!_afaOverlay || _afaOverlay !== missingOverlay ||
+          missingCheckSeq !== _afaMissingMenuCheckSeq) return;
+
+      var btn = document.getElementById('cbt-afa-missing-btn');
+      var block = document.getElementById('cbt-afa-missing-block');
+      var copy = document.getElementById('cbt-afa-missing-copy');
+      if (!btn || !block || !copy) return;
+
+      var verifiedEntries = afaMissingQrEntries(info);
+
+      if (verifiedEntries.length) {
+        _afaMissingMenuInfo = info;
+        btn.disabled = false;
+        btn.innerHTML = '<span class="cbt-afa-missing-triangle">▲</span>Missing Package QR';
+        block.classList.remove('off');
+        copy.textContent =
+          verifiedEntries.length + ' MISSING package' +
+          (verifiedEntries.length === 1 ? '' : 's') +
+          ' found. Click to open QR' +
+          (verifiedEntries.length === 1 ? '' : 's') +
+          (verifiedEntries.length > 1 ? ' with left/right navigation.' : '.');
+        return;
+      }
+
+      _afaMissingMenuInfo = null;
+      btn.disabled = true;
+      block.classList.add('off');
+
+      if (finished) {
+        btn.innerHTML = '<span class="cbt-afa-missing-triangle">▲</span>No Missing Package';
+        copy.textContent =
+          'No MISSING package was found in Tasks, Problem Solve, or Partially Batched. This button is disabled.';
+      }
+    }
+
+    if (missingCandidates.length) {
+      cbtAfterFirstPaint(function(){
+        cbtIdle(function(){
+          if (!_afaOverlay || _afaOverlay !== missingOverlay ||
+              missingCheckSeq !== _afaMissingMenuCheckSeq) return;
+
+          afaFindAllMissingJobs(missingCandidates, function(done, total, item){
+            if (!_afaOverlay || _afaOverlay !== missingOverlay ||
+                missingCheckSeq !== _afaMissingMenuCheckSeq) return;
+
+            var copy = document.getElementById('cbt-afa-missing-copy');
+            if (copy) {
+              copy.textContent = 'Checking ' + (item.section || 'Tasks') +
+                ' · ' + done + ' of ' + total + '…';
+            }
+          }).then(function(info){
+            setMissingMenuState(info || null, true);
+          }).catch(function(){
+            setMissingMenuState(null, true);
+          });
+        }, 350);
+      }, 30);
+    } else {
+      setMissingMenuState(null, true);
+    }
 
     /* Refresh immediately before every run. This avoids stale closures after
        changing Live/Today/Weekly/Fastest/Names tabs or leaving the popup open
@@ -8387,6 +9416,17 @@
 
       if (action === 'close') {
         afaClose();
+        return;
+      }
+
+      if (action === 'missingqr') {
+        if (b.disabled || !afaMissingQrEntries(_afaMissingMenuInfo).length) {
+          return;
+        }
+
+        /* The action only works after one or more real MISSING packages were
+           verified. The result view shows one missing package at a time. */
+        afaMissingQrResult(_afaMissingMenuInfo);
         return;
       }
 
@@ -9459,7 +10499,7 @@
     } catch(e2) {}
 
     /* Legacy Fastest cleanup is retained only for backward compatibility.
-       v23.9.63 reads the clean v2 Fastest namespace instead. */
+       v23.9.72 reads the clean v2 Fastest namespace instead. */
     try {
       var peaks = hofLoadPeaks(), cleanP = {};
       for (var pk in peaks) {
@@ -9484,7 +10524,7 @@
   }
 
   function runLegacyDataMigration() {
-    /* v23.9.63 intentionally starts Today + Weekly clean. Do not import any
+    /* v23.9.72 intentionally starts Today + Weekly clean. Do not import any
        pre-reset local history into the new shared generation. */
     if (gmGet('cbt_today_weekly_reset_v23948', null)) return;
 
