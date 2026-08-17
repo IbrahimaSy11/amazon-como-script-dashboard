@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.77
+// @version      23.9.78
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -2338,7 +2338,7 @@
      The old recommendation divided remaining PACKAGES by live batcher speed.
      That could recommend "1" even when many carts were due soon.
 
-     v23.9.77 deliberately does NOT use individual associate speed/rate.
+     v23.9.78 deliberately does NOT use individual associate speed/rate.
 
      It treats each open batching job/cart as one unit of work and asks:
        "How many concurrent batchers are needed to clear these carts before
@@ -3164,7 +3164,7 @@
       };
       delete _cbtObservedProgressByRef[ref];
     } else {
-      /* Critical v23.9.77 fix: for the SAME job, an authoritative API update
+      /* Critical v23.9.78 fix: for the SAME job, an authoritative API update
          may correct the clock only BACKWARD. It can never shorten elapsed time
          by introducing a newer BATCHING sub-operation. */
       if (info.startMs < cur.ms - 1000) {
@@ -3513,7 +3513,7 @@
   function cbtMergeBestFields(target, source) {
     if (!target || !source) return;
 
-    /* v23.9.77+ stores bestRate explicitly. For older cached rows, use the
+    /* v23.9.78+ stores bestRate explicitly. For older cached rows, use the
        strongest recoverable value (bestRate -> lastRate -> avgRate). */
     var candidate = Math.max(
       Number(source.bestRate) || 0,
@@ -3659,7 +3659,7 @@
       var hdr = panel.querySelector('#cbt-header');
       if (hdr) hdr.style.zoom = HEADER_FIXED_SCALE;
 
-      /* v23.9.77: pin the three-number stats row at the same 130% as the
+      /* v23.9.78: pin the three-number stats row at the same 130% as the
          header. A- / A+ must never resize Batchers, Recommended This Hour,
          or Remaining. */
       var stats = panel.querySelector('#cbt-stats-bar');
@@ -4064,7 +4064,7 @@
                   /* Legacy v23.9.31-and-older device nodes have no date
                      metadata. Keep them only while the Firebase basket has no
                      modern metadata at all, so an all-old installation still
-                     migrates once. As soon as v23.9.77 devices are present,
+                     migrates once. As soon as v23.9.78 devices are present,
                      undated stale nodes are not allowed into Today. */
                   if (!deviceDate && anyModernMeta) continue;
 
@@ -4752,7 +4752,7 @@
   var HOF_MAX_RATE = CBT_MAX_VALID_RATE; /* shared trusted-rate ceiling */
   var HOF_TOP      = 30;
 
-  /* v23.9.77 TRUSTED FASTEST RESET
+  /* v23.9.78 TRUSTED FASTEST RESET
      --------------------------------
      Legacy Fastest records were calculated before the full-span timing fix.
      They cannot be safely repaired because each historical record did not
@@ -5851,35 +5851,10 @@
      waiting for the next slow health tick. */
   var _fastMountUntil = 0;
 
-  /* ── Auto-reload when the board never appears ──
-     If the dashboard page loads but the board's anchor never renders,
-     reload the page so it gets a fresh chance. The counter lives in
-     sessionStorage: per tab, survives the reloads it causes, cleared
-     the moment the board mounts (or when the tab closes), and capped
-     so a broken page can never reload forever. Each attempt only
-     fires after several failed 2s health checks, which is the delay
-     between attempts. */
-  var AUTO_RELOAD_MAX = 3;          /* hard cap on automatic reloads per tab */
-  var AUTO_RELOAD_AFTER_FAILS = 5;  /* failed 2s health checks before reloading (about 10s) */
-  var AUTO_RELOAD_KEY = 'cbt_auto_reload_count';
-
-  function autoReloadCount() {
-    try { return parseInt(sessionStorage.getItem(AUTO_RELOAD_KEY) || '0', 10) || 0; }
-    catch(e) { return AUTO_RELOAD_MAX; } /* storage unusable: never auto-reload */
-  }
-  function clearAutoReloadCount() {
-    try { sessionStorage.removeItem(AUTO_RELOAD_KEY); } catch(e) {}
-  }
-  function maybeAutoReload() {
-    if (!isDashboardView()) return;                    /* NEVER reload task/cart/other pages */
-    if (document.getElementById('cbt-panel')) return;  /* board is up, nothing to fix */
-    if (_mountFails < AUTO_RELOAD_AFTER_FAILS) return; /* give normal mounting time first */
-    var n = autoReloadCount();
-    if (n >= AUTO_RELOAD_MAX) return;                  /* cap reached, stop trying */
-    try { sessionStorage.setItem(AUTO_RELOAD_KEY, String(n + 1)); } catch(e) { return; }
-    location.reload();
-  }
-
+  /* ── No automatic page reload ──
+     If Angular temporarily removes the dashboard mount anchor, recover the
+     panel in-place. Never call location.reload() from the userscript: a slow
+     dashboard should be allowed to finish loading instead of being restarted. */
   /* ── Which site are we on? ──
      The script runs on two different tools:
        COMO Operations Dashboard  -> task sorting, Time Left, Batcher Timers
@@ -5932,7 +5907,12 @@
 
   function isDashboardView() {
     if (!isComoSite()) return false;        /* board is COMO-only */
-    if (isTaskDetailPage()) return false;
+
+    /* The URL is authoritative. Angular can briefly leave a stale
+       div.job-details node in the DOM while rebuilding the dashboard.
+       Using that transient node here made the Batcher Timers panel detach,
+       then reappear a moment later. The exact /store/{id}/dash path is
+       already a strict allowlist, so stale task-detail DOM must not override it. */
     if (!DASHBOARD_PATH_RE.test(location.pathname)) return false;
     if (NON_DASHBOARD_RE.test(location.hash)) return false;
     return true;
@@ -6018,7 +5998,6 @@
     mount.el.parentNode.insertBefore(_panel2Ref, mount.el);
 
     _mountFails = 0;              /* mounted successfully */
-    clearAutoReloadCount();       /* board is up — reset the reload budget */
     try { applyUiScale(); } catch(ex) {}   /* restore the saved size */
 
     /* Only render the tab the user can actually see. Hidden tabs keep their
@@ -6046,7 +6025,7 @@
       /* Anchor not on screen yet (or not a dashboard view) — just wait.
          Rebuilding the node wouldn't help and would lose panel state. */
       if (_mountFails < 1000) _mountFails++;
-      maybeAutoReload();
+      /* Keep waiting/retrying in-place. Never reload the Amazon page. */
     }
   }
 
@@ -6172,7 +6151,7 @@
       try { afaConfirm(); } catch(err) {}
     });
 
-    /* v23.9.77: restore the original VERTICAL dashboard length.
+    /* v23.9.78: restore the original VERTICAL dashboard length.
        Width stays exactly as before. The compact 240px default from older
        versions is migrated back to 350px once. If someone manually made the
        board taller than 350px, keep that larger custom height. */
@@ -6187,7 +6166,7 @@
       }
     } catch(eRestore) {}
 
-    /* v23.9.77: persist the dashboard's collapsed/open state across reloads. */
+    /* v23.9.78: persist the dashboard's collapsed/open state across reloads. */
     var isCollapsed = false;
     try { isCollapsed = localStorage.getItem('cbt_panel_collapsed') === '1'; } catch(eCollapsedLoad) {}
     var collapseBtn = panel2.querySelector('#cbt-collapse-btn');
@@ -7231,8 +7210,22 @@
   }, 50);
 
   var panelWatcher = new MutationObserver(function(mutations) {
+    /* FAST RECOVERY:
+       If Angular removed the Batcher Timers node while staying on the real
+       dashboard URL, try to put the cached panel back immediately in this
+       mutation batch. MutationObserver runs before the next browser paint,
+       so a normal Angular subtree rebuild should no longer create a visible
+       disappear -> reappear flash. This runs only while the panel is missing. */
+    if (isDashboardView()) {
+      var livePanel = document.getElementById('cbt-panel');
+      if (!livePanel || !livePanel.isConnected) {
+        try { injectPanel(); } catch(eFastPanel) {}
+      }
+    }
+
     /* Our own Live clock, stats, QR, autocomplete, Time Left and modal updates
-       must not cause a whole-page health/mount pass. */
+       must not cause a whole-page health/mount pass. The heavier attachment
+       checks remain coalesced exactly as before. */
     for (var i = 0; i < mutations.length; i++) {
       if (!cbtMutationIsOnlyOwnUi(mutations[i])) {
         _panelMutationRun();
@@ -10527,7 +10520,7 @@
     } catch(e2) {}
 
     /* Legacy Fastest cleanup is retained only for backward compatibility.
-       v23.9.77 reads the clean v2 Fastest namespace instead. */
+       v23.9.78 reads the clean v2 Fastest namespace instead. */
     try {
       var peaks = hofLoadPeaks(), cleanP = {};
       for (var pk in peaks) {
@@ -10552,7 +10545,7 @@
   }
 
   function runLegacyDataMigration() {
-    /* v23.9.77 intentionally starts Today + Weekly clean. Do not import any
+    /* v23.9.78 intentionally starts Today + Weekly clean. Do not import any
        pre-reset local history into the new shared generation. */
     if (gmGet('cbt_today_weekly_reset_v23948', null)) return;
 
@@ -10760,6 +10753,7 @@
        when data actually changed. */
     document.addEventListener('visibilitychange', function(){
       if (document.hidden) return;
+      try { panelHealthCheck(); taskPanelHealthCheck(); } catch(e9p) {}
       try { syncHistoryPull(); } catch(e9a) {}
       try { syncWeeklyPull(); } catch(e9b) {}
       try { syncPull(); } catch(e9c) {}
