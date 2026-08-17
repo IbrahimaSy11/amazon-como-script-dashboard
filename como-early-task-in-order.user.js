@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.76
+// @version      23.9.77
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -2338,7 +2338,7 @@
      The old recommendation divided remaining PACKAGES by live batcher speed.
      That could recommend "1" even when many carts were due soon.
 
-     v23.9.76 deliberately does NOT use individual associate speed/rate.
+     v23.9.77 deliberately does NOT use individual associate speed/rate.
 
      It treats each open batching job/cart as one unit of work and asks:
        "How many concurrent batchers are needed to clear these carts before
@@ -3164,7 +3164,7 @@
       };
       delete _cbtObservedProgressByRef[ref];
     } else {
-      /* Critical v23.9.76 fix: for the SAME job, an authoritative API update
+      /* Critical v23.9.77 fix: for the SAME job, an authoritative API update
          may correct the clock only BACKWARD. It can never shorten elapsed time
          by introducing a newer BATCHING sub-operation. */
       if (info.startMs < cur.ms - 1000) {
@@ -3513,7 +3513,7 @@
   function cbtMergeBestFields(target, source) {
     if (!target || !source) return;
 
-    /* v23.9.76+ stores bestRate explicitly. For older cached rows, use the
+    /* v23.9.77+ stores bestRate explicitly. For older cached rows, use the
        strongest recoverable value (bestRate -> lastRate -> avgRate). */
     var candidate = Math.max(
       Number(source.bestRate) || 0,
@@ -3659,7 +3659,7 @@
       var hdr = panel.querySelector('#cbt-header');
       if (hdr) hdr.style.zoom = HEADER_FIXED_SCALE;
 
-      /* v23.9.76: pin the three-number stats row at the same 130% as the
+      /* v23.9.77: pin the three-number stats row at the same 130% as the
          header. A- / A+ must never resize Batchers, Recommended This Hour,
          or Remaining. */
       var stats = panel.querySelector('#cbt-stats-bar');
@@ -4064,7 +4064,7 @@
                   /* Legacy v23.9.31-and-older device nodes have no date
                      metadata. Keep them only while the Firebase basket has no
                      modern metadata at all, so an all-old installation still
-                     migrates once. As soon as v23.9.76 devices are present,
+                     migrates once. As soon as v23.9.77 devices are present,
                      undated stale nodes are not allowed into Today. */
                   if (!deviceDate && anyModernMeta) continue;
 
@@ -4752,7 +4752,7 @@
   var HOF_MAX_RATE = CBT_MAX_VALID_RATE; /* shared trusted-rate ceiling */
   var HOF_TOP      = 30;
 
-  /* v23.9.76 TRUSTED FASTEST RESET
+  /* v23.9.77 TRUSTED FASTEST RESET
      --------------------------------
      Legacy Fastest records were calculated before the full-span timing fix.
      They cannot be safely repaired because each historical record did not
@@ -6172,7 +6172,7 @@
       try { afaConfirm(); } catch(err) {}
     });
 
-    /* v23.9.76: restore the original VERTICAL dashboard length.
+    /* v23.9.77: restore the original VERTICAL dashboard length.
        Width stays exactly as before. The compact 240px default from older
        versions is migrated back to 350px once. If someone manually made the
        board taller than 350px, keep that larger custom height. */
@@ -6187,7 +6187,7 @@
       }
     } catch(eRestore) {}
 
-    /* v23.9.76: persist the dashboard's collapsed/open state across reloads. */
+    /* v23.9.77: persist the dashboard's collapsed/open state across reloads. */
     var isCollapsed = false;
     try { isCollapsed = localStorage.getItem('cbt_panel_collapsed') === '1'; } catch(eCollapsedLoad) {}
     var collapseBtn = panel2.querySelector('#cbt-collapse-btn');
@@ -8726,6 +8726,37 @@
 
     renderCurrent();
 
+    function moveMissingQr(direction) {
+      var nextIndex = currentIndex + direction;
+      if (nextIndex < 0 || nextIndex >= entries.length) return false;
+      currentIndex = nextIndex;
+      renderCurrent();
+      return true;
+    }
+
+    /* Keep keyboard focus on the Missing Package QR result so the physical
+       keyboard arrows work immediately without requiring an extra click. */
+    card.setAttribute('tabindex', '-1');
+    card.setAttribute('aria-keyshortcuts', 'ArrowLeft ArrowRight');
+    try { card.focus({ preventScroll: true }); }
+    catch(eFocus) { try { card.focus(); } catch(eFocus2) {} }
+
+    card.addEventListener('keydown', function(e){
+      if (!e) return;
+
+      var isLeft = e.key === 'ArrowLeft' || e.keyCode === 37;
+      var isRight = e.key === 'ArrowRight' || e.keyCode === 39;
+      if (!isLeft && !isRight) return;
+
+      /* Do not let the browser/page consume the arrow while this QR carousel
+         is active. At the first/last result the unavailable direction simply
+         does nothing, matching the on-screen arrow behavior. */
+      try { e.preventDefault(); } catch(ignoreKey1) {}
+      try { e.stopPropagation(); } catch(ignoreKey2) {}
+
+      moveMissingQr(isLeft ? -1 : 1);
+    });
+
     card.addEventListener('click', function(e){
       var b = e.target.closest('[data-afa]');
       if (!b) return;
@@ -8733,18 +8764,12 @@
       var action = b.getAttribute('data-afa');
 
       if (action === 'missing-prev') {
-        if (currentIndex > 0) {
-          currentIndex--;
-          renderCurrent();
-        }
+        moveMissingQr(-1);
         return;
       }
 
       if (action === 'missing-next') {
-        if (currentIndex < entries.length - 1) {
-          currentIndex++;
-          renderCurrent();
-        }
+        moveMissingQr(1);
         return;
       }
 
@@ -10502,7 +10527,7 @@
     } catch(e2) {}
 
     /* Legacy Fastest cleanup is retained only for backward compatibility.
-       v23.9.76 reads the clean v2 Fastest namespace instead. */
+       v23.9.77 reads the clean v2 Fastest namespace instead. */
     try {
       var peaks = hofLoadPeaks(), cleanP = {};
       for (var pk in peaks) {
@@ -10527,7 +10552,7 @@
   }
 
   function runLegacyDataMigration() {
-    /* v23.9.76 intentionally starts Today + Weekly clean. Do not import any
+    /* v23.9.77 intentionally starts Today + Weekly clean. Do not import any
        pre-reset local history into the new shared generation. */
     if (gmGet('cbt_today_weekly_reset_v23948', null)) return;
 
