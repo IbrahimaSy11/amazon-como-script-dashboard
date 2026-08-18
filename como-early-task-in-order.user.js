@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.80
+// @version      23.9.83
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -2111,11 +2111,16 @@
     if (_sortObserver) _sortObserver.disconnect();
     _attached = container;
     sortNow(container);
+    try { cbtP1hApplyHighlights(); } catch(eP1hAttach) {}
 
     _sortObserver = new MutationObserver(function (mutations) {
       if (_sorting) return;
       for (var i = 0; i < mutations.length; i++) {
-        if (mutations[i].type === 'childList') { sortNow(container); return; }
+        if (mutations[i].type === 'childList') {
+          sortNow(container);
+          try { cbtP1hApplyHighlights(); } catch(eP1hSort) {}
+          return;
+        }
       }
     });
     _sortObserver.observe(container, { childList: true });
@@ -2339,7 +2344,7 @@
      The old recommendation divided remaining PACKAGES by live batcher speed.
      That could recommend "1" even when many carts were due soon.
 
-     v23.9.80 deliberately does NOT use individual associate speed/rate.
+     v23.9.83 deliberately does NOT use individual associate speed/rate.
 
      It treats each open batching job/cart as one unit of work and asks:
        "How many concurrent batchers are needed to clear these carts before
@@ -3165,7 +3170,7 @@
       };
       delete _cbtObservedProgressByRef[ref];
     } else {
-      /* Critical v23.9.80 fix: for the SAME job, an authoritative API update
+      /* Critical v23.9.83 fix: for the SAME job, an authoritative API update
          may correct the clock only BACKWARD. It can never shorten elapsed time
          by introducing a newer BATCHING sub-operation. */
       if (info.startMs < cur.ms - 1000) {
@@ -3514,7 +3519,7 @@
   function cbtMergeBestFields(target, source) {
     if (!target || !source) return;
 
-    /* v23.9.80+ stores bestRate explicitly. For older cached rows, use the
+    /* v23.9.83+ stores bestRate explicitly. For older cached rows, use the
        strongest recoverable value (bestRate -> lastRate -> avgRate). */
     var candidate = Math.max(
       Number(source.bestRate) || 0,
@@ -3660,7 +3665,7 @@
       var hdr = panel.querySelector('#cbt-header');
       if (hdr) hdr.style.zoom = HEADER_FIXED_SCALE;
 
-      /* v23.9.80: pin the three-number stats row at the same 130% as the
+      /* v23.9.83: pin the three-number stats row at the same 130% as the
          header. A- / A+ must never resize Batchers, Recommended This Hour,
          or Remaining. */
       var stats = panel.querySelector('#cbt-stats-bar');
@@ -4065,7 +4070,7 @@
                   /* Legacy v23.9.31-and-older device nodes have no date
                      metadata. Keep them only while the Firebase basket has no
                      modern metadata at all, so an all-old installation still
-                     migrates once. As soon as v23.9.80 devices are present,
+                     migrates once. As soon as v23.9.83 devices are present,
                      undated stale nodes are not allowed into Today. */
                   if (!deviceDate && anyModernMeta) continue;
 
@@ -4753,7 +4758,7 @@
   var HOF_MAX_RATE = CBT_MAX_VALID_RATE; /* shared trusted-rate ceiling */
   var HOF_TOP      = 30;
 
-  /* v23.9.80 TRUSTED FASTEST RESET
+  /* v23.9.83 TRUSTED FASTEST RESET
      --------------------------------
      Legacy Fastest records were calculated before the full-span timing fix.
      They cannot be safely repaired because each historical record did not
@@ -5656,6 +5661,12 @@
         cbtCalibrateServerClock(res, requestPerf);
 
         var freshData = await res.json();
+
+        /* P-1-H highlight reuses this already-required dashboard response.
+           Start its lightweight package correlation immediately, but NEVER
+           await it here so Live/Timers rendering is not delayed. */
+        try { cbtP1hOnActiveJobs(freshData); } catch(eP1hLive) {}
+
         _cbtBackendLastOk = Date.now();
         var activeRefs = new Set();
         var items = Array.isArray(freshData) ? freshData.slice() : [];
@@ -6152,7 +6163,7 @@
       try { afaConfirm(); } catch(err) {}
     });
 
-    /* v23.9.80: restore the original VERTICAL dashboard length.
+    /* v23.9.83: restore the original VERTICAL dashboard length.
        Width stays exactly as before. The compact 240px default from older
        versions is migrated back to 350px once. If someone manually made the
        board taller than 350px, keep that larger custom height. */
@@ -6167,7 +6178,7 @@
       }
     } catch(eRestore) {}
 
-    /* v23.9.80: persist the dashboard's collapsed/open state across reloads. */
+    /* v23.9.83: persist the dashboard's collapsed/open state across reloads. */
     var isCollapsed = false;
     try { isCollapsed = localStorage.getItem('cbt_panel_collapsed') === '1'; } catch(eCollapsedLoad) {}
     var collapseBtn = panel2.querySelector('#cbt-collapse-btn');
@@ -7899,6 +7910,298 @@
       if (!res.ok) return null;
       return res.json().then(function(j){ return j; }, function(){ return null; });
     }, function(){ clearTimeout(timer); return null; });
+  }
+
+
+  /* ══════════════════════════════════════════════════════════════════════
+     P-1-H CART HIGHLIGHT — INSTANT + NO-LAG BATCH-ID CORRELATION
+     ══════════════════════════════════════════════════════════════════════
+
+     Detection still follows the supplied working P-1-H highlighter:
+       1) Use activeJobsWithSiteSummary.
+       2) Keep BATCHING / CREATED jobs.
+       3) Read /api/store/{store}/packages?jobId={one active job id}.
+       4) Find packages whose lastKnownLocation contains "P-1-H".
+       5) Collect package batchId / lastKnownBatchId.
+       6) Match those ids to active job.batchId + shortClientRef.
+       7) Highlight matching normal Tasks rows light blue.
+
+     Instant/no-lag design:
+       - NO separate activeJobsWithSiteSummary request.
+         We reuse pollActiveTasks(), which already runs immediately at startup
+         and every 2 seconds for the existing dashboard.
+       - NO P-1-H polling interval.
+       - One package request starts as soon as the first active-jobs response
+         arrives, so there is no 30-second wait.
+       - Package results are cached for 30 seconds.
+       - A changed active-job signature can refresh early.
+       - Only one package request can be in flight.
+       - DOM rerenders only reapply cached refs; they never trigger network.
+       - P-1-H work is never awaited by pollActiveTasks(), so it cannot delay
+         Live table / timer rendering.
+  ══════════════════════════════════════════════════════════════════════ */
+
+  var CBT_P1H_TARGET_TEXT = 'P-1-H';
+  var CBT_P1H_PACKAGE_CACHE_MS = 30000;
+
+  var _cbtP1hTaskRefs = new Set();
+  var _cbtP1hStyleReady = false;
+
+  var _cbtP1hLatestJobs = [];
+  var _cbtP1hLatestSignature = '';
+  var _cbtP1hLastPackageAt = 0;
+  var _cbtP1hPackageInFlight = false;
+  var _cbtP1hRefreshQueued = false;
+
+  function cbtP1hEnsureStyle() {
+    if (_cbtP1hStyleReady) return;
+    _cbtP1hStyleReady = true;
+
+    var style = document.createElement('style');
+    style.id = 'cbt-p1h-highlight-style';
+    style.textContent =
+      'job-card.cbt-p1h-highlight .job-card,' +
+      'job-card.cbt-p1h-highlight > .row,' +
+      'job-card.cbt-p1h-highlight .row:first-child{' +
+        'background-color:#d9efff!important;' +
+        'box-shadow:inset 4px 0 0 #5aaef5!important;' +
+      '}' +
+      'job-card.cbt-p1h-highlight > .row > [class*="col-"],' +
+      'job-card.cbt-p1h-highlight .row:first-child > [class*="col-"]{' +
+        'background-color:transparent!important;' +
+      '}';
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+  function cbtP1hNorm(v) {
+    return String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
+  }
+
+  function cbtP1hGetCardRef(card) {
+    if (!card) return '';
+
+    var links = [];
+    try { links = card.querySelectorAll('a[href*="jobdetails"]'); } catch(e) {}
+
+    if (links && links.length) {
+      return cbtP1hNorm(links[0].textContent || '').toLowerCase();
+    }
+
+    var a = null;
+    try { a = card.querySelector('a'); } catch(e2) {}
+    return a ? cbtP1hNorm(a.textContent || '').toLowerCase() : '';
+  }
+
+  function cbtP1hApplyHighlights() {
+    if (!isDashboardView()) return;
+    cbtP1hEnsureStyle();
+
+    var cards = document.querySelectorAll('job-card');
+    for (var i = 0; i < cards.length; i++) {
+      var card = cards[i];
+
+      /* Highlight only the normal Tasks section. */
+      try {
+        if (isInExcludedSection(card)) {
+          card.classList.remove('cbt-p1h-highlight');
+          continue;
+        }
+      } catch(e) {}
+
+      var ref = cbtP1hGetCardRef(card);
+      card.classList.toggle('cbt-p1h-highlight', !!ref && _cbtP1hTaskRefs.has(ref));
+    }
+  }
+
+  function cbtP1hSetRefs(nextRefs) {
+    _cbtP1hTaskRefs = nextRefs || new Set();
+    cbtP1hApplyHighlights();
+  }
+
+  function cbtP1hExtractJobs(activeData) {
+    var rawJobs = Array.isArray(activeData)
+      ? activeData.slice()
+      : (activeData && Array.isArray(activeData.summaries) ? activeData.summaries.slice() : []);
+
+    if (activeData && !Array.isArray(activeData)) {
+      ['tasks','results','items','jobs','data'].forEach(function(k){
+        if (Array.isArray(activeData[k])) rawJobs = rawJobs.concat(activeData[k]);
+      });
+    }
+
+    var seen = Object.create(null);
+    var jobs = [];
+
+    for (var i = 0; i < rawJobs.length; i++) {
+      var job = rawJobs[i];
+      if (!job || typeof job !== 'object') continue;
+
+      var state = cbtP1hNorm(job.state).toUpperCase();
+      if (state !== 'BATCHING' && state !== 'CREATED') continue;
+
+      var id = job.jobId != null ? String(job.jobId) : '';
+      var batchId = job.batchId != null ? String(job.batchId) : '';
+      var ref = cbtP1hNorm(job.shortClientRef).toLowerCase();
+
+      if (!id || !batchId || !ref) continue;
+
+      var dedupeKey = id + '|' + batchId + '|' + ref;
+      if (seen[dedupeKey]) continue;
+      seen[dedupeKey] = true;
+
+      jobs.push({
+        jobId: id,
+        batchId: batchId,
+        shortClientRef: ref,
+        state: state
+      });
+    }
+
+    return jobs;
+  }
+
+  function cbtP1hJobsSignature(jobs) {
+    return jobs.map(function(job){
+      return job.jobId + ':' + job.batchId + ':' + job.shortClientRef + ':' + job.state;
+    }).sort().join('|');
+  }
+
+  function cbtP1hApiGetPackages(seedJobId) {
+    var path =
+      '/store/' + encodeURIComponent(STORE_ID) +
+      '/packages?jobId=' + encodeURIComponent(seedJobId);
+
+    var ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
+    var timer = setTimeout(function(){
+      try { if (ctrl) ctrl.abort(); } catch(e) {}
+    }, 8000);
+
+    var opts = {
+      method: 'GET',
+      credentials: 'include',
+      cache: 'no-store',
+      headers: { 'Accept': 'application/json' }
+    };
+    if (ctrl) opts.signal = ctrl.signal;
+
+    return _origFetch(COMO_BASE + '/api' + path, opts).then(function(res){
+      clearTimeout(timer);
+      if (!res.ok) return null;
+      return res.json().then(function(j){ return j; }, function(){ return null; });
+    }, function(){
+      clearTimeout(timer);
+      return null;
+    });
+  }
+
+  function cbtP1hBuildRefsFromPackages(packages, jobs) {
+    var p1hBatchIds = new Set();
+
+    for (var i = 0; i < packages.length; i++) {
+      var pkg = packages[i] || {};
+      var location = cbtP1hNorm(pkg.lastKnownLocation).toUpperCase();
+
+      if (location.indexOf(CBT_P1H_TARGET_TEXT) === -1) continue;
+
+      if (pkg.batchId != null && String(pkg.batchId)) {
+        p1hBatchIds.add(String(pkg.batchId));
+      }
+      if (pkg.lastKnownBatchId != null && String(pkg.lastKnownBatchId)) {
+        p1hBatchIds.add(String(pkg.lastKnownBatchId));
+      }
+    }
+
+    var refs = new Set();
+    for (var j = 0; j < jobs.length; j++) {
+      var job = jobs[j];
+      if (p1hBatchIds.has(job.batchId)) refs.add(job.shortClientRef);
+    }
+    return refs;
+  }
+
+  function cbtP1hStartPackageRefresh(force) {
+    if (_cbtP1hPackageInFlight) {
+      if (force) _cbtP1hRefreshQueued = true;
+      return;
+    }
+
+    if (document.hidden || !isDashboardView() || !_cbtP1hLatestJobs.length) return;
+
+    var now = Date.now();
+    if (!force &&
+        _cbtP1hLastPackageAt &&
+        (now - _cbtP1hLastPackageAt) < CBT_P1H_PACKAGE_CACHE_MS) {
+      return;
+    }
+
+    var jobsSnapshot = _cbtP1hLatestJobs.slice();
+    var signatureSnapshot = _cbtP1hLatestSignature;
+    var seedJobId = jobsSnapshot[0] && jobsSnapshot[0].jobId;
+    if (!seedJobId) return;
+
+    _cbtP1hPackageInFlight = true;
+
+    cbtP1hApiGetPackages(seedJobId).then(function(packageData){
+      var packages = Array.isArray(packageData)
+        ? packageData
+        : (packageData && Array.isArray(packageData.packages) ? packageData.packages : null);
+
+      if (!packages) return;
+
+      if (signatureSnapshot !== _cbtP1hLatestSignature) {
+        _cbtP1hRefreshQueued = true;
+        return;
+      }
+
+      _cbtP1hLastPackageAt = Date.now();
+      cbtP1hSetRefs(cbtP1hBuildRefsFromPackages(packages, jobsSnapshot));
+    }).catch(function(){
+      /* Keep prior successful highlights on a transient read failure. */
+    }).then(function(){
+      _cbtP1hPackageInFlight = false;
+
+      if (_cbtP1hRefreshQueued) {
+        _cbtP1hRefreshQueued = false;
+        setTimeout(function(){ cbtP1hStartPackageRefresh(true); }, 0);
+      }
+    });
+  }
+
+  function cbtP1hOnActiveJobs(activeData) {
+    if (!isDashboardView()) return;
+
+    var jobs = cbtP1hExtractJobs(activeData);
+    var signature = cbtP1hJobsSignature(jobs);
+    var changed = signature !== _cbtP1hLatestSignature;
+
+    _cbtP1hLatestJobs = jobs;
+    _cbtP1hLatestSignature = signature;
+
+    /* Reapply cached refs immediately if Angular rebuilt the rows. */
+    cbtP1hApplyHighlights();
+
+    if (!jobs.length) {
+      if (_cbtP1hTaskRefs.size) cbtP1hSetRefs(new Set());
+      return;
+    }
+
+    /* First active response = immediate package read.
+       Changed cart/job set = immediate package read.
+       Stable set = package read only when the 30s cache expires. */
+    var stale = !_cbtP1hLastPackageAt ||
+                (Date.now() - _cbtP1hLastPackageAt) >= CBT_P1H_PACKAGE_CACHE_MS;
+
+    if (changed || stale) cbtP1hStartPackageRefresh(changed);
+  }
+
+  function cbtP1hResume() {
+    cbtP1hApplyHighlights();
+
+    if (!_cbtP1hLatestJobs.length) return;
+
+    var stale = !_cbtP1hLastPackageAt ||
+                (Date.now() - _cbtP1hLastPackageAt) >= CBT_P1H_PACKAGE_CACHE_MS;
+    if (stale) cbtP1hStartPackageRefresh(false);
   }
 
   /* Deep-scan a fetched job payload for its assignability. */
@@ -10557,7 +10860,7 @@
     } catch(e2) {}
 
     /* Legacy Fastest cleanup is retained only for backward compatibility.
-       v23.9.80 reads the clean v2 Fastest namespace instead. */
+       v23.9.83 reads the clean v2 Fastest namespace instead. */
     try {
       var peaks = hofLoadPeaks(), cleanP = {};
       for (var pk in peaks) {
@@ -10582,7 +10885,7 @@
   }
 
   function runLegacyDataMigration() {
-    /* v23.9.80 intentionally starts Today + Weekly clean. Do not import any
+    /* v23.9.83 intentionally starts Today + Weekly clean. Do not import any
        pre-reset local history into the new shared generation. */
     if (gmGet('cbt_today_weekly_reset_v23948', null)) return;
 
@@ -10791,6 +11094,7 @@
     document.addEventListener('visibilitychange', function(){
       if (document.hidden) return;
       try { panelHealthCheck(); taskPanelHealthCheck(); } catch(e9p) {}
+      try { cbtP1hResume(); } catch(e9h) {}
       try { syncHistoryPull(); } catch(e9a) {}
       try { syncWeeklyPull(); } catch(e9b) {}
       try { syncPull(); } catch(e9c) {}
