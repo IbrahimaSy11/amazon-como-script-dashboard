@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.78
+// @version      23.9.80
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -1796,14 +1796,15 @@
       height: 100%;
     }
     .cbt-missing-qr-value {
-      margin-top: 8px;
-      padding: 7px 8px;
+      margin-top: 10px;
+      padding: 9px 10px;
       border-radius: 6px;
       background: var(--cb-row-alt);
       color: var(--cb-navy);
       font-family: var(--cb-mono);
-      font-size: 11px;
-      font-weight: 800;
+      font-size: 18px;
+      line-height: 1.25;
+      font-weight: 900;
       text-align: center;
       word-break: break-all;
     }
@@ -2338,7 +2339,7 @@
      The old recommendation divided remaining PACKAGES by live batcher speed.
      That could recommend "1" even when many carts were due soon.
 
-     v23.9.78 deliberately does NOT use individual associate speed/rate.
+     v23.9.80 deliberately does NOT use individual associate speed/rate.
 
      It treats each open batching job/cart as one unit of work and asks:
        "How many concurrent batchers are needed to clear these carts before
@@ -3164,7 +3165,7 @@
       };
       delete _cbtObservedProgressByRef[ref];
     } else {
-      /* Critical v23.9.78 fix: for the SAME job, an authoritative API update
+      /* Critical v23.9.80 fix: for the SAME job, an authoritative API update
          may correct the clock only BACKWARD. It can never shorten elapsed time
          by introducing a newer BATCHING sub-operation. */
       if (info.startMs < cur.ms - 1000) {
@@ -3513,7 +3514,7 @@
   function cbtMergeBestFields(target, source) {
     if (!target || !source) return;
 
-    /* v23.9.78+ stores bestRate explicitly. For older cached rows, use the
+    /* v23.9.80+ stores bestRate explicitly. For older cached rows, use the
        strongest recoverable value (bestRate -> lastRate -> avgRate). */
     var candidate = Math.max(
       Number(source.bestRate) || 0,
@@ -3659,7 +3660,7 @@
       var hdr = panel.querySelector('#cbt-header');
       if (hdr) hdr.style.zoom = HEADER_FIXED_SCALE;
 
-      /* v23.9.78: pin the three-number stats row at the same 130% as the
+      /* v23.9.80: pin the three-number stats row at the same 130% as the
          header. A- / A+ must never resize Batchers, Recommended This Hour,
          or Remaining. */
       var stats = panel.querySelector('#cbt-stats-bar');
@@ -4064,7 +4065,7 @@
                   /* Legacy v23.9.31-and-older device nodes have no date
                      metadata. Keep them only while the Firebase basket has no
                      modern metadata at all, so an all-old installation still
-                     migrates once. As soon as v23.9.78 devices are present,
+                     migrates once. As soon as v23.9.80 devices are present,
                      undated stale nodes are not allowed into Today. */
                   if (!deviceDate && anyModernMeta) continue;
 
@@ -4752,7 +4753,7 @@
   var HOF_MAX_RATE = CBT_MAX_VALID_RATE; /* shared trusted-rate ceiling */
   var HOF_TOP      = 30;
 
-  /* v23.9.78 TRUSTED FASTEST RESET
+  /* v23.9.80 TRUSTED FASTEST RESET
      --------------------------------
      Legacy Fastest records were calculated before the full-span timing fix.
      They cannot be safely repaired because each historical record did not
@@ -6151,7 +6152,7 @@
       try { afaConfirm(); } catch(err) {}
     });
 
-    /* v23.9.78: restore the original VERTICAL dashboard length.
+    /* v23.9.80: restore the original VERTICAL dashboard length.
        Width stays exactly as before. The compact 240px default from older
        versions is migrated back to 350px once. If someone manually made the
        board taller than 350px, keep that larger custom height. */
@@ -6166,7 +6167,7 @@
       }
     } catch(eRestore) {}
 
-    /* v23.9.78: persist the dashboard's collapsed/open state across reloads. */
+    /* v23.9.80: persist the dashboard's collapsed/open state across reloads. */
     var isCollapsed = false;
     try { isCollapsed = localStorage.getItem('cbt_panel_collapsed') === '1'; } catch(eCollapsedLoad) {}
     var collapseBtn = panel2.querySelector('#cbt-collapse-btn');
@@ -8059,15 +8060,15 @@
      This helper runs only after the user deliberately clicks the red action
      in ▶ Run. It checks the normal Tasks list PLUS Problem Solve and
      Partially Batched, then finds the first job whose details contain a
-     package with Status = MISSING.
+     package with Status = MISSING or DAMAGED.
 
-     QR #1 = the Scannable Id from the SAME MISSING package row.
+     QR #1 = the Scannable Id from the SAME MISSING/DAMAGED package row.
      QR #2 = the first CART_... Last Known Location found in that job.
      If the job has no CART_... value, only QR #1 is generated.
 
      Discovery checks only alert-looking rows in the main Tasks list for
      performance, but checks EVERY readable row in Problem Solve and Partially
-     Batched because missing packages can move there without the same warning
+     Batched because missing/damaged packages can move there without the same warning
      marker. No writes, assignment changes, completion calls, or background
      observers are added by this feature. */
 
@@ -8108,16 +8109,20 @@
     for (var k in obj) {
       if (!/status/i.test(k)) continue;
       var v = obj[k];
-      if (typeof v === 'string' && /^MISSING$/i.test(v.trim())) return 'MISSING';
+      if (typeof v !== 'string') continue;
+
+      var status = v.trim().toUpperCase();
+      if (status === 'MISSING' || status === 'DAMAGED') return status;
     }
     return '';
   }
 
   function afaMissingInfoFromJson(root) {
     var missingIds = [];
+    var problemPackages = [];
     var cart = '';
     var sawPackageSignals = false;
-    var seenMissing = Object.create(null);
+    var seenProblem = Object.create(null);
 
     function walk(obj, depth) {
       if (obj == null || depth > 8) return;
@@ -8142,11 +8147,14 @@
 
       if (hasStatusKey || hasScannableKey) sawPackageSignals = true;
 
-      if (afaMissingStatusFromObject(obj) === 'MISSING') {
+      var packageStatus = afaMissingStatusFromObject(obj);
+      if (packageStatus === 'MISSING' || packageStatus === 'DAMAGED') {
         var sid = afaMissingScannableFromObject(obj);
-        if (sid && !seenMissing[sid]) {
-          seenMissing[sid] = true;
+        var problemKey = packageStatus + '|' + sid;
+        if (sid && !seenProblem[problemKey]) {
+          seenProblem[problemKey] = true;
           missingIds.push(sid);
+          problemPackages.push({ id: sid, status: packageStatus });
         }
       }
 
@@ -8159,15 +8167,17 @@
     walk(root, 0);
     return {
       missingIds: missingIds,
+      problemPackages: problemPackages,
       cart: cart,
       sawPackageSignals: sawPackageSignals
     };
   }
 
   function afaMissingInfoFromDocument(doc) {
-    if (!doc) return { missingIds: [], cart: '' };
+    if (!doc) return { missingIds: [], problemPackages: [], cart: '' };
 
     var missingIds = [];
+    var problemPackages = [];
     var cart = '';
     var seen = Object.create(null);
     var rows = [];
@@ -8188,17 +8198,19 @@
       }
 
       var statusIdx = -1;
+      var packageStatus = '';
       for (var s = 0; s < cells.length; s++) {
-        var cellText = afaMissingText(cells[s].textContent || '');
-        if (/^MISSING$/i.test(cellText)) {
+        var cellText = afaMissingText(cells[s].textContent || '').toUpperCase();
+        if (cellText === 'MISSING' || cellText === 'DAMAGED') {
           statusIdx = s;
+          packageStatus = cellText;
           break;
         }
       }
       if (statusIdx < 0) continue;
 
       /* The inspected COMO markup places Scannable Id immediately after the
-         MISSING status cell. Prefer that exact relationship. */
+         MISSING/DAMAGED status cell. Prefer that exact relationship. */
       var sid = '';
       if (cells[statusIdx + 1]) sid = afaMissingText(cells[statusIdx + 1].textContent || '');
 
@@ -8212,13 +8224,15 @@
         } catch(e3) {}
       }
 
-      if (sid && !seen[sid]) {
-        seen[sid] = true;
+      var problemKey = packageStatus + '|' + sid;
+      if (sid && !seen[problemKey]) {
+        seen[problemKey] = true;
         missingIds.push(sid);
+        problemPackages.push({ id: sid, status: packageStatus });
       }
     }
 
-    return { missingIds: missingIds, cart: cart };
+    return { missingIds: missingIds, problemPackages: problemPackages, cart: cart };
   }
 
   function afaMissingCandidateFromAnchor(a, section, order, baseScore) {
@@ -8253,7 +8267,7 @@
     try { txt = afaMissingText(node.innerText || node.textContent || ''); } catch(e) {}
 
     /* Explicit package status if the dashboard ever renders it directly. */
-    if (/\bMISSING\b/i.test(txt)) return true;
+    if (/\b(?:MISSING|DAMAGED)\b/i.test(txt)) return true;
 
     /* Current COMO alert badge can render as a warning triangle + count
        (for example ▲1 / ⚠1) rather than the literal characters A1. */
@@ -8318,12 +8332,12 @@
       var txt = afaMissingText(card.innerText || card.textContent || '');
 
       /* Do not open every task's job-details page. Only rows with the actual
-         dashboard warning signal are deep-checked, then Status=MISSING is
-         still verified from the job details before the button enables. */
+         dashboard warning signal are deep-checked, then Status=MISSING or
+         Status=DAMAGED is still verified from the job details before the button enables. */
       if (!afaHasMissingPackageSignal(card)) continue;
 
       item.alertScore += 20;
-      if (/\bMISSING\b/i.test(txt)) item.alertScore += 30;
+      if (/\b(?:MISSING|DAMAGED)\b/i.test(txt)) item.alertScore += 30;
 
       pushCandidate(item);
     }
@@ -8441,7 +8455,7 @@
           }
 
           /* If the package table has clearly rendered and contains rows but no
-             MISSING status, there is no need to wait the full timeout. */
+             MISSING/DAMAGED status, there is no need to wait the full timeout. */
           try {
             var renderedRows = doc.querySelectorAll('tr.ng-scope, tr');
             var renderedText = afaMissingText(doc.body && doc.body.textContent || '');
@@ -8477,7 +8491,7 @@
         }
 
         /* If this JSON clearly contained package/status data and none was
-           MISSING, trust it and skip the heavier page probe. */
+           MISSING/DAMAGED, trust it and skip the heavier page probe. */
         if (parsed.sawPackageSignals) return null;
       }
 
@@ -8533,16 +8547,22 @@
 
       return afaProbeMissingJob(item).then(function(info){
         if (info && info.missingIds && info.missingIds.length) {
-          for (var i = 0; i < info.missingIds.length; i++) {
-            var sid = afaMissingText(info.missingIds[i]);
+          var packages = Array.isArray(info.problemPackages) && info.problemPackages.length
+            ? info.problemPackages
+            : info.missingIds.map(function(id){ return { id: id, status: 'MISSING' }; });
+
+          for (var i = 0; i < packages.length; i++) {
+            var sid = afaMissingText(packages[i] && packages[i].id);
+            var packageStatus = afaMissingText(packages[i] && packages[i].status).toUpperCase() || 'MISSING';
             if (!sid) continue;
 
-            var key = String(info.id || item.id || '') + '|' + sid;
+            var key = String(info.id || item.id || '') + '|' + packageStatus + '|' + sid;
             if (seen[key]) continue;
             seen[key] = true;
 
             entries.push({
               missingId: sid,
+              packageStatus: packageStatus,
               cart: info.cart || '',
               ref: info.ref || item.ref || '',
               id: info.id || item.id || '',
@@ -8573,12 +8593,18 @@
     }
 
     var out = [];
-    var ids = Array.isArray(info.missingIds) ? info.missingIds : [];
-    for (var i = 0; i < ids.length; i++) {
-      var sid = afaMissingText(ids[i]);
+    var packages = Array.isArray(info.problemPackages) && info.problemPackages.length
+      ? info.problemPackages
+      : (Array.isArray(info.missingIds) ? info.missingIds : []).map(function(id){
+          return { id: id, status: 'MISSING' };
+        });
+
+    for (var i = 0; i < packages.length; i++) {
+      var sid = afaMissingText(packages[i] && packages[i].id);
       if (!sid) continue;
       out.push({
         missingId: sid,
+        packageStatus: afaMissingText(packages[i] && packages[i].status).toUpperCase() || 'MISSING',
         cart: info.cart || '',
         ref: info.ref || '',
         id: info.id || '',
@@ -8639,7 +8665,7 @@
     if (!entries.length) {
       afaShell(
         'Missing Package QR',
-        '<div id="cbt-afa-lead">No MISSING package was found in Tasks, Problem Solve, or Partially Batched.</div>' +
+        '<div id="cbt-afa-lead">No MISSING or DAMAGED package was found in Tasks, Problem Solve, or Partially Batched.</div>' +
         '<div class="cbt-afa-note">Nothing was changed. This action is read-only.</div>',
         '<button class="cbt-afa-act" data-afa="back">Back</button>'
       );
@@ -8695,7 +8721,9 @@
             : '') +
         '</div>';
 
-      var tiles = afaMissingQrTile('Missing Package', entry.missingId);
+      var packageStatus = afaMissingText(entry.packageStatus).toUpperCase() || 'MISSING';
+      var packageKind = packageStatus === 'DAMAGED' ? 'Damaged Package' : 'Missing Package';
+      var tiles = afaMissingQrTile(packageKind, entry.missingId);
       var hasCart = !!entry.cart;
 
       if (hasCart) {
@@ -8703,8 +8731,8 @@
       }
 
       var note = hasCart
-        ? 'Missing package QR + cart QR.'
-        : 'No CART_ location was found, so only the missing package QR is shown.';
+        ? packageKind + ' QR + cart QR.'
+        : 'No CART_ location was found, so only the ' + packageKind.toLowerCase() + ' QR is shown.';
 
       stage.innerHTML =
         '<div class="cbt-missing-qr-summary">' +
@@ -8777,7 +8805,7 @@
   function afaMissingQrChecking() {
     afaShell(
       'Missing Package QR',
-      '<div id="cbt-afa-lead">Finding the MISSING package…</div>' +
+      '<div id="cbt-afa-lead">Finding MISSING / DAMAGED packages…</div>' +
       '<div id="cbt-afa-bar"><div id="cbt-afa-fill"></div></div>' +
       '<div id="cbt-afa-live" style="color:var(--cb-text2);font-size:12px;">Checking Tasks alerts + all Problem Solve + all Partially Batched.</div>',
       '<button class="cbt-afa-act" data-afa="close">Cancel</button>'
@@ -8816,7 +8844,7 @@
         var live = document.getElementById('cbt-afa-live');
 
         if (lead) lead.innerHTML =
-          'Finding the MISSING package… <b>' + done + '</b> of <b>' + total + '</b>';
+          'Finding MISSING / DAMAGED packages… <b>' + done + '</b> of <b>' + total + '</b>';
         if (fill) fill.style.width = Math.round((done / Math.max(1, total)) * 100) + '%';
         if (live) {
           live.textContent = 'Checking ' + (item.section || 'Tasks') +
@@ -9273,11 +9301,11 @@
         '<button type="button" class="cbt-afa-act cbt-afa-action-btn cbt-afa-missing-btn" ' +
           'id="cbt-afa-missing-btn" data-afa="missingqr" disabled>' +
           '<span class="cbt-afa-missing-triangle">▲</span>' +
-          (missingCandidates.length ? 'Checking…' : 'No Missing Package') +
+          (missingCandidates.length ? 'Checking…' : 'No Missing/Damaged') +
         '</button>' +
         '<span class="cbt-afa-action-copy" id="cbt-afa-missing-copy">' +
           (missingCandidates.length
-            ? 'Checking warning rows in Tasks plus every Problem Solve and Partially Batched row. The button enables only if a real MISSING package is found.'
+            ? 'Checking warning rows in Tasks plus every Problem Solve and Partially Batched row. The button enables if a real MISSING or DAMAGED package is found.'
             : 'No readable task IDs are available in Tasks, Problem Solve, or Partially Batched right now. This button is disabled.') +
         '</span>' +
       '</div>';
@@ -9315,7 +9343,7 @@
     var card = _afaOverlay.querySelector('#cbt-afa-card');
     if (!card) return;
 
-    /* Confirm an actual MISSING package before enabling this action.
+    /* Confirm an actual MISSING or DAMAGED package before enabling this action.
        This runs only when ▶ Run is opened, not in the background. */
     var missingCheckSeq = ++_afaMissingMenuCheckSeq;
     var missingOverlay = _afaOverlay;
@@ -9336,8 +9364,17 @@
         btn.disabled = false;
         btn.innerHTML = '<span class="cbt-afa-missing-triangle">▲</span>Missing Package QR';
         block.classList.remove('off');
+        var damagedCount = verifiedEntries.filter(function(entry){
+          return afaMissingText(entry.packageStatus).toUpperCase() === 'DAMAGED';
+        }).length;
+        var missingCount = verifiedEntries.length - damagedCount;
+
+        var parts = [];
+        if (missingCount) parts.push(missingCount + ' MISSING');
+        if (damagedCount) parts.push(damagedCount + ' DAMAGED');
+
         copy.textContent =
-          verifiedEntries.length + ' MISSING package' +
+          parts.join(' + ') + ' package' +
           (verifiedEntries.length === 1 ? '' : 's') +
           ' found. Click to open QR' +
           (verifiedEntries.length === 1 ? '' : 's') +
@@ -9350,9 +9387,9 @@
       block.classList.add('off');
 
       if (finished) {
-        btn.innerHTML = '<span class="cbt-afa-missing-triangle">▲</span>No Missing Package';
+        btn.innerHTML = '<span class="cbt-afa-missing-triangle">▲</span>No Missing/Damaged';
         copy.textContent =
-          'No MISSING package was found in Tasks, Problem Solve, or Partially Batched. This button is disabled.';
+          'No MISSING or DAMAGED package was found in Tasks, Problem Solve, or Partially Batched. This button is disabled.';
       }
     }
 
@@ -10520,7 +10557,7 @@
     } catch(e2) {}
 
     /* Legacy Fastest cleanup is retained only for backward compatibility.
-       v23.9.78 reads the clean v2 Fastest namespace instead. */
+       v23.9.80 reads the clean v2 Fastest namespace instead. */
     try {
       var peaks = hofLoadPeaks(), cleanP = {};
       for (var pk in peaks) {
@@ -10545,7 +10582,7 @@
   }
 
   function runLegacyDataMigration() {
-    /* v23.9.78 intentionally starts Today + Weekly clean. Do not import any
+    /* v23.9.80 intentionally starts Today + Weekly clean. Do not import any
        pre-reset local history into the new shared generation. */
     if (gmGet('cbt_today_weekly_reset_v23948', null)) return;
 
