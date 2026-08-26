@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.95
+// @version      23.9.96
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -2520,7 +2520,7 @@
      The old recommendation divided remaining PACKAGES by live batcher speed.
      That could recommend "1" even when many carts were due soon.
 
-     v23.9.95 deliberately does NOT use individual associate speed/rate.
+     v23.9.96 deliberately does NOT use individual associate speed/rate.
 
      It treats each open batching job/cart as one unit of work and asks:
        "How many concurrent batchers are needed to clear these carts before
@@ -3521,7 +3521,7 @@
       };
       delete _cbtObservedProgressByRef[ref];
     } else {
-      /* Critical v23.9.95 fix: for the SAME job, an authoritative API update
+      /* Critical v23.9.96 fix: for the SAME job, an authoritative API update
          may correct the clock only BACKWARD. It can never shorten elapsed time
          by introducing a newer BATCHING sub-operation. */
       if (info.startMs < cur.ms - 1000) {
@@ -3669,6 +3669,12 @@
 
   var taskCache = new Map();
   var activeTab = 'live';
+
+  /* A cart/job-detail page can stay open for a long time while the cached Live
+     rows age. When returning to /dash, hold those cached rows until one fresh
+     authoritative dashboard reconciliation sees the current normal Tasks DOM.
+     This is event-driven; it adds no polling loop. */
+  var _cbtLiveDashboardSyncPending = false;
 
   var _liveRenderPending = false;
   function requestLiveRender() {
@@ -3870,7 +3876,7 @@
   function cbtMergeBestFields(target, source) {
     if (!target || !source) return;
 
-    /* v23.9.95+ stores bestRate explicitly. For older cached rows, use the
+    /* v23.9.96+ stores bestRate explicitly. For older cached rows, use the
        strongest recoverable value (bestRate -> lastRate -> avgRate). */
     var candidate = Math.max(
       Number(source.bestRate) || 0,
@@ -4016,7 +4022,7 @@
       var hdr = panel.querySelector('#cbt-header');
       if (hdr) hdr.style.zoom = HEADER_FIXED_SCALE;
 
-      /* v23.9.95: pin the three-number stats row at the same 130% as the
+      /* v23.9.96: pin the three-number stats row at the same 130% as the
          header. A- / A+ must never resize Batchers, Recommended This Hour,
          or Remaining. */
       var stats = panel.querySelector('#cbt-stats-bar');
@@ -4421,7 +4427,7 @@
                   /* Legacy v23.9.31-and-older device nodes have no date
                      metadata. Keep them only while the Firebase basket has no
                      modern metadata at all, so an all-old installation still
-                     migrates once. As soon as v23.9.95 devices are present,
+                     migrates once. As soon as v23.9.96 devices are present,
                      undated stale nodes are not allowed into Today. */
                   if (!deviceDate && anyModernMeta) continue;
 
@@ -5109,7 +5115,7 @@
   var HOF_MAX_RATE = CBT_MAX_VALID_RATE; /* shared trusted-rate ceiling */
   var HOF_TOP      = 30;
 
-  /* v23.9.95 TRUSTED FASTEST RESET
+  /* v23.9.96 TRUSTED FASTEST RESET
      --------------------------------
      Legacy Fastest records were calculated before the full-span timing fix.
      They cannot be safely repaired because each historical record did not
@@ -6139,6 +6145,15 @@
 
         cbtPruneOldLiveStarts();
 
+        /* If this poll happened after returning from cart/job details, release
+           the Live render gate only when the current dashboard Tasks DOM is
+           authoritative. The finally{} render below will then paint fresh data. */
+        if (isDashboardView() && _cbtLiveDashboardSyncPending) {
+          try {
+            if (cbtRecMainTasksSnapshot()) _cbtLiveDashboardSyncPending = false;
+          } catch(eReturnSync) {}
+        }
+
         /* If Tasks is truly 0 but a stale Live name survived the authoritative
            refresh, confirm it across several polls and then reload once. */
         try { cbtMaybeReloadStaleLive(); } catch(eStaleLive) {}
@@ -6574,7 +6589,7 @@
       try { afaConfirm(); } catch(err) {}
     });
 
-    /* v23.9.95: restore the original VERTICAL dashboard length.
+    /* v23.9.96: restore the original VERTICAL dashboard length.
        Width stays exactly as before. The compact 240px default from older
        versions is migrated back to 350px once. If someone manually made the
        board taller than 350px, keep that larger custom height. */
@@ -6589,7 +6604,7 @@
       }
     } catch(eRestore) {}
 
-    /* v23.9.95: persist the dashboard's collapsed/open state across reloads. */
+    /* v23.9.96: persist the dashboard's collapsed/open state across reloads. */
     var isCollapsed = false;
     try { isCollapsed = localStorage.getItem('cbt_panel_collapsed') === '1'; } catch(eCollapsedLoad) {}
     var collapseBtn = panel2.querySelector('#cbt-collapse-btn');
@@ -6917,10 +6932,39 @@
     var tbody=document.querySelector('#cbt-tbody'), empty=document.querySelector('#cbt-empty');
     if (!tbody||!empty) return;
     var lowerTerm = liveSearchTerm ? liveSearchTerm.toLowerCase() : '';
+
+    /* Normal Tasks is authoritative for what may appear in Live.
+       This specifically prevents the stale-name case seen after staying on a
+       cart/job page for a long time and then returning to the dashboard. */
+    var mainTasks = null;
+    if (isDashboardView()) {
+      try { mainTasks = cbtRecMainTasksSnapshot(); } catch(eMainTasks) {}
+    }
+
     // Compute each row's stats once — previously computeRow ran inside the sort
     // comparator (O(n log n) calls) and again in the render loop.
     var rows=[]; taskCache.forEach(function(d){
       if(cbtIsLiveBatch(d)) {
+        if (isDashboardView()) {
+          /* During the very short SPA return window, never flash old cached
+             names before the current Tasks container is ready. */
+          if (!mainTasks && _cbtLiveDashboardSyncPending) return;
+
+          if (mainTasks) {
+            /* Tasks (0) means nobody from an old cache/API response belongs
+               in Live. Staged for Pickup is completed work and is excluded by
+               cbtRecMainTasksSnapshot(). */
+            if (mainTasks.count === 0) return;
+
+            /* When current task identifiers are available, stale cached jobs
+               that are no longer in normal Tasks are filtered immediately. */
+            if ((mainTasks.refs.size || mainTasks.ids.size) &&
+                !cbtRecJobMatchesMainTasks(d, mainTasks)) {
+              return;
+            }
+          }
+        }
+
         if (lowerTerm) {
           var name = (d.associateId||d.associate||d.driverAssignment||d.shortClientRef||'').toLowerCase();
           if (name.indexOf(lowerTerm) === -1) return;
@@ -10095,7 +10139,7 @@
         return;
       }
 
-      /* v23.9.95: Assign opens associate search/selection only.
+      /* v23.9.96: Assign opens associate search/selection only.
          Do not assign, fetch a task, complete, force, or modify any task. */
       if (action === 'assign') {
         afaAssignPicker();
@@ -11182,7 +11226,7 @@
     } catch(e2) {}
 
     /* Legacy Fastest cleanup is retained only for backward compatibility.
-       v23.9.95 reads the clean v2 Fastest namespace instead. */
+       v23.9.96 reads the clean v2 Fastest namespace instead. */
     try {
       var peaks = hofLoadPeaks(), cleanP = {};
       for (var pk in peaks) {
@@ -11207,7 +11251,7 @@
   }
 
   function runLegacyDataMigration() {
-    /* v23.9.95 intentionally starts Today + Weekly clean. Do not import any
+    /* v23.9.96 intentionally starts Today + Weekly clean. Do not import any
        pre-reset local history into the new shared generation. */
     if (gmGet('cbt_today_weekly_reset_v23948', null)) return;
 
@@ -11265,12 +11309,34 @@
   function installRouteHealth() {
     /* React immediately to real SPA route changes. Polling below is only a
        slower safety net for unusual route transitions the History patch misses. */
+    var wasDashboard = isDashboardView();
+
     function onRoute() {
-      if (!isDashboardView()) detachMainPanel();
+      var nowDashboard = isDashboardView();
+      var returnedToDashboard = nowDashboard && !wasDashboard;
+      wasDashboard = nowDashboard;
+
+      if (!nowDashboard) detachMainPanel();
+
+      if (returnedToDashboard) {
+        /* Do not repaint old Live names from the detached dashboard panel.
+           The next authoritative dashboard poll releases this gate. */
+        _cbtLiveDashboardSyncPending = true;
+        _cbtStaleLiveZeroTaskPolls = 0;
+        requestLiveRender();
+      }
+
       _fastMountUntil = Date.now() + 15000;
       try { ensureSortAttachment(); } catch(e0) {}
       panelHealthCheck();
       taskPanelHealthCheck();
+
+      if (returnedToDashboard) {
+        /* One immediate refresh on the route transition only. Existing
+           in-flight guards coalesce this with the normal 1s/2s refreshes. */
+        try { pollActiveTasks(); } catch(e1) {}
+        try { fetchAndUpdate(); } catch(e2) {}
+      }
     }
 
     var _push = history.pushState, _repl = history.replaceState;
@@ -11416,6 +11482,14 @@
     document.addEventListener('visibilitychange', function(){
       if (document.hidden) return;
       try { panelHealthCheck(); taskPanelHealthCheck(); } catch(e9p) {}
+
+      /* If the dashboard becomes visible after sitting elsewhere/backgrounded,
+         refresh Live immediately using the existing guarded request functions. */
+      if (isComoSite() && isDashboardView()) {
+        try { pollActiveTasks(); } catch(e9live) {}
+        try { fetchAndUpdate(); } catch(e9stats) {}
+      }
+
       try { syncHistoryPull(); } catch(e9a) {}
       try { syncWeeklyPull(); } catch(e9b) {}
       try { syncPull(); } catch(e9c) {}
