@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.87
+// @version      23.9.95
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -1675,6 +1675,185 @@
       word-break: normal;
     }
 
+    /* Assign associate picker — search/select only. */
+    #cbt-afa-assign-search {
+      width: 100%;
+      height: 42px;
+      box-sizing: border-box;
+      border: 1.5px solid var(--cb-border);
+      border-radius: 8px;
+      padding: 0 12px;
+      background: #fff;
+      color: var(--cb-text);
+      font-family: var(--cb-sans);
+      font-size: 14px;
+      font-weight: 600;
+      outline: none;
+    }
+    #cbt-afa-assign-search:focus {
+      border-color: var(--cb-blue);
+      box-shadow: 0 0 0 3px rgba(30,136,229,.12);
+    }
+    #cbt-afa-assign-results {
+      margin-top: 9px;
+      border: 1px solid var(--cb-border);
+      border-radius: 8px;
+      overflow-y: auto;
+      max-height: 240px;
+      background: var(--cb-row-alt);
+    }
+    .cbt-afa-assign-name {
+      display: grid;
+      grid-template-columns: 24px 1fr auto;
+      align-items: center;
+      gap: 10px;
+      padding: 9px 12px;
+      border-bottom: 1px solid var(--cb-border);
+      cursor: pointer;
+      font-family: var(--cb-mono);
+      font-size: 13px;
+      font-weight: 800;
+      color: var(--cb-navy);
+      user-select: none;
+    }
+    .cbt-afa-assign-name:last-child { border-bottom: none; }
+    .cbt-afa-assign-name:hover,
+    .cbt-afa-assign-name.on,
+    .cbt-afa-assign-name.selected {
+      background: rgba(30,136,229,.10);
+    }
+    .cbt-afa-assign-check {
+      width: 18px;
+      height: 18px;
+      margin: 0;
+      accent-color: var(--cb-blue);
+      pointer-events: none;
+    }
+    .cbt-afa-assign-order {
+      min-width: 24px;
+      height: 24px;
+      padding: 0 6px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--cb-blue);
+      color: #fff;
+      font-family: var(--cb-sans);
+      font-size: 11px;
+      font-weight: 900;
+      line-height: 1;
+    }
+    .cbt-afa-assign-order.hidden { visibility: hidden; }
+    .cbt-afa-assign-empty {
+      padding: 12px;
+      color: var(--cb-text3);
+      font-size: 12px;
+      text-align: center;
+    }
+    #cbt-afa-assign-selected {
+      margin-top: 12px;
+      padding: 10px 12px;
+      display: flex;
+      flex-direction: row;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      border-radius: 8px;
+      background: rgba(30,136,229,.10);
+      border: 1px solid rgba(30,136,229,.28);
+      color: var(--cb-text2);
+      font-size: 12px;
+      font-weight: 700;
+    }
+    #cbt-afa-assign-selected .cbt-afa-selected-title {
+      flex: 0 0 100%;
+      width: 100%;
+      margin-bottom: 2px;
+      color: var(--cb-text2);
+      font-family: var(--cb-sans);
+      font-size: 11px;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+    }
+    #cbt-afa-assign-clear {
+      border: 1px solid rgba(220,53,69,.55);
+      border-radius: 6px;
+      padding: 4px 9px;
+      background: rgba(220,53,69,.10);
+      color: #ffb9c1;
+      font-family: var(--cb-sans);
+      font-size: 10px;
+      font-weight: 900;
+      line-height: 1;
+      text-transform: none;
+      letter-spacing: 0;
+      cursor: pointer;
+    }
+    #cbt-afa-assign-clear:hover {
+      background: #dc3545;
+      border-color: #dc3545;
+      color: #fff;
+    }
+    #cbt-afa-assign-selected .cbt-afa-assign-empty {
+      flex: 0 0 100%;
+      width: 100%;
+    }
+    #cbt-afa-assign-selected .cbt-afa-selected-row {
+      display: inline-flex;
+      align-items: center;
+      gap: 7px;
+      width: auto;
+      max-width: 100%;
+      box-sizing: border-box;
+      padding: 6px 8px;
+      margin-top: 3px;
+      border-radius: 6px;
+      background: rgba(30,136,229,.08);
+      color: #eaf4ff;
+      font-family: var(--cb-mono);
+      font-size: 13px;
+      font-weight: 900;
+      cursor: pointer;
+      user-select: none;
+      flex: 0 1 auto;
+    }
+    #cbt-afa-assign-selected .cbt-afa-selected-row:hover {
+      background: rgba(220,53,69,.22);
+      box-shadow: inset 0 0 0 1px rgba(220,53,69,.65);
+    }
+    #cbt-afa-assign-selected .cbt-afa-selected-row:hover .cbt-afa-selected-num {
+      background: #dc3545;
+    }
+    #cbt-afa-assign-selected .cbt-afa-selected-row:hover .cbt-afa-selected-name {
+      color: #ffdfe3;
+    }
+    #cbt-afa-assign-selected .cbt-afa-selected-name {
+      flex: 1 1 auto;
+      min-width: 0;
+      color: #ffffff;
+      overflow-wrap: anywhere;
+    }
+    #cbt-afa-assign-selected .cbt-afa-selected-num {
+      width: 22px;
+      height: 22px;
+      border-radius: 999px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--cb-blue);
+      color: #fff;
+      font-family: var(--cb-sans);
+      font-size: 11px;
+      font-weight: 900;
+      flex: 0 0 auto;
+    }
+
     /* Missing Package QR is a read-only helper inside the existing Run menu.
        It intentionally uses the same red alert language as the dashboard. */
     .cbt-afa-missing-btn {
@@ -2341,7 +2520,7 @@
      The old recommendation divided remaining PACKAGES by live batcher speed.
      That could recommend "1" even when many carts were due soon.
 
-     v23.9.87 deliberately does NOT use individual associate speed/rate.
+     v23.9.95 deliberately does NOT use individual associate speed/rate.
 
      It treats each open batching job/cart as one unit of work and asks:
        "How many concurrent batchers are needed to clear these carts before
@@ -2494,13 +2673,9 @@
     var scheduledDropHour = cbtRecIsScheduledDropHour(p.hour);
     var quietHours = cbtRecIsQuietHours(p);
 
-    /* With the planning boundary now at :55, the old :55–:57 loading
-       window is intentionally empty. Quiet-hour logic still uses :55 as the
-       start of the first scheduled wave. */
-    var inReleaseWindow =
-      scheduledDropHour &&
-      p.minute >= CBT_REC_RELEASE_FREEZE_START &&
-      p.minute < CBT_REC_RELEASE_MINUTE;
+    /* Recommendation turns over EXACTLY at :55.
+       There is no separate :55–:57 loading window anymore. */
+    var inReleaseWindow = false;
 
     return {
       key: cycleKey,
@@ -2638,6 +2813,37 @@
     return false;
   }
 
+  function cbtRecScopeJobsToMainTasks(jobs, snapshot) {
+    jobs = Array.isArray(jobs) ? jobs.slice() : [];
+
+    /* null = the normal Tasks DOM is not trustworthy/ready yet.
+       Never mix a stale API count with a persisted recommendation during this
+       startup window. The UI will temporarily show — instead. */
+    if (!snapshot) return null;
+
+    /* Normal Tasks is authoritative. Staged for Pickup is completed work;
+       Problem Solve / Partially Batched are also outside staffing. */
+    if (snapshot.count === 0) return [];
+
+    if (snapshot.refs.size || snapshot.ids.size) {
+      var matched = jobs.filter(function(job){
+        return cbtRecJobMatchesMainTasks(job, snapshot);
+      });
+
+      /* If identifiers are available but the API and DOM have not lined up
+         yet, treat the snapshot as temporarily unknown instead of displaying
+         a wrong +N/-N. The next existing stats refresh will retry. */
+      if (!matched.length && jobs.length) return null;
+      if (matched.length) jobs = matched;
+    }
+
+    if (jobs.length > snapshot.count) {
+      jobs = jobs.slice(0, snapshot.count);
+    }
+
+    return jobs;
+  }
+
   function cbtRecRushReserve(openCount) {
     if (!(openCount > 0)) return 0;
     var r = Math.ceil(openCount * CBT_REC_RUSH_RATIO);
@@ -2665,44 +2871,36 @@
     return need;
   }
 
-  function cbtRecCalculate(data, nowMs) {
+  function cbtRecCalculate(data, nowMs, mainTasks) {
     nowMs = Number(nowMs) || Date.now();
     var cycle = cbtRecCycleInfo(nowMs);
+
+    if (mainTasks === undefined) {
+      mainTasks = cbtRecMainTasksSnapshot();
+    }
 
     var jobs = Array.isArray(data)
       ? data.filter(cbtRecIsBatchingWork)
       : [];
 
-    /* MAIN TASKS IS AUTHORITATIVE FOR STAFFING.
-       Staged for Pickup is completed work and must never keep Recommended > 0.
-       The same is true for Problem Solve / Partially Batched.
+    jobs = cbtRecScopeJobsToMainTasks(jobs, mainTasks);
 
-       If the dashboard visibly has zero normal Tasks, recommendation becomes
-       zero immediately even if activeJobSummary still contains a stale record. */
-    var mainTasks = cbtRecMainTasksSnapshot();
-
-    if (mainTasks) {
-      if (mainTasks.count === 0) {
-        jobs = [];
-      } else if (mainTasks.refs.size || mainTasks.ids.size) {
-        var matchedMainJobs = jobs.filter(function(job){
-          return cbtRecJobMatchesMainTasks(job, mainTasks);
-        });
-
-        /* Use exact DOM/API matches whenever we have them. During a very brief
-           Angular/API race where identifiers have not lined up yet, keep the
-           API jobs but cap them to the number of visible main Tasks below. */
-        if (matchedMainJobs.length) jobs = matchedMainJobs;
-      }
-
-      if (jobs.length > mainTasks.count) {
-        jobs = jobs.slice(0, mainTasks.count);
-      }
+    /* During page reload/startup, Angular may not have exposed the normal
+       Tasks container yet. Unknown is NOT zero. Do not use stale API/persisted
+       state to create a temporary +N/-N. */
+    if (jobs === null) {
+      return {
+        ready: false,
+        raw: null, urgentRaw: null, openCount: 0, rushReserve: 0,
+        overdue: 0, dueByNextRelease: 0, earliestMinutes: null,
+        cycle: cycle
+      };
     }
 
     var openCount = jobs.length;
     if (!openCount) {
       return {
+        ready: true,
         raw: 0, urgentRaw: 0, openCount: 0, rushReserve: 0,
         overdue: 0, dueByNextRelease: 0, earliestMinutes: null,
         cycle: cycle
@@ -2760,6 +2958,7 @@
     urgentNeed = Math.max(0, Math.min(taskCap, urgentNeed));
 
     return {
+      ready: true,
       raw: maxNeed,
       urgentRaw: urgentNeed,
       openCount: openCount,
@@ -2771,17 +2970,21 @@
     };
   }
 
-  function cbtRecLockedValue(calc) {
-    if (!calc || !calc.cycle) return 0;
+  function cbtRecLockedValue(calc, mainTasks) {
+    if (!calc || !calc.cycle || calc.ready === false) return null;
+
+    if (mainTasks === undefined) {
+      mainTasks = cbtRecMainTasksSnapshot();
+    }
+    if (!mainTasks) return null;
 
     var state = cbtRecLoadState();
     var cycleKey = calc.cycle.key;
     var taskCap = Math.max(0, Math.min(CBT_REC_MAX_BATCHERS, Number(calc.openCount) || 0));
 
-    /* Independent hard cap from the visible normal Tasks section. This clears
-       any previously locked recommendation the moment Tasks reaches 0. */
-    var mainTasks = cbtRecMainTasksSnapshot();
-    if (mainTasks) taskCap = Math.min(taskCap, Math.max(0, Number(mainTasks.count) || 0));
+    /* Independent hard cap from the SAME visible normal Tasks snapshot.
+       This clears any previously locked recommendation when Tasks reaches 0. */
+    taskCap = Math.min(taskCap, Math.max(0, Number(mainTasks.count) || 0));
 
     if (!state || state.cycleKey !== cycleKey) {
       /* New :55 cycle: create a fresh baseline from the workload that exists
@@ -2826,8 +3029,11 @@
 
   function cbtRecTooltip(calc, recommended) {
     if (!calc) return '';
-    var parts = [];
+    if (calc.ready === false || recommended == null) {
+      return 'Waiting for current normal Tasks to finish loading…';
+    }
 
+    var parts = [];
     parts.push('Locked hourly target: ' + recommended);
     parts.push('slow-plan: 20m/cart · batchers reuse capacity after each cart');
     parts.push(calc.openCount + ' open cart' + (calc.openCount === 1 ? '' : 's'));
@@ -2862,11 +3068,21 @@
     var elDot   = document.getElementById('cbt-stat-dot');
     var elDelta = document.getElementById('cbt-stat-delta');
 
+    var ipText = (inProgress !== null && inProgress !== undefined) ? String(inProgress) : '—';
     var recText = recommended != null ? String(recommended) : '—';
 
-    /* +N = need N more batchers; -N = N extra batchers. */
-    var actualNum = Number(inProgress);
-    var recNum = Number(recommended);
+    /* +N = need N more batchers; -N = N extra batchers.
+       IMPORTANT: Number(null) is 0, so explicitly keep unknown startup values
+       as NaN until BOTH Batchers and Recommended come from the same fresh
+       normal-Tasks snapshot. */
+    var actualNum =
+      (inProgress !== null && inProgress !== undefined && inProgress !== '—')
+        ? Number(inProgress)
+        : NaN;
+    var recNum =
+      (recommended !== null && recommended !== undefined && recommended !== '—')
+        ? Number(recommended)
+        : NaN;
     var deltaText = '';
     var deltaClass = '';
     var deltaTitle = '';
@@ -2885,20 +3101,27 @@
       }
     }
 
-    if (elIP && _statsDomCache.inProgress !== inProgress) {
-      elIP.textContent = inProgress;
-      _statsDomCache.inProgress = inProgress;
+    if (elIP &&
+        (_statsDomCache.inProgress !== ipText || elIP.textContent !== ipText)) {
+      elIP.textContent = ipText;
+      _statsDomCache.inProgress = ipText;
     }
-    if (elRem && _statsDomCache.remaining !== remaining) {
-      elRem.textContent = remaining;
-      _statsDomCache.remaining = remaining;
+    var remText = (remaining !== null && remaining !== undefined) ? String(remaining) : '—';
+    if (elRem &&
+        (_statsDomCache.remaining !== remText || elRem.textContent !== remText)) {
+      elRem.textContent = remText;
+      _statsDomCache.remaining = remText;
     }
-    if (elRec && _statsDomCache.recommended !== recText) {
+    if (elRec &&
+        (_statsDomCache.recommended !== recText || elRec.textContent !== recText)) {
       elRec.textContent = recText;
       _statsDomCache.recommended = recText;
     }
     if (elDelta &&
-        (_statsDomCache.deltaText !== deltaText || _statsDomCache.deltaClass !== deltaClass)) {
+        (_statsDomCache.deltaText !== deltaText ||
+         _statsDomCache.deltaClass !== deltaClass ||
+         elDelta.textContent !== deltaText ||
+         elDelta.className !== deltaClass)) {
       elDelta.textContent = deltaText;
       elDelta.className = deltaClass;
       elDelta.title = deltaTitle;
@@ -2943,10 +3166,20 @@
         if (!Array.isArray(data)) data = [];
 
         var staffingJobs = data.filter(cbtRecIsBatchingWork);
-        var inProgress = staffingJobs.filter(function (j) {
-          var st = String(j.operationState || j.state || '').toUpperCase();
-          return st === 'IN_PROGRESS' || st === 'BATCHING';
-        }).length;
+
+        /* ONE authoritative normal-Tasks snapshot per stats update.
+           Batchers and Recommended are never compared across different
+           API/DOM moments after a reload. */
+        var mainTasks = cbtRecMainTasksSnapshot();
+        var scopedStaffingJobs = cbtRecScopeJobsToMainTasks(staffingJobs, mainTasks);
+
+        var inProgress = null;
+        if (scopedStaffingJobs !== null) {
+          inProgress = scopedStaffingJobs.filter(function (j) {
+            var st = String(j.operationState || j.state || '').toUpperCase();
+            return st === 'IN_PROGRESS' || st === 'BATCHING';
+          }).length;
+        }
 
         /* Remaining stays package-based because that stat is useful as a
            package backlog indicator. It is NOT used by Recommended anymore. */
@@ -2961,13 +3194,13 @@
         }, 0);
         var remaining = Math.max(0, expected - (batched + collected));
 
-        var calc = cbtRecCalculate(data, Date.now());
-        var recommended = cbtRecLockedValue(calc);
+        var calc = cbtRecCalculate(data, Date.now(), mainTasks);
+        var recommended = cbtRecLockedValue(calc, mainTasks);
 
         /* Recommended now means MINIMUM staffing target.
            Having more batchers than Recommended is not an error. */
         var dotColor = 'gray';
-        if (recommended > 0) {
+        if (recommended != null && inProgress != null && recommended > 0) {
           if (inProgress >= recommended) {
             dotColor = '#3fb950';
           } else {
@@ -3288,7 +3521,7 @@
       };
       delete _cbtObservedProgressByRef[ref];
     } else {
-      /* Critical v23.9.87 fix: for the SAME job, an authoritative API update
+      /* Critical v23.9.95 fix: for the SAME job, an authoritative API update
          may correct the clock only BACKWARD. It can never shorten elapsed time
          by introducing a newer BATCHING sub-operation. */
       if (info.startMs < cur.ms - 1000) {
@@ -3637,7 +3870,7 @@
   function cbtMergeBestFields(target, source) {
     if (!target || !source) return;
 
-    /* v23.9.87+ stores bestRate explicitly. For older cached rows, use the
+    /* v23.9.95+ stores bestRate explicitly. For older cached rows, use the
        strongest recoverable value (bestRate -> lastRate -> avgRate). */
     var candidate = Math.max(
       Number(source.bestRate) || 0,
@@ -3783,7 +4016,7 @@
       var hdr = panel.querySelector('#cbt-header');
       if (hdr) hdr.style.zoom = HEADER_FIXED_SCALE;
 
-      /* v23.9.87: pin the three-number stats row at the same 130% as the
+      /* v23.9.95: pin the three-number stats row at the same 130% as the
          header. A- / A+ must never resize Batchers, Recommended This Hour,
          or Remaining. */
       var stats = panel.querySelector('#cbt-stats-bar');
@@ -4188,7 +4421,7 @@
                   /* Legacy v23.9.31-and-older device nodes have no date
                      metadata. Keep them only while the Firebase basket has no
                      modern metadata at all, so an all-old installation still
-                     migrates once. As soon as v23.9.87 devices are present,
+                     migrates once. As soon as v23.9.95 devices are present,
                      undated stale nodes are not allowed into Today. */
                   if (!deviceDate && anyModernMeta) continue;
 
@@ -4876,7 +5109,7 @@
   var HOF_MAX_RATE = CBT_MAX_VALID_RATE; /* shared trusted-rate ceiling */
   var HOF_TOP      = 30;
 
-  /* v23.9.87 TRUSTED FASTEST RESET
+  /* v23.9.95 TRUSTED FASTEST RESET
      --------------------------------
      Legacy Fastest records were calculated before the full-span timing fix.
      They cannot be safely repaired because each historical record did not
@@ -6341,7 +6574,7 @@
       try { afaConfirm(); } catch(err) {}
     });
 
-    /* v23.9.87: restore the original VERTICAL dashboard length.
+    /* v23.9.95: restore the original VERTICAL dashboard length.
        Width stays exactly as before. The compact 240px default from older
        versions is migrated back to 350px once. If someone manually made the
        board taller than 350px, keep that larger custom height. */
@@ -6356,7 +6589,7 @@
       }
     } catch(eRestore) {}
 
-    /* v23.9.87: persist the dashboard's collapsed/open state across reloads. */
+    /* v23.9.95: persist the dashboard's collapsed/open state across reloads. */
     var isCollapsed = false;
     try { isCollapsed = localStorage.getItem('cbt_panel_collapsed') === '1'; } catch(eCollapsedLoad) {}
     var collapseBtn = panel2.querySelector('#cbt-collapse-btn');
@@ -9375,6 +9608,210 @@
     afaConfirmRender(afaScanDashboard(), pbNow, expected);
   }
 
+  function afaAssignPicker() {
+    var selectedNames = [];
+    var activeIndex = -1;
+    var currentRows = [];
+
+    afaShell(
+      'Assign',
+      '<div id="cbt-afa-lead">Search and select one or more associates.</div>' +
+      '<input id="cbt-afa-assign-search" type="text" autocomplete="off" spellcheck="false" ' +
+        'placeholder="Search associate name..." aria-label="Search associate name">' +
+      '<div id="cbt-afa-assign-results">' +
+        '<div class="cbt-afa-assign-empty">Type at least ' + AC_MIN_CHARS + ' characters to search.</div>' +
+      '</div>' +
+      '<div id="cbt-afa-assign-selected"><div class="cbt-afa-selected-title">' +
+        '<span>Selected associates</span>' +
+        '<button id="cbt-afa-assign-clear" type="button" disabled>Clear</button>' +
+      '</div>' +
+        '<div class="cbt-afa-assign-empty">None selected.</div></div>' +
+      '<div class="cbt-afa-note">Multi-select only. No task will be assigned yet.</div>',
+      '<button class="cbt-afa-act" data-afa="assign-back">Back</button>'
+    );
+
+    var card = _afaOverlay && _afaOverlay.querySelector('#cbt-afa-card');
+    var input = document.getElementById('cbt-afa-assign-search');
+    var results = document.getElementById('cbt-afa-assign-results');
+    var selected = document.getElementById('cbt-afa-assign-selected');
+    if (!card || !input || !results || !selected) return;
+
+    function esc(v) {
+      return afaEsc(v);
+    }
+
+    function selectedIndex(name) {
+      var low = String(name || '').toLowerCase();
+      for (var i = 0; i < selectedNames.length; i++) {
+        if (selectedNames[i].toLowerCase() === low) return i;
+      }
+      return -1;
+    }
+
+    function renderSelected() {
+      if (!selectedNames.length) {
+        selected.innerHTML =
+          '<div class="cbt-afa-selected-title">' +
+            '<span>Selected associates</span>' +
+            '<button id="cbt-afa-assign-clear" type="button" disabled>Clear</button>' +
+          '</div>' +
+          '<div class="cbt-afa-assign-empty">None selected.</div>';
+        return;
+      }
+
+      selected.innerHTML =
+        '<div class="cbt-afa-selected-title">' +
+          '<span>Selected associates (' + selectedNames.length + ')</span>' +
+          '<button id="cbt-afa-assign-clear" type="button">Clear</button>' +
+        '</div>' +
+        selectedNames.map(function(name, i){
+          return '<div class="cbt-afa-selected-row" data-selected-name="' + esc(name) + '" ' +
+            'title="Click to remove ' + esc(name) + '">' +
+            '<span class="cbt-afa-selected-num">' + (i + 1) + '</span>' +
+            '<span class="cbt-afa-selected-name">' + esc(name) + '</span>' +
+          '</div>';
+        }).join('');
+    }
+
+    function renderResults() {
+      if (!currentRows.length) {
+        results.innerHTML = '<div class="cbt-afa-assign-empty">No matches found.</div>';
+        return;
+      }
+
+      results.innerHTML = currentRows.map(function(name, i){
+        var order = selectedIndex(name);
+        var checked = order >= 0;
+        return '<div class="cbt-afa-assign-name' +
+          (i === activeIndex ? ' on' : '') +
+          (checked ? ' selected' : '') +
+          '" data-name="' + esc(name) + '">' +
+          '<input class="cbt-afa-assign-check" type="checkbox" tabindex="-1"' + (checked ? ' checked' : '') + '>' +
+          '<span>' + esc(name) + '</span>' +
+          '<span class="cbt-afa-assign-order' + (checked ? '' : ' hidden') + '">' +
+            (checked ? (order + 1) : '') +
+          '</span>' +
+        '</div>';
+      }).join('');
+    }
+
+    function updateActive() {
+      var nodes = results.querySelectorAll('.cbt-afa-assign-name');
+      for (var i = 0; i < nodes.length; i++) {
+        nodes[i].classList.toggle('on', i === activeIndex);
+      }
+      if (activeIndex >= 0 && nodes[activeIndex] && nodes[activeIndex].scrollIntoView) {
+        nodes[activeIndex].scrollIntoView({ block: 'nearest' });
+      }
+    }
+
+    function toggleName(name) {
+      if (!name) return;
+
+      var idx = selectedIndex(name);
+      if (idx >= 0) {
+        /* Unselecting from the search results keeps the current search. */
+        selectedNames.splice(idx, 1);
+        renderSelected();
+        renderResults();
+      } else {
+        /* Clear the typed text after selecting, but KEEP the current suggestion
+           list visible so more names can be selected from the same results. */
+        selectedNames.push(name);
+        renderSelected();
+
+        input.value = '';
+        renderResults();
+      }
+
+      try { input.focus(); } catch(e) {}
+    }
+
+    function search(term) {
+      term = String(term || '').trim();
+
+      if (term.length < AC_MIN_CHARS) {
+        currentRows = [];
+        activeIndex = -1;
+        results.innerHTML =
+          '<div class="cbt-afa-assign-empty">Type at least ' + AC_MIN_CHARS + ' characters to search.</div>';
+        return;
+      }
+
+      var res = acSearch(term);
+      currentRows = (res && res.rows) ? res.rows.slice() : [];
+      activeIndex = currentRows.length ? 0 : -1;
+      renderResults();
+    }
+
+    input.addEventListener('input', function(){
+      search(input.value);
+    });
+
+    input.addEventListener('keydown', function(e){
+      if (!currentRows.length) return;
+
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        activeIndex = (activeIndex + 1 + currentRows.length) % currentRows.length;
+        updateActive();
+      } else if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        activeIndex = (activeIndex - 1 + currentRows.length) % currentRows.length;
+        updateActive();
+      } else if ((e.key === 'Enter' || e.key === ' ') && activeIndex >= 0) {
+        e.preventDefault();
+        toggleName(currentRows[activeIndex]);
+      }
+    });
+
+    results.addEventListener('mousedown', function(e){
+      var row = e.target.closest('.cbt-afa-assign-name');
+      if (!row) return;
+      e.preventDefault();
+      toggleName(row.getAttribute('data-name'));
+    });
+
+    selected.addEventListener('click', function(e){
+      var clearBtn = e.target.closest('#cbt-afa-assign-clear');
+      if (clearBtn) {
+        if (!selectedNames.length) return;
+
+        selectedNames.length = 0;
+        renderSelected();
+        renderResults();
+        try { input.focus(); } catch(ignoreClearFocus) {}
+        return;
+      }
+
+      var row = e.target.closest('.cbt-afa-selected-row');
+      if (!row) return;
+
+      var name = row.getAttribute('data-selected-name');
+      if (!name) return;
+
+      var idx = selectedIndex(name);
+      if (idx >= 0) selectedNames.splice(idx, 1);
+
+      renderSelected();
+      renderResults();
+      try { input.focus(); } catch(ignoreFocus) {}
+    });
+
+    card.addEventListener('click', function(e){
+      var b = e.target.closest('[data-afa]');
+      if (!b) return;
+
+      if (b.getAttribute('data-afa') === 'assign-back') {
+        /* Return to Cart Actions. No assignment request occurs. */
+        afaConfirm();
+      }
+    });
+
+    renderSelected();
+    try { input.focus(); } catch(e) {}
+  }
+
   function afaConfirmRender(list, pbAll, pbExpected, suppress) {
     /* Three completely independent actions:
          1) Force Assign         -> UNASSIGNABLE only
@@ -9427,6 +9864,17 @@
         '<span class="cbt-afa-action-copy">' + copy + '</span>' +
       '</div>';
     }
+
+    /* Placeholder only. The Assign workflow will be connected later.
+       For now this adds the requested button to the Run / Cart Actions menu
+       without making any assignment request or changing any task. */
+    var assignBlock = actionBlock(
+      'assign',
+      '▶ Assign',
+      null,
+      false,
+      'Search and select multiple associates. Task assignment is not connected yet.'
+    );
 
     var forceBlock = actionBlock(
       'force',
@@ -9499,6 +9947,7 @@
     afaShell(
       'Cart Actions',
       '<div id="cbt-afa-lead">Choose an action. Each button performs <b>only the action shown</b>.</div>' +
+      assignBlock +
       forceBlock +
       partialBlock +
       completeBlock +
@@ -9643,6 +10092,13 @@
 
       if (action === 'close') {
         afaClose();
+        return;
+      }
+
+      /* v23.9.95: Assign opens associate search/selection only.
+         Do not assign, fetch a task, complete, force, or modify any task. */
+      if (action === 'assign') {
+        afaAssignPicker();
         return;
       }
 
@@ -10726,7 +11182,7 @@
     } catch(e2) {}
 
     /* Legacy Fastest cleanup is retained only for backward compatibility.
-       v23.9.87 reads the clean v2 Fastest namespace instead. */
+       v23.9.95 reads the clean v2 Fastest namespace instead. */
     try {
       var peaks = hofLoadPeaks(), cleanP = {};
       for (var pk in peaks) {
@@ -10751,7 +11207,7 @@
   }
 
   function runLegacyDataMigration() {
-    /* v23.9.87 intentionally starts Today + Weekly clean. Do not import any
+    /* v23.9.95 intentionally starts Today + Weekly clean. Do not import any
        pre-reset local history into the new shared generation. */
     if (gmGet('cbt_today_weekly_reset_v23948', null)) return;
 
