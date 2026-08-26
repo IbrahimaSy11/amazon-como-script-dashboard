@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.85
+// @version      23.9.87
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -2341,20 +2341,19 @@
      The old recommendation divided remaining PACKAGES by live batcher speed.
      That could recommend "1" even when many carts were due soon.
 
-     v23.9.85 deliberately does NOT use individual associate speed/rate.
+     v23.9.87 deliberately does NOT use individual associate speed/rate.
 
      It treats each open batching job/cart as one unit of work and asks:
        "How many concurrent batchers are needed to clear these carts before
-        their deadlines / before the next :57 planning point?"
+        their deadlines / before the next :55 planning point?"
 
      The recommendation is stable:
-       - :57 store time starts a new hourly planning cycle.
+       - :55 store time starts a new hourly planning cycle.
        - During a cycle the number may INCREASE when rush/new urgent carts
          arrive, but it never decreases.
-       - :55 → :57 is the normal release window, so next-cycle carts do not
-         make the old cycle spike for two minutes. Truly urgent/overdue carts
-         can still raise the recommendation.
-       - At the next :57 the recommendation is recalculated from scratch.
+       - The recommendation cycle now turns over at :55, when the normal
+         hourly task wave begins. There is no extra wait until :57.
+       - At the next :55 the recommendation is recalculated from scratch.
 
      CONSERVATIVE PLANNING ASSUMPTIONS:
        - EVERY batcher is treated as slow/unpredictable for staffing.
@@ -2365,14 +2364,14 @@
          not one permanently assigned batcher per cart.
        - Keep 5 minutes of deadline safety.
        - Reserve 12% extra cart capacity (1–4 carts) for mid-hour rush work.
-       - Normal task waves begin around :55 and are finalized at :57.
+       - Normal task waves begin around :55, and staffing is recalculated at :55.
        - Normal hourly waves run from 2:55 AM through the final 8:55 PM wave.
        - From 9:00 PM until 2:55 AM, no NORMAL hourly wave/reserve is assumed;
          only carts actually present are staffed. Unexpected real carts still count.
        - Overdue carts are treated as needing attention within 8 minutes.
   */
 
-  var CBT_REC_RELEASE_MINUTE       = 57;
+  var CBT_REC_RELEASE_MINUTE       = 55;
   var CBT_REC_RELEASE_FREEZE_START = 55;
   var CBT_REC_FIRST_DROP_HOUR      = 2;   /* 2:55 AM */
   var CBT_REC_LAST_DROP_HOUR       = 20;  /* 8:55 PM */
@@ -2384,7 +2383,7 @@
   var CBT_REC_RUSH_MIN             = 1;
   var CBT_REC_RUSH_MAX             = 4;
   var CBT_REC_MAX_BATCHERS         = 38;
-  var CBT_REC_STATE_PREFIX         = 'cbt_hourly_recommend_v3_schedule_';
+  var CBT_REC_STATE_PREFIX         = 'cbt_hourly_recommend_v4_release55_';
 
   /* Kept only because an older background Drive pull still assigns it.
      Recommendation no longer reads this value. */
@@ -2472,8 +2471,8 @@
     var p = cbtRecStoreClock(nowMs);
     var releaseSerial = Date.UTC(p.year, p.month - 1, p.day, p.hour, 0, 0);
 
-    /* Before :57, we are still inside the cycle that began at the PREVIOUS
-       hour's :57. */
+    /* Before :55, we are still inside the cycle that began at the PREVIOUS
+       hour's :55. */
     if (p.minute < CBT_REC_RELEASE_MINUTE) releaseSerial -= 3600000;
 
     var rd = new Date(releaseSerial);
@@ -2495,9 +2494,9 @@
     var scheduledDropHour = cbtRecIsScheduledDropHour(p.hour);
     var quietHours = cbtRecIsQuietHours(p);
 
-    /* :55–:57 is treated as a loading window ONLY during scheduled drop hours.
-       At 9:55 PM, 10:55 PM, etc. there is no fake release window because no
-       normal task wave is expected. */
+    /* With the planning boundary now at :55, the old :55–:57 loading
+       window is intentionally empty. Quiet-hour logic still uses :55 as the
+       start of the first scheduled wave. */
     var inReleaseWindow =
       scheduledDropHour &&
       p.minute >= CBT_REC_RELEASE_FREEZE_START &&
@@ -2723,8 +2722,8 @@
     var overdue = 0;
     var dueByNextRelease = 0;
     var nextReleaseMs = nowMs + cycle.minutesToNextRelease * 60000;
-    /* Give the normal :57 → :00 handoff a tiny grace so 8:00 targets still
-       belong to the ending 7:57 planning hour. */
+    /* Give the normal :55 → :00 handoff a tiny grace so top-of-hour targets
+       still belong to the planning cycle that began at :55. */
     var urgentCutoff = nextReleaseMs + 3 * 60000;
 
     for (var r = 0; r < rows.length; r++) {
@@ -2742,7 +2741,7 @@
     }
 
     /* Rush reserve is used only while NORMAL hourly task waves are active.
-       During the :55–:57 loading window, wait for the full wave before locking.
+       The cycle now locks from the :55 release point; there is no :55–:57 wait.
        From 9:00 PM until 2:55 AM, reserve is zero because no normal hourly wave
        is expected; any unexpected cart that actually appears still enters jobs[]
        immediately and can raise the recommendation from real workload. */
@@ -2785,8 +2784,8 @@
     if (mainTasks) taskCap = Math.min(taskCap, Math.max(0, Number(mainTasks.count) || 0));
 
     if (!state || state.cycleKey !== cycleKey) {
-      /* New :57 cycle: create a fresh baseline from the workload that exists
-         now. It can rise later, but it will not fall until the next :57. */
+      /* New :55 cycle: create a fresh baseline from the workload that exists
+         now. It can rise later, but it will not fall until the next :55. */
       var firstLocked = Math.max(0, Math.min(taskCap, Number(calc.raw) || 0));
       state = {
         cycleKey: cycleKey,
@@ -2809,7 +2808,7 @@
       cbtRecSaveState(state);
     }
 
-    /* During a SCHEDULED :55–:57 loading window, newly released next-hour
+    /* The old scheduled :55–:57 loading window is now empty; newly released next-hour
        carts should not make the old hour jump. Overnight :55 timestamps are
        not release windows and therefore do not trigger this rule. */
     var candidate = calc.cycle.inReleaseWindow ? calc.urgentRaw : calc.raw;
@@ -2841,7 +2840,7 @@
 
     if (calc.rushReserve > 0) parts.push('+' + calc.rushReserve + ' rush reserve');
     if (calc.cycle && calc.cycle.quietHours) parts.push('overnight: no normal hourly drop expected');
-    parts.push('resets at next :57 store time');
+    parts.push('resets at next :55 store time');
 
     return parts.join(' · ');
   }
@@ -3032,6 +3031,13 @@
   var _cbtLiveStartByRef = Object.create(null);
   var _cbtMissingPollsByRef = Object.create(null);
   var CBT_MISSING_POLL_GRACE = 3;                 // ~6s at the 2s poll rate
+
+  /* Very narrow stale-Live reload fallback.
+     Only used when normal Tasks is visibly 0 but Live still shows cached
+     BATCHING names for 3 consecutive authoritative polls. */
+  var CBT_STALE_LIVE_RELOAD_POLLS = 3;            // ~6s at the 2s poll rate
+  var CBT_STALE_LIVE_RELOAD_COOLDOWN_MS = 15 * 60 * 1000;
+  var _cbtStaleLiveZeroTaskPolls = 0;
   var CBT_START_RETAIN_AFTER_MISSING_MS = 30000;  // enough for a transient API gap
   var CBT_START_CACHE_TTL_MS = 15 * 60 * 1000;
   var CBT_MAX_LIVE_AGE_MS = 12 * 60 * 60 * 1000;
@@ -3282,7 +3288,7 @@
       };
       delete _cbtObservedProgressByRef[ref];
     } else {
-      /* Critical v23.9.85 fix: for the SAME job, an authoritative API update
+      /* Critical v23.9.87 fix: for the SAME job, an authoritative API update
          may correct the clock only BACKWARD. It can never shorten elapsed time
          by introducing a newer BATCHING sub-operation. */
       if (info.startMs < cur.ms - 1000) {
@@ -3631,7 +3637,7 @@
   function cbtMergeBestFields(target, source) {
     if (!target || !source) return;
 
-    /* v23.9.85+ stores bestRate explicitly. For older cached rows, use the
+    /* v23.9.87+ stores bestRate explicitly. For older cached rows, use the
        strongest recoverable value (bestRate -> lastRate -> avgRate). */
     var candidate = Math.max(
       Number(source.bestRate) || 0,
@@ -3777,7 +3783,7 @@
       var hdr = panel.querySelector('#cbt-header');
       if (hdr) hdr.style.zoom = HEADER_FIXED_SCALE;
 
-      /* v23.9.85: pin the three-number stats row at the same 130% as the
+      /* v23.9.87: pin the three-number stats row at the same 130% as the
          header. A- / A+ must never resize Batchers, Recommended This Hour,
          or Remaining. */
       var stats = panel.querySelector('#cbt-stats-bar');
@@ -4182,7 +4188,7 @@
                   /* Legacy v23.9.31-and-older device nodes have no date
                      metadata. Keep them only while the Firebase basket has no
                      modern metadata at all, so an all-old installation still
-                     migrates once. As soon as v23.9.85 devices are present,
+                     migrates once. As soon as v23.9.87 devices are present,
                      undated stale nodes are not allowed into Today. */
                   if (!deviceDate && anyModernMeta) continue;
 
@@ -4870,7 +4876,7 @@
   var HOF_MAX_RATE = CBT_MAX_VALID_RATE; /* shared trusted-rate ceiling */
   var HOF_TOP      = 30;
 
-  /* v23.9.85 TRUSTED FASTEST RESET
+  /* v23.9.87 TRUSTED FASTEST RESET
      --------------------------------
      Legacy Fastest records were calculated before the full-span timing fix.
      They cannot be safely repaired because each historical record did not
@@ -5755,6 +5761,67 @@
     return _xhrSend.apply(this, arguments);
   };
 
+  function cbtLiveCachedCount() {
+    var count = 0;
+    taskCache.forEach(function(d){
+      if (cbtIsLiveBatch(d)) count++;
+    });
+    return count;
+  }
+
+  function cbtStaleLiveReloadKey() {
+    return 'cbt_stale_live_reload_' + String(STORE_ID || 'unknown');
+  }
+
+  function cbtMaybeReloadStaleLive() {
+    if (document.hidden || !isDashboardView()) {
+      _cbtStaleLiveZeroTaskPolls = 0;
+      return;
+    }
+
+    /* The normal Tasks section is authoritative here.
+       Staged for Pickup is completed and must NOT keep Live alive. */
+    var mainTasks = null;
+    try { mainTasks = cbtRecMainTasksSnapshot(); } catch(e) {}
+
+    if (!mainTasks || mainTasks.count !== 0 || cbtLiveCachedCount() === 0) {
+      _cbtStaleLiveZeroTaskPolls = 0;
+      return;
+    }
+
+    _cbtStaleLiveZeroTaskPolls++;
+    if (_cbtStaleLiveZeroTaskPolls < CBT_STALE_LIVE_RELOAD_POLLS) return;
+
+    _cbtStaleLiveZeroTaskPolls = 0;
+
+    /* Prevent reload loops if Amazon's backend itself is briefly stale. */
+    var now = Date.now();
+    var last = 0;
+    try { last = Number(sessionStorage.getItem(cbtStaleLiveReloadKey()) || 0); }
+    catch(e2) {}
+
+    if (last && (now - last) < CBT_STALE_LIVE_RELOAD_COOLDOWN_MS) {
+      /* We already reloaded recently. Clear the stale Live cache locally
+         instead of repeatedly reloading the dashboard. */
+      taskCache.forEach(function(d, key){
+        if (cbtIsLiveBatch(d)) {
+          taskCache.delete(key);
+          cbtForgetLiveStart(String(key));
+          try { delete _cbtMissingPollsByRef[String(key)]; } catch(e3) {}
+        }
+      });
+      requestLiveRender();
+      return;
+    }
+
+    try { sessionStorage.setItem(cbtStaleLiveReloadKey(), String(now)); }
+    catch(e4) {}
+
+    /* User-requested reload: only for confirmed stale Live names while
+       normal Tasks is 0. No generic panel/loading auto-reload is used. */
+    location.reload();
+  }
+
   var _cbtPollInFlight = false;
   async function pollActiveTasks() {
     if (_cbtPollInFlight || document.hidden) return;
@@ -5838,6 +5905,10 @@
         });
 
         cbtPruneOldLiveStarts();
+
+        /* If Tasks is truly 0 but a stale Live name survived the authoritative
+           refresh, confirm it across several polls and then reload once. */
+        try { cbtMaybeReloadStaleLive(); } catch(eStaleLive) {}
       }
     } catch(e) {}
     finally {
@@ -6270,7 +6341,7 @@
       try { afaConfirm(); } catch(err) {}
     });
 
-    /* v23.9.85: restore the original VERTICAL dashboard length.
+    /* v23.9.87: restore the original VERTICAL dashboard length.
        Width stays exactly as before. The compact 240px default from older
        versions is migrated back to 350px once. If someone manually made the
        board taller than 350px, keep that larger custom height. */
@@ -6285,7 +6356,7 @@
       }
     } catch(eRestore) {}
 
-    /* v23.9.85: persist the dashboard's collapsed/open state across reloads. */
+    /* v23.9.87: persist the dashboard's collapsed/open state across reloads. */
     var isCollapsed = false;
     try { isCollapsed = localStorage.getItem('cbt_panel_collapsed') === '1'; } catch(eCollapsedLoad) {}
     var collapseBtn = panel2.querySelector('#cbt-collapse-btn');
@@ -7374,7 +7445,6 @@
   var _qrLastOpenedText = '';
   var _qrOutsideHandler = null;
   var _qrSelectionTimer = 0;
-  var _qrAutoCloseTimer = 0;
   var _qrDragCleanup = null;
   var QR_POSITION_KEY = 'cbt_qr_snap_position_v23953';
   var QR_DEFAULT_POSITION = 'bottom-right';
@@ -7455,9 +7525,6 @@
     var nextPos = qrSavePosition(row + '-' + cols[nextIdx]);
     qrApplyPosition(nextPos);
 
-    /* Moving the QR by arrow gives a fresh full 60 seconds. */
-    qrStartAutoClose();
-
   }
 
   /* Snap a dragged QR card only along the bottom row:
@@ -7473,14 +7540,6 @@
 
     /* Dragging upward never moves the QR upward. It always stays on bottom. */
     return 'bottom-' + col;
-  }
-
-  function qrStartAutoClose() {
-    if (_qrAutoCloseTimer) clearTimeout(_qrAutoCloseTimer);
-    _qrAutoCloseTimer = setTimeout(function(){
-      _qrAutoCloseTimer = 0;
-      if (_qrOverlay && _qrOverlay.isConnected) qrClose();
-    }, 60000);
   }
 
   function qrEnableSnapDrag(card) {
@@ -7509,10 +7568,6 @@
 
       var pos = qrSavePosition(qrSnapPositionFromPoint(lastX, lastY));
       qrApplyPosition(pos);
-
-      /* A manual drag counts as activity: restart the full 60-second timer
-         from the moment the QR is dropped into its new snap position. */
-      qrStartAutoClose();
 
       try {
         if (pointerId !== null && head.releasePointerCapture) {
@@ -7637,10 +7692,6 @@
   }
 
   function qrTeardown() {
-    if (_qrAutoCloseTimer) {
-      clearTimeout(_qrAutoCloseTimer);
-      _qrAutoCloseTimer = 0;
-    }
     if (_qrDragCleanup) {
       try { _qrDragCleanup(); } catch(eDrag) {}
       _qrDragCleanup = null;
@@ -7761,7 +7812,6 @@
     document.addEventListener('mousedown', _qrOutsideHandler, true);
 
     qrRender(text);
-    qrStartAutoClose();
   }
 
   function qrCleanSelectedText(value) {
@@ -10676,7 +10726,7 @@
     } catch(e2) {}
 
     /* Legacy Fastest cleanup is retained only for backward compatibility.
-       v23.9.85 reads the clean v2 Fastest namespace instead. */
+       v23.9.87 reads the clean v2 Fastest namespace instead. */
     try {
       var peaks = hofLoadPeaks(), cleanP = {};
       for (var pk in peaks) {
@@ -10701,7 +10751,7 @@
   }
 
   function runLegacyDataMigration() {
-    /* v23.9.85 intentionally starts Today + Weekly clean. Do not import any
+    /* v23.9.87 intentionally starts Today + Weekly clean. Do not import any
        pre-reset local history into the new shared generation. */
     if (gmGet('cbt_today_weekly_reset_v23948', null)) return;
 
