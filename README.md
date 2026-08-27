@@ -32,29 +32,7 @@ The countdown updates automatically so you can immediately see how much time rem
 
 Problem Solve, Partially Batched, and Staged for Pickup are excluded from the normal Time Left task logic.
 
----
-
-### 🌎 Automatic Warehouse Timezone
-
-The script automatically follows the **timezone and clock shown by the COMO website**.
-
-If you switch to a warehouse in another timezone, the script updates automatically.
-
-Example:
-
-- New York warehouse → `America/New_York`
-- Los Angeles warehouse → `America/Los_Angeles`
-
-The warehouse clock is used for:
-
-- Batch Target
-- Time Left
-- overdue calculations
-- task ordering
-- Recommended staffing timing
-- Today/store-midnight timing
-
-You do not need to manually change the script when switching warehouses.
+The current version uses the original stable Time Left behavior instead of the later automatic website-clock override.
 
 ---
 
@@ -179,6 +157,41 @@ Assignments happen directly without opening each task page.
 
 ---
 
+## 👤 Assign Cart Name Suggestions
+
+When **▶ Assign Cart** opens, the picker can immediately show associate suggestions before you type anything.
+
+Suggestions are based only on associates you recently selected with **Assign Cart at that specific warehouse**.
+
+### How suggestions work
+
+- Shows up to **10 recent associates**
+- Most recently used names appear first
+- Each warehouse keeps its own recent list
+- The list builds automatically as Assign Cart is used
+- If there is no recent history yet, the picker asks you to search
+- Typing **2 or more characters** still uses the normal full associate search
+- Suggestions are **not** ranked by bags/min, speed, or performance
+
+This keeps the suggestion system useful without guessing who should be assigned.
+
+---
+
+## 🚫 Assign Cart Disabled When There Are No Tasks
+
+Assign Cart cannot be used when the normal **Tasks** section has no tasks.
+
+The button stays disabled when:
+
+- **Tasks = 0**
+- the Tasks section is still loading and is not authoritative yet
+
+The script also re-checks before opening the picker and again before the final Assign starts.
+
+If tasks disappear while the picker is open, the assignment will not begin.
+
+---
+
 ## ▶ Force Assign
 
 Processes eligible **UNASSIGNABLE** normal carts.
@@ -225,18 +238,16 @@ This feature is read-only and does not modify the job.
 
 The Run actions are optimized to move quickly while still keeping API requests sequential.
 
-### Current action pacing
+### Current pacing
 
-- **Force Assign** — short pause between carts
-- **Partially Batched** — short pause between carts
-- **Auto Complete** — short pause between carts
-- **Assign Cart** — very short pause between associates/retries
+- **Force Assign / Partially Batched / Auto Complete** — short safety pause between carts
+- **Assign Cart** — very short pause between associates and retry steps
 
 The script does **not** send large parallel request bursts.
 
 One API operation completes before the next begins.
 
-This keeps actions fast while reducing the chance of unnecessary site load.
+This keeps actions fast while reducing unnecessary load on the site.
 
 ---
 
@@ -290,12 +301,13 @@ Performance optimizations include:
 - hidden-tab work reduction
 - dashboard-only stats requests
 - reuse of already-fetched data
-- lightweight warehouse timezone detection
 - no unnecessary assignment polling
-- no background automatic task assignment monitor
-- no extra permanent polling loop for timezone detection
-- no extra permanent MutationObserver for timezone detection
+- no background automatic task-assignment monitor
+- no extra permanent polling loop for Assign suggestions
+- no extra permanent MutationObserver for Assign suggestions
 - sequential cart-action API writes
+- reduced artificial delays between cart actions
+- recent-name suggestions stored locally without extra network requests
 
 The goal is to add dispatcher tools without making the normal COMO website feel slow.
 
@@ -308,7 +320,6 @@ The goal is to add dispatcher tools without making the normal COMO website feel 
 | Early task sorting | Earliest Batch Target gets priority |
 | Same-time package priority | Most packages first when Batch Targets match |
 | Time Left | Live deadline countdown |
-| Automatic warehouse timezone | Follows the COMO website clock/timezone |
 | Live tab | Current batchers and elapsed time |
 | Today tab | Daily associate performance |
 | Weekly tab | 7-day associate performance |
@@ -319,6 +330,8 @@ The goal is to add dispatcher tools without making the normal COMO website feel 
 | Remaining | Remaining package workload |
 | Fast stats loading | Shows recent store-specific stats while fresh data loads |
 | Assign Cart | Assign selected associates to prioritized tasks |
+| Assign suggestions | Recently used associates shown before typing |
+| No-task safety | Assign Cart is disabled when Tasks = 0 |
 | Force Assign | Process eligible UNASSIGNABLE carts |
 | Partially Batched | Separate handling for partially batched carts |
 | Auto Complete | Complete eligible tasks |
@@ -377,7 +390,7 @@ Tasks are automatically kept in Batch Target order so earlier deadlines receive 
 
 The Time Left column appears automatically beside Batch Target.
 
-It updates continuously while you are viewing the dashboard and follows the active warehouse's COMO clock.
+It updates continuously while you are viewing the dashboard.
 
 ---
 
@@ -406,13 +419,15 @@ Press:
 
 Then:
 
-1. Search for an associate
+1. Choose a recent suggested associate or search for a name
 2. Select the associate
 3. Add additional associates if needed
 4. Verify their numbered order
 5. Press **Assign**
 
 The script handles task priority automatically.
+
+If normal Tasks = 0, Assign Cart remains disabled.
 
 ---
 
@@ -438,7 +453,7 @@ Use Tampermonkey's update feature to install the latest version.
 
 Current script version documented here:
 
-**v23.9.116**
+**v23.9.119**
 
 ---
 
