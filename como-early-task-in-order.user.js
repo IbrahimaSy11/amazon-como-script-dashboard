@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.110
+// @version      23.9.116
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -2162,54 +2162,631 @@
   var _storeTimezoneCache = null;
   var _storeTimezoneCacheAt = 0;
   var _storeTimezoneCacheScope = '';
+  var _storeTimezoneSource = '';
+  var _storeTimezoneProbeAt = 0;
+  var _storeTimezoneRefreshQueued = false;
+  var _storeHeaderTimezoneSyncAt = 0;
+  var _storeWebsiteClockAnchorMs = null;
+  var _storeWebsiteClockAnchorPerfMs = null;
+  var _storeWebsiteClockSeenAt = 0;
   var _parseTimeMemo = Object.create(null);
   var _parseTimeMemoDay = '';
 
+  var CBT_TZ_DOM_PROBE_MS = 3000;
+  var CBT_TZ_CONFIRMED_CACHE_MS = 30 * 60 * 1000;
+  var CBT_TZ_FALLBACK_CACHE_MS = 3000;
+
+  function cbtStoreIdFromLocation() {
+    try {
+      var m = location.pathname.match(/\/store\/([^/]+)/i);
+      if (m && m[1]) return decodeURIComponent(m[1]);
+    } catch(e) {}
+    return '';
+  }
+
+  function cbtStoreScope() {
+    return cbtStoreIdFromLocation() || String(STORE_ID || '') ||
+           String(location.host || 'unknown');
+  }
+
+  function cbtTimezoneSessionKey(scope) {
+    return 'cbt_store_timezone_v2_' +
+      String(scope || 'unknown').replace(/[^A-Za-z0-9_.-]/g, '_');
+  }
+
+  function cbtIsValidTimezone(tz) {
+    if (!tz || typeof tz !== 'string') return false;
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: tz }).format(new Date(0));
+      return true;
+    } catch(e) {
+      return false;
+    }
+  }
+
+  function cbtNormalizeTimezoneCandidate(raw) {
+    if (raw == null) return null;
+    var s = String(raw).trim();
+    if (!s) return null;
+
+    /* Prefer a real IANA zone. This supports multi-part zones such as
+       America/Indiana/Indianapolis, not just America/New_York. */
+    var iana = s.match(/\b(?:Africa|America|Antarctica|Arctic|Asia|Atlantic|Australia|Europe|Indian|Pacific)(?:\/[A-Za-z0-9._+-]+){1,3}\b/);
+    if (iana && cbtIsValidTimezone(iana[0])) return iana[0];
+
+    /* COMO is a North American operations tool. If a page/API exposes only
+       the familiar US/Canada abbreviation, map it to a DST-aware IANA zone.
+       These are used only when an explicit IANA value is not available. */
+    var ab = s.toUpperCase().match(/\b(EDT|EST|ET|CDT|CST|CT|MDT|MST|MT|PDT|PST|PT|AKDT|AKST|AKT|HST|HT|AST|AT)\b/);
+    if (!ab) return null;
+
+    var map = {
+      EDT:'America/New_York', EST:'America/New_York', ET:'America/New_York',
+      CDT:'America/Chicago',  CST:'America/Chicago',  CT:'America/Chicago',
+      MDT:'America/Denver',   MT:'America/Denver',
+      /* MST-only sites are commonly Arizona; Colorado/Utah normally expose
+         MDT during daylight time, and winter offsets are identical. */
+      MST:'America/Phoenix',
+      PDT:'America/Los_Angeles', PST:'America/Los_Angeles', PT:'America/Los_Angeles',
+      AKDT:'America/Anchorage', AKST:'America/Anchorage', AKT:'America/Anchorage',
+      HST:'Pacific/Honolulu', HT:'Pacific/Honolulu',
+      AST:'America/Puerto_Rico', AT:'America/Halifax'
+    };
+    var tz = map[ab[1]] || null;
+    return tz && cbtIsValidTimezone(tz) ? tz : null;
+  }
+
+  function cbtLoadStoredTimezone(scope) {
+    try {
+      var raw = sessionStorage.getItem(cbtTimezoneSessionKey(scope));
+      if (!raw) return null;
+      var parsed = JSON.parse(raw);
+      var tz = parsed && parsed.tz ? cbtNormalizeTimezoneCandidate(parsed.tz) : null;
+      return tz || null;
+    } catch(e) {
+      return null;
+    }
+  }
+
+  function cbtSaveStoredTimezone(scope, tz, source) {
+    if (!scope || !tz || source === 'browser-fallback') return;
+    try {
+      sessionStorage.setItem(
+        cbtTimezoneSessionKey(scope),
+        JSON.stringify({ tz: tz, source: source || 'detected', ts: Date.now() })
+      );
+    } catch(e) {}
+  }
+
+  function cbtQueueTimezoneDependentRefresh() {
+    if (_storeTimezoneRefreshQueued) return;
+    _storeTimezoneRefreshQueued = true;
+
+    /* Timezone changes are rare (normally only when changing warehouses).
+       Recalculate once in idle time rather than adding another observer or
+       polling loop. */
+    cbtIdle(function(){
+      _storeTimezoneRefreshQueued = false;
+      if (!isComoSite() || !isDashboardView()) return;
+
+      try {
+        document.querySelectorAll('.etf-col-cell').forEach(function(col){
+          col.remove();
+        });
+        injectAllTimers();
+      } catch(e0) {}
+
+      try {
+        var c = getContainer();
+        if (c) sortNow(c);
+      } catch(e1) {}
+
+      /* Recommendation cycle/deadlines also use store-local time. Existing
+         in-flight guards prevent this from creating duplicate work. */
+      try { fetchAndUpdate(); } catch(e2) {}
+
+      /* Re-arm the lightweight store-midnight timeout using the new zone. */
+      try { cbtScheduleTodayBoundary(); } catch(e3) {}
+    }, 700);
+  }
+
+  function cbtSetStoreTimezone(rawTz, scope, source) {
+    var tz = cbtNormalizeTimezoneCandidate(rawTz);
+    if (!tz) return false;
+
+    scope = String(scope || cbtStoreScope());
+    var currentScope = cbtStoreScope();
+
+    /* Ignore delayed responses from a warehouse the user has already left. */
+    if (currentScope && scope && currentScope !== scope) return false;
+
+    var nextSource = source || 'detected';
+    var changed =
+      _storeTimezoneCacheScope !== scope ||
+      _storeTimezoneCache !== tz;
+    var sourceChanged = _storeTimezoneSource !== nextSource;
+
+    _storeTimezoneCache = tz;
+    _storeTimezoneCacheAt = Date.now();
+    _storeTimezoneCacheScope = scope;
+    _storeTimezoneSource = nextSource;
+    _storeTimezoneProbeAt = Date.now();
+
+    /* Do not hammer sessionStorage when the existing dashboard refresh sees
+       the same website timezone over and over. */
+    if (changed || sourceChanged) {
+      cbtSaveStoredTimezone(scope, tz, _storeTimezoneSource);
+    }
+
+    if (changed) {
+      _parseTimeMemo = Object.create(null);
+      _parseTimeMemoDay = '';
+      cbtQueueTimezoneDependentRefresh();
+    }
+    return true;
+  }
+
+  function cbtParseWebsiteClockText(raw) {
+    var s = String(raw || '').replace(/\s+/g, ' ').trim();
+    if (!s) return null;
+
+    var tz = cbtNormalizeTimezoneCandidate(s);
+    if (!tz) return null;
+
+    /* Prefer a clock printed next to the IANA timezone, e.g.
+         America/Los_Angeles 07:02 PM
+       This is the exact clock the operator sees on COMO. */
+    var tm = s.match(/\b(\d{1,2}):(\d{2})(?::(\d{2}))?\s*(AM|PM)\b/i);
+    if (!tm) return { tz: tz, timeText: '', hour: null, minute: null, second: null };
+
+    var h = parseInt(tm[1], 10);
+    var mn = parseInt(tm[2], 10);
+    var sec = tm[3] != null ? parseInt(tm[3], 10) : null;
+    var ap = String(tm[4] || '').toUpperCase();
+
+    if (ap === 'PM' && h < 12) h += 12;
+    if (ap === 'AM' && h === 12) h = 0;
+
+    return {
+      tz: tz,
+      timeText: tm[0],
+      hour: h,
+      minute: mn,
+      second: sec
+    };
+  }
+
+  function cbtDetectWebsiteClockFromDom() {
+    /* PRIMARY SOURCE:
+       Read only the small DOM neighborhood around the warehouse selector.
+       This avoids serializing/scanning the entire dashboard. */
+    var selects = [];
+    try {
+      selects = Array.prototype.slice.call(document.querySelectorAll('select')).slice(0, 16);
+    } catch(e0) {}
+
+    for (var s = 0; s < selects.length; s++) {
+      var sel = selects[s];
+      var selectedText = '';
+      try {
+        selectedText =
+          sel.options && sel.selectedIndex >= 0
+            ? String(sel.options[sel.selectedIndex].textContent || '')
+            : '';
+      } catch(e1) {}
+
+      var looksLikeStore =
+        /amazon\s*fresh|store|warehouse|\bUS[A-Z0-9]{2,}\b/i.test(selectedText);
+
+      var node = sel;
+      for (var depth = 0; node && depth < 4; depth++, node = node.parentElement) {
+        var nearby = [node];
+        if (node.previousElementSibling) nearby.push(node.previousElementSibling);
+        if (node.nextElementSibling) nearby.push(node.nextElementSibling);
+
+        for (var n = 0; n < nearby.length; n++) {
+          var el = nearby[n];
+          var txt = '';
+          try { txt = String(el.textContent || '').replace(/\s+/g, ' ').trim(); } catch(e2) {}
+
+          /* Never let a large ancestor turn this into a page-wide text scan. */
+          if (!txt || txt.length > 2500) continue;
+
+          var parsed = cbtParseWebsiteClockText(txt);
+          if (parsed &&
+              (looksLikeStore ||
+               /\b(?:Africa|America|Asia|Atlantic|Australia|Europe|Pacific)\//.test(txt))) {
+            return parsed;
+          }
+        }
+      }
+    }
+
+    /* SECONDARY SOURCE: explicit timezone metadata/classes. It may not expose
+       the clock value, but still gives us the correct warehouse timezone. */
+    var selectors = [
+      '[data-timezone]',
+      '[data-time-zone]',
+      '[data-store-timezone]',
+      '[data-site-timezone]',
+      '[class*="timezone"]',
+      '[class*="time-zone"]',
+      '[id*="timezone"]',
+      '[id*="time-zone"]'
+    ];
+
+    var nodes = [];
+    try {
+      nodes = Array.prototype.slice.call(
+        document.querySelectorAll(selectors.join(','))
+      ).slice(0, 32);
+    } catch(e3) {}
+
+    for (var i = 0; i < nodes.length; i++) {
+      var item = nodes[i];
+      var candidates = [
+        item.getAttribute && item.getAttribute('data-timezone'),
+        item.getAttribute && item.getAttribute('data-time-zone'),
+        item.getAttribute && item.getAttribute('data-store-timezone'),
+        item.getAttribute && item.getAttribute('data-site-timezone'),
+        item.getAttribute && item.getAttribute('title'),
+        item.textContent
+      ];
+
+      for (var j = 0; j < candidates.length; j++) {
+        var p = cbtParseWebsiteClockText(candidates[j]);
+        if (p) return p;
+
+        var found = cbtNormalizeTimezoneCandidate(candidates[j]);
+        if (found) {
+          return { tz: found, timeText: '', hour: null, minute: null, second: null };
+        }
+      }
+    }
+
+    return null;
+  }
+
+  function cbtDetectTimezoneFromDom() {
+    var c = cbtDetectWebsiteClockFromDom();
+    return c && c.tz ? c.tz : null;
+  }
+
+  function cbtWebsiteClockCandidateMs(clock, baseNowMs) {
+    if (!clock || !clock.tz || clock.hour == null || clock.minute == null) {
+      return null;
+    }
+
+    baseNowMs = Number(baseNowMs);
+    if (!isFinite(baseNowMs)) baseNowMs = Date.now();
+
+    var dp = cbtZonedDateParts(baseNowMs, clock.tz);
+    if (!dp) return null;
+
+    function candidateFor(y, mo, d) {
+      var ms = cbtZonedLocalToEpoch(
+        y, mo, d,
+        clock.hour,
+        clock.minute,
+        clock.second != null ? clock.second : 0,
+        clock.tz
+      );
+      if (ms == null || !isFinite(ms)) return null;
+
+      /* The COMO header normally shows only HH:MM. Preserve the current
+         seconds/milliseconds so the countdown remains smooth between the
+         website's minute changes. */
+      if (clock.second == null) {
+        ms += ((baseNowMs % 60000) + 60000) % 60000;
+      }
+      return ms;
+    }
+
+    var today = candidateFor(dp.year, dp.month, dp.day);
+
+    var serial = Date.UTC(dp.year, dp.month - 1, dp.day);
+    var prev = new Date(serial - 86400000);
+    var next = new Date(serial + 86400000);
+
+    var options = [
+      today,
+      candidateFor(prev.getUTCFullYear(), prev.getUTCMonth() + 1, prev.getUTCDate()),
+      candidateFor(next.getUTCFullYear(), next.getUTCMonth() + 1, next.getUTCDate())
+    ].filter(function(v){ return v != null && isFinite(v); });
+
+    if (!options.length) return null;
+
+    options.sort(function(a, b){
+      return Math.abs(a - baseNowMs) - Math.abs(b - baseNowMs);
+    });
+    return options[0];
+  }
+
+  function cbtStoreNowMs() {
+    /* For deadline logic, the COMO website clock is authoritative. This is
+       separate from the Live elapsed timer clock, which continues to use the
+       backend HTTP Date calibration. */
+    if (_storeWebsiteClockAnchorMs != null &&
+        _storeWebsiteClockAnchorPerfMs != null &&
+        Date.now() - _storeWebsiteClockSeenAt < 15000) {
+      var n = _storeWebsiteClockAnchorMs +
+        (cbtPerfNow() - _storeWebsiteClockAnchorPerfMs);
+      if (isFinite(n)) return n;
+    }
+
+    try {
+      var serverNow = cbtNowMs();
+      if (isFinite(serverNow)) return serverNow;
+    } catch(e) {}
+
+    return Date.now();
+  }
+
+  function cbtSyncTimezoneFromWebsiteClock(force) {
+    /* Reuse the existing 2-second stats heartbeat. No new interval and no new
+       MutationObserver. It follows BOTH the warehouse timezone and the actual
+       clock value displayed by COMO. */
+    var realNow = Date.now();
+    if (!force && realNow - _storeHeaderTimezoneSyncAt < 1500) return false;
+    _storeHeaderTimezoneSyncAt = realNow;
+
+    var clock = null;
+    try { clock = cbtDetectWebsiteClockFromDom(); } catch(e) {}
+    if (!clock || !clock.tz) return false;
+
+    var tzChanged = cbtSetStoreTimezone(
+      clock.tz,
+      cbtStoreScope(),
+      'website-clock'
+    );
+
+    if (clock.hour != null && clock.minute != null) {
+      var baseNow;
+      try { baseNow = cbtNowMs(); } catch(e2) { baseNow = Date.now(); }
+      if (!isFinite(baseNow)) baseNow = Date.now();
+
+      var websiteNow = cbtWebsiteClockCandidateMs(clock, baseNow);
+      if (websiteNow != null && isFinite(websiteNow)) {
+        _storeWebsiteClockAnchorMs = websiteNow;
+        _storeWebsiteClockAnchorPerfMs = cbtPerfNow();
+        _storeWebsiteClockSeenAt = realNow;
+      }
+    }
+
+    return tzChanged;
+  }
+
+
+  function cbtCaptureTimezoneFromPayload(root, scope) {
+    if (!root || typeof root !== 'object') return null;
+
+    /* This runs only inside the script's existing idle JSON processing. Keep
+       the traversal bounded and stop at the first explicit timezone field. */
+    var stack = [{ v: root, depth: 0 }];
+    var seen = 0;
+    var keyRe = /^(?:time.?zone(?:id)?|timezone(?:id)?|tz|zoneId|ianaTimeZone|ianaZone|storeTimeZone|storeTimezone|siteTimeZone|siteTimezone)$/i;
+
+    while (stack.length && seen < 300) {
+      var item = stack.pop();
+      var v = item.v;
+      if (!v || typeof v !== 'object') continue;
+      seen++;
+
+      if (Array.isArray(v)) {
+        if (item.depth >= 4) continue;
+        for (var ai = Math.min(v.length, 40) - 1; ai >= 0; ai--) {
+          if (v[ai] && typeof v[ai] === 'object') {
+            stack.push({ v: v[ai], depth: item.depth + 1 });
+          }
+        }
+        continue;
+      }
+
+      var keys;
+      try { keys = Object.keys(v); } catch(e0) { continue; }
+
+      for (var k = 0; k < keys.length; k++) {
+        var key = keys[k];
+        var value = v[key];
+
+        if (typeof value === 'string' && keyRe.test(key)) {
+          var tz = cbtNormalizeTimezoneCandidate(value);
+          if (tz) {
+            cbtSetStoreTimezone(tz, scope || cbtStoreScope(), 'api');
+            return tz;
+          }
+        }
+
+        if (item.depth < 4 && value && typeof value === 'object') {
+          stack.push({ v: value, depth: item.depth + 1 });
+        }
+      }
+    }
+
+    return null;
+  }
+
+  function cbtRefreshStoreIdFromLocation() {
+    var nextStore = cbtStoreIdFromLocation();
+    if (!nextStore || nextStore === STORE_ID) return false;
+
+    STORE_ID = nextStore;
+
+    /* Any same-tab warehouse switch must discard store-specific transient
+       values immediately. Long-term history remains untouched. */
+    _storeTimezoneCache = null;
+    _storeTimezoneCacheAt = 0;
+    _storeTimezoneCacheScope = '';
+    _storeTimezoneSource = '';
+    _storeTimezoneProbeAt = 0;
+    _storeHeaderTimezoneSyncAt = 0;
+    _storeWebsiteClockAnchorMs = null;
+    _storeWebsiteClockAnchorPerfMs = null;
+    _storeWebsiteClockSeenAt = 0;
+    _parseTimeMemo = Object.create(null);
+    _parseTimeMemoDay = '';
+
+    try {
+      _statsLastSummaryData = null;
+      _statsLastRequestAt = 0;
+      _statsStartupRecheckTries = 0;
+    } catch(e0) {}
+
+    try {
+      if (taskCache && typeof taskCache.clear === 'function') taskCache.clear();
+    } catch(e1) {}
+
+    try {
+      _cbtLiveDashboardSyncPending = true;
+      _cbtStaleLiveZeroTaskPolls = 0;
+    } catch(e2) {}
+
+    /* Use an already-known per-store timezone instantly when available. */
+    var stored = cbtLoadStoredTimezone(cbtStoreScope());
+    if (stored) cbtSetStoreTimezone(stored, cbtStoreScope(), 'session');
+
+    return true;
+  }
+
   function getStoreTimezone() {
     var nowMs = Date.now();
-
-    /* Scope the cache to the store currently present in the COMO URL. If the
-       user switches stores through SPA navigation, the old store's timezone
-       is discarded immediately rather than being retained for 10 minutes. */
-    var scope = '';
-    try {
-      var sm = location.pathname.match(/\/store\/([^/]+)/i);
-      scope = sm && sm[1] ? sm[1] : (location.host + location.pathname);
-    } catch(e0) {
-      scope = location.host || '';
-    }
-
-    if (_storeTimezoneCache && _storeTimezoneCacheScope === scope &&
-        nowMs - _storeTimezoneCacheAt < 10 * 60 * 1000) {
-      return _storeTimezoneCache;
-    }
+    var scope = cbtStoreScope();
 
     if (_storeTimezoneCacheScope !== scope) {
       _storeTimezoneCache = null;
+      _storeTimezoneCacheAt = 0;
+      _storeTimezoneSource = '';
+      _storeTimezoneProbeAt = 0;
       _parseTimeMemo = Object.create(null);
       _parseTimeMemoDay = '';
+      _storeTimezoneCacheScope = scope;
     }
 
-    var tz = null;
-    var tzEl = document.querySelector('[class*="timezone"], [class*="time-zone"], .store-time, .current-time');
-    if (tzEl) {
-      var match = (tzEl.textContent || '').match(/([A-Za-z]+\/[A-Za-z_]+)/);
-      if (match) tz = match[1];
+    if (_storeTimezoneCache) {
+      var ttl = _storeTimezoneSource === 'browser-fallback'
+        ? CBT_TZ_FALLBACK_CACHE_MS
+        : CBT_TZ_CONFIRMED_CACHE_MS;
+
+      if (nowMs - _storeTimezoneCacheAt < ttl) {
+        return _storeTimezoneCache;
+      }
     }
 
-    /* This fallback used to serialize document.body.innerHTML once for EVERY
-       row, on EVERY sort. On a large COMO dashboard that is expensive.
-       Scan it at most once per cache window instead. */
-    if (!tz) {
-      var bodyText = document.body ? document.body.innerHTML : '';
-      var tzMatch = bodyText.match(/America\/[A-Za-z_]+/);
-      if (tzMatch) tz = tzMatch[0];
+    /* First choice after memory: a timezone already learned for this exact
+       warehouse earlier in the same tab/session. */
+    var stored = cbtLoadStoredTimezone(scope);
+    if (stored) {
+      _storeTimezoneCache = stored;
+      _storeTimezoneCacheAt = nowMs;
+      _storeTimezoneCacheScope = scope;
+      _storeTimezoneSource = 'session';
+      return stored;
     }
 
-    _storeTimezoneCache = tz || 'America/New_York';
+    /* Probe only a tiny set of likely metadata nodes, and throttle retries.
+       API payload discovery can override this immediately at any time. */
+    if (nowMs - _storeTimezoneProbeAt >= CBT_TZ_DOM_PROBE_MS) {
+      _storeTimezoneProbeAt = nowMs;
+      var domTz = cbtDetectTimezoneFromDom();
+      if (domTz) {
+        cbtSetStoreTimezone(domTz, scope, 'dom');
+        return domTz;
+      }
+    }
+
+    /* Do NOT assume New York for every warehouse. Until COMO reveals its
+       store timezone, use the workstation zone only as a short-lived visual
+       fallback. It is deliberately not persisted and is automatically
+       replaced as soon as DOM/API metadata identifies the warehouse zone. */
+    var fallback = null;
+    try {
+      fallback = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    } catch(e) {}
+    fallback = cbtNormalizeTimezoneCandidate(fallback) || 'America/New_York';
+
+    _storeTimezoneCache = fallback;
     _storeTimezoneCacheAt = nowMs;
     _storeTimezoneCacheScope = scope;
-    return _storeTimezoneCache;
+    _storeTimezoneSource = 'browser-fallback';
+    return fallback;
+  }
+
+  function cbtZonedDateParts(ms, tz) {
+    try {
+      var parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: tz,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hourCycle: 'h23'
+      }).formatToParts(new Date(ms));
+
+      var out = { year: 0, month: 0, day: 0 };
+      for (var i = 0; i < parts.length; i++) {
+        if (parts[i].type === 'year') out.year = parseInt(parts[i].value, 10) || 0;
+        else if (parts[i].type === 'month') out.month = parseInt(parts[i].value, 10) || 0;
+        else if (parts[i].type === 'day') out.day = parseInt(parts[i].value, 10) || 0;
+      }
+      return (out.year && out.month && out.day) ? out : null;
+    } catch(e) {
+      return null;
+    }
+  }
+
+  function cbtZonedLocalToEpoch(year, month, day, hour, minute, second, tz) {
+    /* Convert a wall-clock time in an arbitrary IANA zone to epoch ms without
+       depending on the workstation timezone. Two/three correction passes are
+       enough for normal DST offsets and avoid parsing locale-specific strings. */
+    /* Backward-compatible call shape:
+       old: (year,month,day,hour,minute,tz)
+       new: (year,month,day,hour,minute,second,tz) */
+    if (typeof second === 'string' && tz == null) {
+      tz = second;
+      second = 0;
+    }
+    second = Number(second) || 0;
+
+    var wantedUtc = Date.UTC(year, month - 1, day, hour, minute, second, 0);
+    var guess = wantedUtc;
+
+    for (var pass = 0; pass < 3; pass++) {
+      var parts;
+      try {
+        parts = new Intl.DateTimeFormat('en-US', {
+          timeZone: tz,
+          year: 'numeric',
+          month: '2-digit',
+          day: '2-digit',
+          hour: '2-digit',
+          minute: '2-digit',
+          second: '2-digit',
+          hourCycle: 'h23'
+        }).formatToParts(new Date(guess));
+      } catch(e0) {
+        return null;
+      }
+
+      var p = { year:0, month:0, day:0, hour:0, minute:0, second:0 };
+      for (var i = 0; i < parts.length; i++) {
+        var x = parts[i];
+        if (x.type === 'year') p.year = parseInt(x.value,10)||0;
+        else if (x.type === 'month') p.month = parseInt(x.value,10)||0;
+        else if (x.type === 'day') p.day = parseInt(x.value,10)||0;
+        else if (x.type === 'hour') p.hour = parseInt(x.value,10)||0;
+        else if (x.type === 'minute') p.minute = parseInt(x.value,10)||0;
+        else if (x.type === 'second') p.second = parseInt(x.value,10)||0;
+      }
+
+      var actualUtc = Date.UTC(
+        p.year, p.month - 1, p.day, p.hour, p.minute, p.second, 0
+      );
+      var delta = wantedUtc - actualUtc;
+      guess += delta;
+
+      if (Math.abs(delta) < 1000) break;
+    }
+
+    return guess;
   }
 
   function parseTime(raw) {
@@ -2219,13 +2796,25 @@
     if (!m) return null;
 
     var tz = getStoreTimezone();
-    var now = new Date();
-    var dateStr;
-    try { dateStr = now.toLocaleDateString('en-CA', { timeZone: tz }); }
-    catch(e0) { dateStr = now.toLocaleDateString('en-CA'); }
+    var nowMs = cbtStoreNowMs();
+    var dateParts = cbtZonedDateParts(nowMs, tz);
 
-    if (_parseTimeMemoDay !== dateStr + '|' + tz) {
-      _parseTimeMemoDay = dateStr + '|' + tz;
+    if (!dateParts) {
+      var localNow = new Date(nowMs);
+      dateParts = {
+        year: localNow.getFullYear(),
+        month: localNow.getMonth() + 1,
+        day: localNow.getDate()
+      };
+    }
+
+    var dateKey =
+      String(dateParts.year) + '-' +
+      String(dateParts.month).padStart(2, '0') + '-' +
+      String(dateParts.day).padStart(2, '0');
+
+    if (_parseTimeMemoDay !== dateKey + '|' + tz) {
+      _parseTimeMemoDay = dateKey + '|' + tz;
       _parseTimeMemo = Object.create(null);
     }
 
@@ -2234,23 +2823,48 @@
       return _parseTimeMemo[memoKey];
     }
 
-    var h = parseInt(m[1], 10), mn = parseInt(m[2], 10);
+    var h = parseInt(m[1], 10);
+    var mn = parseInt(m[2], 10);
     var ap = m[3] ? m[3].toUpperCase() : null;
+
     if (ap === 'PM' && h < 12) h += 12;
     if (ap === 'AM' && h === 12) h = 0;
 
-    var result = null;
-    try {
-      var fullStr = dateStr + 'T' + String(h).padStart(2,'0') + ':' + String(mn).padStart(2,'0') + ':00';
-      result = new Date(fullStr + ' ' + Intl.DateTimeFormat('en-US', {
-        timeZone: tz, timeZoneName: 'short'
-      }).formatToParts(now).find(function(p){ return p.type === 'timeZoneName'; }).value).getTime();
-      if (isNaN(result)) throw new Error('fallback');
-      if (result > Date.now() + 8 * 3600000) result -= 86400000;
-    } catch(e) {
-      var d = new Date(); d.setHours(h, mn, 0, 0);
-      if (d.getTime() > Date.now() + 8 * 3600000) d.setDate(d.getDate() - 1);
+    var result = cbtZonedLocalToEpoch(
+      dateParts.year,
+      dateParts.month,
+      dateParts.day,
+      h,
+      mn,
+      tz
+    );
+
+    if (result == null || isNaN(result)) {
+      var d = new Date();
+      d.setHours(h, mn, 0, 0);
       result = d.getTime();
+    }
+
+    /* Batch targets shown late at night can refer to the previous store day.
+       Recompute using the previous calendar date IN THE STORE'S timezone,
+       rather than blindly subtracting 24h across a DST boundary. */
+    if (result > nowMs + 8 * 3600000) {
+      var prevDate = new Date(Date.UTC(
+        dateParts.year,
+        dateParts.month - 1,
+        dateParts.day
+      ) - 86400000);
+
+      var prevResult = cbtZonedLocalToEpoch(
+        prevDate.getUTCFullYear(),
+        prevDate.getUTCMonth() + 1,
+        prevDate.getUTCDate(),
+        h,
+        mn,
+        tz
+      );
+
+      if (prevResult != null && !isNaN(prevResult)) result = prevResult;
     }
 
     _parseTimeMemo[memoKey] = result;
@@ -2349,7 +2963,7 @@
      PART 2 — TIME LEFT COLUMN
   ══════════════════════════════════════════ */
   function fmtTimeLeft(targetMs) {
-    var diffMs  = targetMs - Date.now();
+    var diffMs  = targetMs - cbtStoreNowMs();
     var diffMin = Math.floor(Math.abs(diffMs) / 60000);
     var diffSec = Math.floor((Math.abs(diffMs) % 60000) / 1000);
     if (diffMs < 0) return { text: 'Overdue ' + diffMin + 'm', cls: 'overdue' };
@@ -2433,6 +3047,11 @@
 
   function tickTimers() {
     if (document.hidden || !isDashboardView()) return;
+
+    /* Tiny header-only sync, throttled internally. Reuses this existing timer;
+       no additional interval/observer is created. */
+    try { cbtSyncTimezoneFromWebsiteClock(false); } catch(eClock) {}
+
     document.querySelectorAll('.etf-timeleft[data-target]').forEach(function (el) {
       var targetMs = parseInt(el.dataset.target, 10);
       if (!targetMs) return;
@@ -2520,7 +3139,7 @@
      The old recommendation divided remaining PACKAGES by live batcher speed.
      That could recommend "1" even when many carts were due soon.
 
-     v23.9.110 deliberately does NOT use individual associate speed/rate.
+     v23.9.116 deliberately does NOT use individual associate speed/rate.
 
      It treats each open batching job/cart as one unit of work and asks:
        "How many concurrent batchers are needed to clear these carts before
@@ -2598,7 +3217,7 @@
   }
 
   function cbtRecStoreClock(nowMs) {
-    var now = new Date(nowMs || Date.now());
+    var now = new Date(nowMs || cbtStoreNowMs());
     try {
       var parts = new Intl.DateTimeFormat('en-US', {
         timeZone: getStoreTimezone(),
@@ -2872,7 +3491,7 @@
   }
 
   function cbtRecCalculate(data, nowMs, mainTasks) {
-    nowMs = Number(nowMs) || Date.now();
+    nowMs = Number(nowMs) || cbtStoreNowMs();
     var cycle = cbtRecCycleInfo(nowMs);
 
     if (mainTasks === undefined) {
@@ -3053,6 +3672,10 @@
 
   var CBT_STATS_REFRESH_MS = 2000;
   var CBT_STATS_WARM_MAX_AGE_MS = 120000;
+  var CBT_STATS_WARM_CYCLE_GRACE_MS = 30000;
+  var CBT_STATS_WARM_WRITE_MIN_MS = 15000;
+  var _statsWarmLastSerialized = '';
+  var _statsWarmLastWriteAt = 0;
   var _statsLastSummaryData = null;
   var _statsLastRequestAt = 0;
   var _statsStartupRecheckTimer = 0;
@@ -3064,64 +3687,107 @@
 
   function cbtStatsCurrentCycleKey() {
     try {
-      var c = cbtRecCycleInfo(Date.now());
+      var c = cbtRecCycleInfo(cbtStoreNowMs());
       return c && c.key ? String(c.key) : '';
     } catch(e) {}
 
     return '';
   }
 
-  function cbtStatsLoadWarm() {
+  function cbtStatsReadWarmRaw() {
+    var raw = null;
+
+    /* sessionStorage is fastest and survives a normal reload in the same tab. */
+    try { raw = sessionStorage.getItem(cbtStatsCacheKey()); } catch(e0) {}
+
+    /* localStorage is a fallback for cases where the dashboard opens/reloads in
+       a new tab. It is still store-scoped and age-limited below. */
+    if (!raw) {
+      try { raw = localStorage.getItem(cbtStatsCacheKey()); } catch(e1) {}
+    }
+
+    if (!raw) return null;
+
     try {
-      var raw = sessionStorage.getItem(cbtStatsCacheKey());
-      if (!raw) return null;
-
       var s = JSON.parse(raw);
-      if (!s || !s.ts) return null;
+      return s && s.ts ? s : null;
+    } catch(e2) {
+      return null;
+    }
+  }
 
-      if ((Date.now() - Number(s.ts)) > CBT_STATS_WARM_MAX_AGE_MS) {
+  function cbtStatsLoadWarm(allowFreshCycleMismatch) {
+    var s = cbtStatsReadWarmRaw();
+    if (!s || !s.ts) return null;
+
+    var age = Date.now() - Number(s.ts);
+    if (!isFinite(age) || age < 0 || age > CBT_STATS_WARM_MAX_AGE_MS) {
+      return null;
+    }
+
+    /* Normally a recommendation never crosses a :55 planning cycle. During a
+       literal page reload, however, the website clock may not have mounted yet.
+       Allow a VERY fresh store-scoped value for up to 30 seconds as display-only
+       hydration, then replace it as soon as current Tasks become authoritative. */
+    var cycleKey = cbtStatsCurrentCycleKey();
+    if (cycleKey && s.cycleKey && String(s.cycleKey) !== cycleKey) {
+      if (!allowFreshCycleMismatch || age > CBT_STATS_WARM_CYCLE_GRACE_MS) {
         return null;
       }
+    }
 
-      /* Never carry a recommendation across a new :55 planning cycle. */
-      var cycleKey = cbtStatsCurrentCycleKey();
-      if (cycleKey && s.cycleKey && String(s.cycleKey) !== cycleKey) {
-        return null;
-      }
+    if (s.inProgress == null ||
+        s.remaining == null ||
+        s.recommended == null) {
+      return null;
+    }
 
-      if (s.inProgress == null ||
-          s.remaining == null ||
-          s.recommended == null) {
-        return null;
-      }
-
-      return s;
-    } catch(e) {}
-
-    return null;
+    return s;
   }
 
   function cbtStatsSaveWarm(inProgress, remaining, recommended, dotColor, recTitle, cycleKey) {
     if (inProgress == null || remaining == null || recommended == null) return;
 
-    try {
-      sessionStorage.setItem(
-        cbtStatsCacheKey(),
-        JSON.stringify({
-          ts: Date.now(),
-          cycleKey: cycleKey || cbtStatsCurrentCycleKey(),
-          inProgress: Number(inProgress),
-          remaining: Number(remaining),
-          recommended: Number(recommended),
-          dotColor: dotColor || 'gray',
-          recTitle: recTitle || ''
-        })
-      );
-    } catch(e) {}
+    var payload = {
+      ts: Date.now(),
+      cycleKey: cycleKey || cbtStatsCurrentCycleKey(),
+      inProgress: Number(inProgress),
+      remaining: Number(remaining),
+      recommended: Number(recommended),
+      dotColor: dotColor || 'gray',
+      recTitle: recTitle || ''
+    };
+
+    /* Do not synchronously write browser storage every 2 seconds. Write only
+       when the visible values/cycle changed, or occasionally refresh the age.
+       This keeps the warm reload benefit without creating site lag. */
+    var valueKey = JSON.stringify({
+      cycleKey: payload.cycleKey,
+      inProgress: payload.inProgress,
+      remaining: payload.remaining,
+      recommended: payload.recommended,
+      dotColor: payload.dotColor,
+      recTitle: payload.recTitle
+    });
+
+    var nowMs = Date.now();
+    if (valueKey === _statsWarmLastSerialized &&
+        nowMs - _statsWarmLastWriteAt < CBT_STATS_WARM_WRITE_MIN_MS) {
+      return;
+    }
+
+    var raw = JSON.stringify(payload);
+    _statsWarmLastSerialized = valueKey;
+    _statsWarmLastWriteAt = nowMs;
+
+    try { sessionStorage.setItem(cbtStatsCacheKey(), raw); } catch(e0) {}
+    try { localStorage.setItem(cbtStatsCacheKey(), raw); } catch(e1) {}
   }
 
   function cbtStatsHydrateWarm() {
-    var s = cbtStatsLoadWarm();
+    /* On a reload, favor immediate display. A <=30s cycle mismatch is allowed
+       only here because it is visibly marked Refreshing current dashboard… */
+    var s = cbtStatsLoadWarm(true);
     if (!s) return false;
 
     updateStats(
@@ -3129,11 +3795,13 @@
       s.remaining,
       s.recommended,
       s.dotColor || 'gray',
-      'Refreshing current dashboard…' + (s.recTitle ? ' · ' + s.recTitle : '')
+      'Refreshing current dashboard…' + (s.recTitle ? ' · ' + s.recTitle : ''),
+      false
     );
 
     return true;
   }
+
 
   function cbtStatsScheduleStartupRecheck() {
     /* Re-use the already-fetched JSON while Angular is finishing the main
@@ -3169,7 +3837,7 @@
     recTitle: null
   };
 
-  function updateStats(inProgress, remaining, recommended, dotColor, recTitle) {
+  function updateStats(inProgress, remaining, recommended, dotColor, recTitle, provisional) {
     var elIP    = document.getElementById('cbt-stat-ip');
     var elRem   = document.getElementById('cbt-stat-rem');
     var elRec   = document.getElementById('cbt-stat-rec');
@@ -3195,7 +3863,7 @@
     var deltaClass = '';
     var deltaTitle = '';
 
-    if (isFinite(actualNum) && isFinite(recNum) && recNum >= 0) {
+    if (!provisional && isFinite(actualNum) && isFinite(recNum) && recNum >= 0) {
       var diff = recNum - actualNum;
       if (diff > 0) {
         deltaText = '+' + diff;
@@ -3289,7 +3957,7 @@
     }, 0);
     var remaining = Math.max(0, expected - (batched + collected));
 
-    var calc = cbtRecCalculate(data, Date.now(), mainTasks);
+    var calc = cbtRecCalculate(data, cbtStoreNowMs(), mainTasks);
     var recommended = cbtRecLockedValue(calc, mainTasks);
 
     /* During the short Angular startup window, keep the last SAME-CYCLE
@@ -3297,11 +3965,46 @@
        Remaining can already use the new API response because it is independent
        of the normal-Tasks DOM snapshot. */
     var warm = null;
+    var provisional =
+      !mainTasks ||
+      scopedStaffingJobs === null ||
+      !calc ||
+      calc.ready === false;
+
     if (inProgress == null || recommended == null) {
-      warm = cbtStatsLoadWarm();
+      /* Strict same-cycle warm data is the first startup fallback. */
+      warm = cbtStatsLoadWarm(false);
+
       if (warm) {
         if (inProgress == null) inProgress = warm.inProgress;
         if (recommended == null) recommended = warm.recommended;
+      }
+
+      /* If this is the first load for the tab and no warm snapshot exists,
+         activeJobSummary already gives us a fresh live BATCHING count. Show it
+         immediately as provisional while the normal Tasks DOM finishes.
+         The +/- staffing delta stays hidden until the authoritative snapshot. */
+      if (inProgress == null) {
+        inProgress = staffingJobs.filter(function (j) {
+          var st = String(j.operationState || j.state || '').toUpperCase();
+          return st === 'IN_PROGRESS' || st === 'BATCHING';
+        }).length;
+      }
+
+      /* Recommended is locked in store-scoped state for the current :55 cycle.
+         Reuse that value instantly when available instead of waiting on Angular. */
+      if (recommended == null) {
+        try {
+          var recState = cbtRecLoadState();
+          var currentCycle = cbtStatsCurrentCycleKey();
+          if (recState &&
+              recState.cycleKey &&
+              currentCycle &&
+              String(recState.cycleKey) === String(currentCycle) &&
+              recState.locked != null) {
+            recommended = Math.max(0, Number(recState.locked) || 0);
+          }
+        } catch(eRecWarm) {}
       }
     }
 
@@ -3318,17 +4021,17 @@
       }
     }
 
-    var recTitle =
-      (calc && calc.ready === false && warm)
-        ? 'Refreshing current dashboard…'
-        : cbtRecTooltip(calc, recommended);
+    var recTitle = provisional
+      ? 'Refreshing current dashboard…'
+      : cbtRecTooltip(calc, recommended);
 
     updateStats(
       inProgress,
       remaining,
       recommended,
       dotColor,
-      recTitle
+      recTitle,
+      provisional
     );
 
     /* Only persist a fully authoritative SAME-snapshot result. Warm fallback
@@ -3358,6 +4061,13 @@
   function fetchAndUpdate() {
     if (_statsFetchInFlight || document.hidden || !isDashboardView()) return;
 
+    /* The website clock is authoritative. Example from the COMO header:
+       America/Los_Angeles 07:02 PM
+       Checking it here costs only a few tiny DOM reads and uses the existing
+       stats cadence, so warehouse/time-setting changes are picked up quickly
+       without another observer or polling loop. */
+    try { cbtSyncTimezoneFromWebsiteClock(false); } catch(eClock) {}
+
     _statsFetchInFlight = true;
     _statsLastRequestAt = Date.now();
     removeFromHeader();
@@ -3371,6 +4081,8 @@
       .then(function (r) { return r.json(); })
       .then(function (data) {
         if (!Array.isArray(data)) data = [];
+
+        try { cbtCaptureTimezoneFromPayload(data, cbtStoreScope()); } catch(eTz) {}
 
         _statsLastSummaryData = data;
         cbtApplyStatsData(data);
@@ -3677,7 +4389,7 @@
       };
       delete _cbtObservedProgressByRef[ref];
     } else {
-      /* Critical v23.9.110 fix: for the SAME job, an authoritative API update
+      /* Critical v23.9.116 fix: for the SAME job, an authoritative API update
          may correct the clock only BACKWARD. It can never shorten elapsed time
          by introducing a newer BATCHING sub-operation. */
       if (info.startMs < cur.ms - 1000) {
@@ -4032,7 +4744,7 @@
   function cbtMergeBestFields(target, source) {
     if (!target || !source) return;
 
-    /* v23.9.110+ stores bestRate explicitly. For older cached rows, use the
+    /* v23.9.116+ stores bestRate explicitly. For older cached rows, use the
        strongest recoverable value (bestRate -> lastRate -> avgRate). */
     var candidate = Math.max(
       Number(source.bestRate) || 0,
@@ -4178,7 +4890,7 @@
       var hdr = panel.querySelector('#cbt-header');
       if (hdr) hdr.style.zoom = HEADER_FIXED_SCALE;
 
-      /* v23.9.110: pin the three-number stats row at the same 130% as the
+      /* v23.9.116: pin the three-number stats row at the same 130% as the
          header. A- / A+ must never resize Batchers, Recommended This Hour,
          or Remaining. */
       var stats = panel.querySelector('#cbt-stats-bar');
@@ -4583,7 +5295,7 @@
                   /* Legacy v23.9.31-and-older device nodes have no date
                      metadata. Keep them only while the Firebase basket has no
                      modern metadata at all, so an all-old installation still
-                     migrates once. As soon as v23.9.110 devices are present,
+                     migrates once. As soon as v23.9.116 devices are present,
                      undated stale nodes are not allowed into Today. */
                   if (!deviceDate && anyModernMeta) continue;
 
@@ -5271,7 +5983,7 @@
   var HOF_MAX_RATE = CBT_MAX_VALID_RATE; /* shared trusted-rate ceiling */
   var HOF_TOP      = 30;
 
-  /* v23.9.110 TRUSTED FASTEST RESET
+  /* v23.9.116 TRUSTED FASTEST RESET
      --------------------------------
      Legacy Fastest records were calculated before the full-span timing fix.
      They cannot be safely repaired because each historical record did not
@@ -6086,6 +6798,11 @@
   function ingestData(d, authoritative) {
     if (!d) return;
     var changed = false;
+
+    /* Reuse JSON already being processed by the existing passive interceptor.
+       This adds no request and runs in the same idle callback. */
+    try { cbtCaptureTimezoneFromPayload(d, cbtStoreScope()); } catch(eTz) {}
+
     deepCaptureNames(d, 0);
     try { afaRecordJobs(d, 0); } catch(e) {}
 
@@ -6235,6 +6952,8 @@
         cbtCalibrateServerClock(res, requestPerf);
 
         var freshData = await res.json();
+
+        try { cbtCaptureTimezoneFromPayload(freshData, cbtStoreScope()); } catch(eTz) {}
 
         _cbtBackendLastOk = Date.now();
         var activeRefs = new Set();
@@ -6753,7 +7472,7 @@
       try { afaConfirm(); } catch(err) {}
     });
 
-    /* v23.9.110: restore the original VERTICAL dashboard length.
+    /* v23.9.116: restore the original VERTICAL dashboard length.
        Width stays exactly as before. The compact 240px default from older
        versions is migrated back to 350px once. If someone manually made the
        board taller than 350px, keep that larger custom height. */
@@ -6768,7 +7487,7 @@
       }
     } catch(eRestore) {}
 
-    /* v23.9.110: persist the dashboard's collapsed/open state across reloads. */
+    /* v23.9.116: persist the dashboard's collapsed/open state across reloads. */
     var isCollapsed = false;
     try { isCollapsed = localStorage.getItem('cbt_panel_collapsed') === '1'; } catch(eCollapsedLoad) {}
     var collapseBtn = panel2.querySelector('#cbt-collapse-btn');
@@ -8419,7 +9138,7 @@
      script already sees. One cart at a time, re-checked immediately
      before each request, never the same cart twice.
   ══════════════════════════════════════ */
-  var AFA_DELAY_MS   = 900;    /* pause between carts */
+  var AFA_DELAY_MS   = 250;    /* short safety pause between carts; API writes stay sequential */
   var AFA_TIMEOUT_MS = 15000;  /* give up on a single request after this */
   var _afaJobIndex = Object.create(null);  /* shortRef -> full job id */
   var _afaJobInfo  = Object.create(null);  /* job id -> { assignability, ref } */
@@ -10697,7 +11416,7 @@
   }
 
   function cbtAssignViaUi(jobId, associate, guardFn, detailsUrl) {
-    /* v23.9.110: despite the historical function name, this no longer opens
+    /* v23.9.116: despite the historical function name, this no longer opens
        a task page or iframe. It sends the exact request captured from one
        successful manual COMO assignment:
 
@@ -11012,8 +11731,70 @@
 
     cbtAssignProgressView();
 
+    /* Assign Cart has its own short between-step timers. Browsers throttle
+       those timers in hidden tabs, which can make the assignment run appear
+       paused until the operator returns. Keep API writes sequential, but use
+       a microtask continuation while hidden instead of relying on a throttled
+       setTimeout. No polling loop is added. */
+    var assignNextTimer = 0;
+    var assignNextResume = null;
+
+    function resumeAssignPending() {
+      if (!assignNextResume) return;
+
+      var fn = assignNextResume;
+      assignNextResume = null;
+
+      if (assignNextTimer) {
+        clearTimeout(assignNextTimer);
+        assignNextTimer = 0;
+      }
+
+      fn();
+    }
+
+    function scheduleAssignStep(fn, delay) {
+      assignNextResume = fn;
+
+      if (document.hidden) {
+        Promise.resolve().then(resumeAssignPending);
+        return;
+      }
+
+      assignNextTimer = setTimeout(
+        resumeAssignPending,
+        delay == null ? 35 : delay
+      );
+    }
+
+    function onAssignVisibilityChange() {
+      if (!document.hidden || !assignNextResume) return;
+
+      if (assignNextTimer) {
+        clearTimeout(assignNextTimer);
+        assignNextTimer = 0;
+      }
+
+      Promise.resolve().then(resumeAssignPending);
+    }
+
+    document.addEventListener('visibilitychange', onAssignVisibilityChange);
+
     function finish() {
       _afaRunning = false;
+
+      try {
+        document.removeEventListener(
+          'visibilitychange',
+          onAssignVisibilityChange
+        );
+      } catch(eVis) {}
+
+      if (assignNextTimer) {
+        clearTimeout(assignNextTimer);
+        assignNextTimer = 0;
+      }
+      assignNextResume = null;
 
       afaSetBtn('▶ Run', false);
 
@@ -11038,9 +11819,9 @@
     function nextName(delay) {
       nameIndex++;
 
-      setTimeout(
+      scheduleAssignStep(
         stepName,
-        delay == null ? 100 : delay
+        delay == null ? 35 : delay
       );
     }
 
@@ -11086,7 +11867,7 @@
             results
           );
 
-          nextName(70);
+          nextName(25);
           return;
         }
 
@@ -11112,7 +11893,7 @@
 
           /* Keep the SAME selected associate and move to the next earliest
              task instead of advancing to the next name. */
-          setTimeout(tryEarliest, 60);
+          scheduleAssignStep(tryEarliest, 20);
           return;
         }
 
@@ -11154,7 +11935,7 @@
               results
             );
 
-            nextName(120);
+            nextName(35);
             return;
           }
 
@@ -11162,7 +11943,7 @@
             /* Direct API rejected this task. Block only this task and keep
                the SAME selected associate on the next earliest candidate. */
             blocked[target.key] = true;
-            setTimeout(tryEarliest, 80);
+            scheduleAssignStep(tryEarliest, 25);
             return;
           }
 
@@ -11189,7 +11970,7 @@
             results
           );
 
-          nextName(100);
+          nextName(35);
         });
       }
 
@@ -11768,7 +12549,7 @@
         return;
       }
 
-      /* v23.9.110: Assign opens associate search/selection only.
+      /* v23.9.116: Assign opens associate search/selection only.
          Do not assign, fetch a task, complete, force, or modify any task. */
       if (action === 'assign') {
         afaAssignPicker();
@@ -11902,8 +12683,50 @@
     afaProgressView(runMode);
     var results = [], i = 0;
 
+    /* Chrome/Firefox heavily throttle setTimeout in background tabs. The old
+       900ms between-cart timer therefore made Force Assign appear to stop when
+       the operator switched tabs. Keep writes strictly sequential, but while
+       hidden continue from each completed network response through a microtask
+       instead of a throttled timer. No polling loop is added. */
+    var afaNextTimer = 0;
+    var afaNextResume = null;
+
+    function resumePendingStep() {
+      if (!afaNextResume) return;
+      var fn = afaNextResume;
+      afaNextResume = null;
+      if (afaNextTimer) {
+        clearTimeout(afaNextTimer);
+        afaNextTimer = 0;
+      }
+      fn();
+    }
+
+    function onRunVisibilityChange() {
+      if (!document.hidden || !afaNextResume) return;
+
+      /* If the user switches tabs during the visible 900ms safety pause,
+         release that already-pending continuation immediately. The actual API
+         requests remain one-at-a-time, so this cannot create request bursts. */
+      if (afaNextTimer) {
+        clearTimeout(afaNextTimer);
+        afaNextTimer = 0;
+      }
+      Promise.resolve().then(resumePendingStep);
+    }
+
+    document.addEventListener('visibilitychange', onRunVisibilityChange);
+
     function finish() {
       _afaRunning = false;
+
+      try { document.removeEventListener('visibilitychange', onRunVisibilityChange); } catch(eVis) {}
+      if (afaNextTimer) {
+        clearTimeout(afaNextTimer);
+        afaNextTimer = 0;
+      }
+      afaNextResume = null;
+
       afaSetBtn('▶ Run', false);
       var stopped = _afaStop;
       /* Re-read the dashboard: any cart still sitting under Partially
@@ -11923,15 +12746,34 @@
         afaSummary(results, stopped, retryable, runMode);
       });
     }
-    function next(delay) { i++; setTimeout(step, delay); }
+
+    function next(delay) {
+      i++;
+
+      afaNextResume = function() {
+        step();
+      };
+
+      if (document.hidden) {
+        /* Network completion already gave the event loop a natural yield.
+           Microtask continuation avoids background-tab timer clamping. */
+        Promise.resolve().then(resumePendingStep);
+        return;
+      }
+
+      afaNextTimer = setTimeout(
+        resumePendingStep,
+        delay == null ? AFA_DELAY_MS : delay
+      );
+    }
 
     function step() {
       if (_afaStop || i >= list.length) return finish();
       var item = list[i];
       afaProgress(i + 1, list.length, item.ref, results);
 
-      if (!item.id) { results.push({ ref: item.ref, ok: false, msg: 'task ID not found' }); return next(60); }
-      if (_afaDone[item.id]) { results.push({ ref: item.ref, skip: true, ok: false, msg: 'already handled in this run' }); return next(60); }
+      if (!item.id) { results.push({ ref: item.ref, ok: false, msg: 'task ID not found' }); return next(20); }
+      if (_afaDone[item.id]) { results.push({ ref: item.ref, skip: true, ok: false, msg: 'already handled in this run' }); return next(20); }
 
       function doneResult(row, delay) {
         results.push(row);
@@ -12855,7 +13697,7 @@
     } catch(e2) {}
 
     /* Legacy Fastest cleanup is retained only for backward compatibility.
-       v23.9.110 reads the clean v2 Fastest namespace instead. */
+       v23.9.116 reads the clean v2 Fastest namespace instead. */
     try {
       var peaks = hofLoadPeaks(), cleanP = {};
       for (var pk in peaks) {
@@ -12880,7 +13722,7 @@
   }
 
   function runLegacyDataMigration() {
-    /* v23.9.110 intentionally starts Today + Weekly clean. Do not import any
+    /* v23.9.116 intentionally starts Today + Weekly clean. Do not import any
        pre-reset local history into the new shared generation. */
     if (gmGet('cbt_today_weekly_reset_v23948', null)) return;
 
@@ -12941,13 +13783,22 @@
     var wasDashboard = isDashboardView();
 
     function onRoute() {
+      /* Warehouse/store changes can happen through the existing SPA route.
+         Update the mutable store context before any dashboard refresh runs. */
+      var storeChanged = false;
+      try { storeChanged = cbtRefreshStoreIdFromLocation(); } catch(eStore) {}
+
       var nowDashboard = isDashboardView();
+
+      if (nowDashboard && storeChanged) {
+        try { cbtSyncTimezoneFromWebsiteClock(true); } catch(eClock) {}
+      }
       var returnedToDashboard = nowDashboard && !wasDashboard;
       wasDashboard = nowDashboard;
 
       if (!nowDashboard) detachMainPanel();
 
-      if (returnedToDashboard) {
+      if (returnedToDashboard || storeChanged) {
         /* Do not repaint old Live names from the detached dashboard panel.
            The next authoritative dashboard poll releases this gate. */
         _cbtLiveDashboardSyncPending = true;
@@ -12960,8 +13811,8 @@
       panelHealthCheck();
       taskPanelHealthCheck();
 
-      if (returnedToDashboard) {
-        /* One immediate refresh on the route transition only. Existing
+      if (returnedToDashboard || storeChanged) {
+        /* One immediate refresh on the route transition/store switch only.
            in-flight guards coalesce this with the normal 1s/2s refreshes. */
         try { pollActiveTasks(); } catch(e1) {}
         try { fetchAndUpdate(); } catch(e2) {}
@@ -13161,6 +14012,7 @@
        does not block Amazon's first paint. The response is reused when the
        panel/Tasks DOM mounts, so there is no extra parsing burst later. */
     if (isComoSite() && isDashboardView() && !document.hidden) {
+      try { cbtSyncTimezoneFromWebsiteClock(true); } catch(eClockWarm) {}
       try { fetchAndUpdate(); } catch(eStatsWarm) {}
     }
 
