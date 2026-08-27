@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.120
+// @version      23.9.121
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -2397,21 +2397,58 @@
      every job card, every second. Same pattern, allocated once. */
   var EXCLUDED_SECTION_RE = /problem\s*solve|partially\s*batched|staged\s*for\s*pickup/i;
 
+  var _excludedTurnCache = new WeakMap();
+  var _excludedTurnCacheClearQueued = false;
+
+  function cbtClearExcludedTurnCacheSoon() {
+    if (_excludedTurnCacheClearQueued) return;
+    _excludedTurnCacheClearQueued = true;
+
+    Promise.resolve().then(function(){
+      _excludedTurnCache = new WeakMap();
+      _excludedTurnCacheClearQueued = false;
+    });
+  }
+
   function isInExcludedSection(el) {
+    if (!el || el.nodeType !== 1) return false;
+
+    if (_excludedTurnCache.has(el)) {
+      return _excludedTurnCache.get(el);
+    }
+
     var node = el;
+    var excluded = false;
+
     while (node && node !== document.body) {
       var prev = node.previousElementSibling;
+
       while (prev) {
-        if (EXCLUDED_SECTION_RE.test(prev.textContent || '')) return true;
+        if (EXCLUDED_SECTION_RE.test(prev.textContent || '')) {
+          excluded = true;
+          break;
+        }
         prev = prev.previousElementSibling;
       }
+
+      if (excluded) break;
+
       if (node.parentElement) {
         var parentPrev = node.parentElement.previousElementSibling;
-        if (parentPrev && EXCLUDED_SECTION_RE.test(parentPrev.textContent || '')) return true;
+
+        if (parentPrev &&
+            EXCLUDED_SECTION_RE.test(parentPrev.textContent || '')) {
+          excluded = true;
+          break;
+        }
       }
+
       node = node.parentElement;
     }
-    return false;
+
+    _excludedTurnCache.set(el, excluded);
+    cbtClearExcludedTurnCacheSoon();
+    return excluded;
   }
 
   function injectAllTimers() {
@@ -2521,7 +2558,7 @@
      The old recommendation divided remaining PACKAGES by live batcher speed.
      That could recommend "1" even when many carts were due soon.
 
-     v23.9.120 deliberately does NOT use individual associate speed/rate.
+     v23.9.121 deliberately does NOT use individual associate speed/rate.
 
      It treats each open batching job/cart as one unit of work and asks:
        "How many concurrent batchers are needed to clear these carts before
@@ -3762,7 +3799,7 @@
       };
       delete _cbtObservedProgressByRef[ref];
     } else {
-      /* Critical v23.9.120 fix: for the SAME job, an authoritative API update
+      /* Critical v23.9.121 fix: for the SAME job, an authoritative API update
          may correct the clock only BACKWARD. It can never shorten elapsed time
          by introducing a newer BATCHING sub-operation. */
       if (info.startMs < cur.ms - 1000) {
@@ -4117,7 +4154,7 @@
   function cbtMergeBestFields(target, source) {
     if (!target || !source) return;
 
-    /* v23.9.120+ stores bestRate explicitly. For older cached rows, use the
+    /* v23.9.121+ stores bestRate explicitly. For older cached rows, use the
        strongest recoverable value (bestRate -> lastRate -> avgRate). */
     var candidate = Math.max(
       Number(source.bestRate) || 0,
@@ -4263,7 +4300,7 @@
       var hdr = panel.querySelector('#cbt-header');
       if (hdr) hdr.style.zoom = HEADER_FIXED_SCALE;
 
-      /* v23.9.120: pin the three-number stats row at the same 130% as the
+      /* v23.9.121: pin the three-number stats row at the same 130% as the
          header. A- / A+ must never resize Batchers, Recommended This Hour,
          or Remaining. */
       var stats = panel.querySelector('#cbt-stats-bar');
@@ -4668,7 +4705,7 @@
                   /* Legacy v23.9.31-and-older device nodes have no date
                      metadata. Keep them only while the Firebase basket has no
                      modern metadata at all, so an all-old installation still
-                     migrates once. As soon as v23.9.120 devices are present,
+                     migrates once. As soon as v23.9.121 devices are present,
                      undated stale nodes are not allowed into Today. */
                   if (!deviceDate && anyModernMeta) continue;
 
@@ -5356,7 +5393,7 @@
   var HOF_MAX_RATE = CBT_MAX_VALID_RATE; /* shared trusted-rate ceiling */
   var HOF_TOP      = 30;
 
-  /* v23.9.120 TRUSTED FASTEST RESET
+  /* v23.9.121 TRUSTED FASTEST RESET
      --------------------------------
      Legacy Fastest records were calculated before the full-span timing fix.
      They cannot be safely repaired because each historical record did not
@@ -6839,7 +6876,7 @@
       try { afaConfirm(); } catch(err) {}
     });
 
-    /* v23.9.120: restore the original VERTICAL dashboard length.
+    /* v23.9.121: restore the original VERTICAL dashboard length.
        Width stays exactly as before. The compact 240px default from older
        versions is migrated back to 350px once. If someone manually made the
        board taller than 350px, keep that larger custom height. */
@@ -6854,7 +6891,7 @@
       }
     } catch(eRestore) {}
 
-    /* v23.9.120: persist the dashboard's collapsed/open state across reloads. */
+    /* v23.9.121: persist the dashboard's collapsed/open state across reloads. */
     var isCollapsed = false;
     try { isCollapsed = localStorage.getItem('cbt_panel_collapsed') === '1'; } catch(eCollapsedLoad) {}
     var collapseBtn = panel2.querySelector('#cbt-collapse-btn');
@@ -10017,46 +10054,56 @@
   }
 
   var CBT_ASSIGN_PROTECT_MS = 90 * 1000;
+  var _cbtAssignProtectCache = Object.create(null);
+  var _cbtAssignProtectCacheKey = '';
+  var _cbtAssignProtectCacheLoaded = false;
 
   function cbtAssignProtectKey() {
     return 'cbt_assign_protect_v1_' + String(STORE_ID || 'unknown')
       .replace(/[^A-Za-z0-9_.-]/g, '_');
   }
 
-  function cbtAssignLoadProtection() {
-    var nowMs = Date.now();
-    var out = Object.create(null);
-    var changed = false;
+  function cbtAssignPersistProtection() {
+    if (!_cbtAssignProtectCacheLoaded || !_cbtAssignProtectCacheKey) return;
 
     try {
-      var raw = localStorage.getItem(cbtAssignProtectKey());
-      if (!raw) return out;
-
-      var parsed = JSON.parse(raw);
-      if (!parsed || typeof parsed !== 'object') return out;
-
-      Object.keys(parsed).forEach(function(jobId){
-        var row = parsed[jobId];
-        var until = Number(row && row.until) || 0;
-
-        if (until <= nowMs) {
-          changed = true;
-          return;
-        }
-
-        out[String(jobId)] = {
-          until: until,
-          associate: cbtAssignNormText(row.associate || ''),
-          ref: cbtAssignNormText(row.ref || '')
-        };
-      });
-
-      if (changed) {
-        localStorage.setItem(cbtAssignProtectKey(), JSON.stringify(out));
-      }
+      localStorage.setItem(
+        _cbtAssignProtectCacheKey,
+        JSON.stringify(_cbtAssignProtectCache)
+      );
     } catch(e) {}
+  }
 
-    return out;
+  function cbtAssignLoadProtection() {
+    var key = cbtAssignProtectKey();
+
+    /* Warehouse changed: discard only the in-memory view and load that
+       warehouse's persisted protection list once. */
+    if (!_cbtAssignProtectCacheLoaded ||
+        _cbtAssignProtectCacheKey !== key) {
+      _cbtAssignProtectCache = Object.create(null);
+      _cbtAssignProtectCacheKey = key;
+      _cbtAssignProtectCacheLoaded = true;
+
+      try {
+        var raw = localStorage.getItem(key);
+        var parsed = raw ? JSON.parse(raw) : null;
+
+        if (parsed && typeof parsed === 'object') {
+          Object.keys(parsed).forEach(function(jobId){
+            var row = parsed[jobId];
+
+            _cbtAssignProtectCache[String(jobId)] = {
+              until: Number(row && row.until) || 0,
+              associate: cbtAssignNormText(row && row.associate || ''),
+              ref: cbtAssignNormText(row && row.ref || '')
+            };
+          });
+        }
+      } catch(e) {}
+    }
+
+    return _cbtAssignProtectCache;
   }
 
   function cbtAssignProtect(jobId, associate, ref) {
@@ -10071,12 +10118,7 @@
       ref: cbtAssignNormText(ref || '')
     };
 
-    try {
-      localStorage.setItem(
-        cbtAssignProtectKey(),
-        JSON.stringify(rows)
-      );
-    } catch(e) {}
+    cbtAssignPersistProtection();
   }
 
   function cbtAssignProtection(jobId) {
@@ -10086,7 +10128,16 @@
     var rows = cbtAssignLoadProtection();
     var row = rows[jobId];
 
-    if (!row || Number(row.until) <= Date.now()) return null;
+    if (!row) return null;
+
+    if (Number(row.until) <= Date.now()) {
+      delete rows[jobId];
+
+      /* Expiry stays lazy exactly as before, but storage is written only once
+         when the expired entry is actually encountered. */
+      cbtAssignPersistProtection();
+      return null;
+    }
 
     return row;
   }
@@ -10095,8 +10146,8 @@
     return !!cbtAssignProtection(jobId);
   }
 
-  function cbtAssignProtectionSeconds(jobId) {
-    var row = cbtAssignProtection(jobId);
+  function cbtAssignProtectionSeconds(jobId, knownRow) {
+    var row = knownRow || cbtAssignProtection(jobId);
     if (!row) return 0;
 
     return Math.max(
@@ -10104,6 +10155,20 @@
       Math.ceil((Number(row.until) - Date.now()) / 1000)
     );
   }
+
+  function cbtAssignUpdateProtectionMeta(jobId, associate, ref) {
+    jobId = String(jobId || '');
+    if (!jobId) return;
+
+    var row = cbtAssignProtection(jobId);
+    if (!row) return;
+
+    row.associate = cbtAssignNormText(associate || row.associate || '');
+    row.ref = cbtAssignNormText(ref || row.ref || '');
+
+    cbtAssignPersistProtection();
+  }
+
 
   function cbtAssignReadRows() {
     var map = cbtAssignHeaderMap();
@@ -10167,6 +10232,7 @@
           : '';
 
       var packageCount = cbtAssignPackageCount(progressRaw);
+      var cartBlank = cbtAssignCartIsBlank(cart);
 
       out.push({
         key: String(id),
@@ -10174,8 +10240,8 @@
         detailsUrl: linkInfo && linkInfo.detailsUrl,
         ref: ref,
         cart: cart,
-        cartBlank: cbtAssignCartIsBlank(cart),
-        cartHasValue: !cbtAssignCartIsBlank(cart),
+        cartBlank: cartBlank,
+        cartHasValue: !cartBlank,
         assignment: assignment,
         assignmentHasName:
           !!assignment &&
@@ -10213,13 +10279,29 @@
     claimed = claimed || Object.create(null);
     blocked = blocked || Object.create(null);
 
-    return cbtAssignReadRows()
+    var protectedRows = cbtAssignLoadProtection();
+    var nowMs = Date.now();
+    var protectionPruned = false;
+
+    var rows = cbtAssignReadRows()
       .filter(function(r){
+        var p = protectedRows[r.key];
+
+        if (p && Number(p.until) <= nowMs) {
+          delete protectedRows[r.key];
+          p = null;
+          protectionPruned = true;
+        }
+
         return !claimed[r.key] &&
           !blocked[r.key] &&
-          !cbtAssignIsProtected(r.key) &&
+          !p &&
           cbtAssignRowCanBeTried(r);
-      })
+      });
+
+    if (protectionPruned) cbtAssignPersistProtection();
+
+    return rows
       .sort(function(a, b){
         /* Priority:
            1. Earliest Batch Target first.
@@ -10855,7 +10937,7 @@
           'recently assigned' +
           (protectedRow.associate ? ' to ' + protectedRow.associate : '') +
           ' — protected for ' +
-          cbtAssignProtectionSeconds(jobId) +
+          cbtAssignProtectionSeconds(jobId, protectedRow) +
           's more'
       });
     }
@@ -11043,7 +11125,7 @@
   }
 
   function cbtAssignViaUi(jobId, associate, guardFn, detailsUrl) {
-    /* v23.9.120: despite the historical function name, this no longer opens
+    /* v23.9.121: despite the historical function name, this no longer opens
        a task page or iframe. It sends the exact request captured from one
        successful manual COMO assignment:
 
@@ -11525,7 +11607,6 @@
         function targetStillEligible() {
           return !claimed[target.key] &&
             !blocked[target.key] &&
-            !cbtAssignIsProtected(target.key) &&
             cbtAssignCurrentEligible(target.key);
         }
 
@@ -11557,19 +11638,11 @@
             /* Keep the existing success timestamp, but attach the visible task
                ref for easier local debugging/history. */
             try {
-              var protection = cbtAssignProtection(target.key);
-              if (protection) {
-                var rows = cbtAssignLoadProtection();
-                rows[String(target.key)] = {
-                  until: protection.until,
-                  associate: associate,
-                  ref: target.ref
-                };
-                localStorage.setItem(
-                  cbtAssignProtectKey(),
-                  JSON.stringify(rows)
-                );
-              }
+              cbtAssignUpdateProtectionMeta(
+                target.key,
+                associate,
+                target.ref
+              );
             } catch(eProtectMeta) {}
 
             results.push({
@@ -12338,7 +12411,7 @@
         return;
       }
 
-      /* v23.9.120: Assign opens associate search/selection only.
+      /* v23.9.121: Assign opens associate search/selection only.
          Do not assign, fetch a task, complete, force, or modify any task. */
       if (action === 'assign') {
         if (b.disabled || !cbtAssignHasSiteTasks()) {
@@ -13491,7 +13564,7 @@
     } catch(e2) {}
 
     /* Legacy Fastest cleanup is retained only for backward compatibility.
-       v23.9.120 reads the clean v2 Fastest namespace instead. */
+       v23.9.121 reads the clean v2 Fastest namespace instead. */
     try {
       var peaks = hofLoadPeaks(), cleanP = {};
       for (var pk in peaks) {
@@ -13516,7 +13589,7 @@
   }
 
   function runLegacyDataMigration() {
-    /* v23.9.120 intentionally starts Today + Weekly clean. Do not import any
+    /* v23.9.121 intentionally starts Today + Weekly clean. Do not import any
        pre-reset local history into the new shared generation. */
     if (gmGet('cbt_today_weekly_reset_v23948', null)) return;
 
