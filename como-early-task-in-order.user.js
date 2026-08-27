@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.119
+// @version      23.9.120
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -2521,7 +2521,7 @@
      The old recommendation divided remaining PACKAGES by live batcher speed.
      That could recommend "1" even when many carts were due soon.
 
-     v23.9.119 deliberately does NOT use individual associate speed/rate.
+     v23.9.120 deliberately does NOT use individual associate speed/rate.
 
      It treats each open batching job/cart as one unit of work and asks:
        "How many concurrent batchers are needed to clear these carts before
@@ -3762,7 +3762,7 @@
       };
       delete _cbtObservedProgressByRef[ref];
     } else {
-      /* Critical v23.9.119 fix: for the SAME job, an authoritative API update
+      /* Critical v23.9.120 fix: for the SAME job, an authoritative API update
          may correct the clock only BACKWARD. It can never shorten elapsed time
          by introducing a newer BATCHING sub-operation. */
       if (info.startMs < cur.ms - 1000) {
@@ -4117,7 +4117,7 @@
   function cbtMergeBestFields(target, source) {
     if (!target || !source) return;
 
-    /* v23.9.119+ stores bestRate explicitly. For older cached rows, use the
+    /* v23.9.120+ stores bestRate explicitly. For older cached rows, use the
        strongest recoverable value (bestRate -> lastRate -> avgRate). */
     var candidate = Math.max(
       Number(source.bestRate) || 0,
@@ -4263,7 +4263,7 @@
       var hdr = panel.querySelector('#cbt-header');
       if (hdr) hdr.style.zoom = HEADER_FIXED_SCALE;
 
-      /* v23.9.119: pin the three-number stats row at the same 130% as the
+      /* v23.9.120: pin the three-number stats row at the same 130% as the
          header. A- / A+ must never resize Batchers, Recommended This Hour,
          or Remaining. */
       var stats = panel.querySelector('#cbt-stats-bar');
@@ -4668,7 +4668,7 @@
                   /* Legacy v23.9.31-and-older device nodes have no date
                      metadata. Keep them only while the Firebase basket has no
                      modern metadata at all, so an all-old installation still
-                     migrates once. As soon as v23.9.119 devices are present,
+                     migrates once. As soon as v23.9.120 devices are present,
                      undated stale nodes are not allowed into Today. */
                   if (!deviceDate && anyModernMeta) continue;
 
@@ -5356,7 +5356,7 @@
   var HOF_MAX_RATE = CBT_MAX_VALID_RATE; /* shared trusted-rate ceiling */
   var HOF_TOP      = 30;
 
-  /* v23.9.119 TRUSTED FASTEST RESET
+  /* v23.9.120 TRUSTED FASTEST RESET
      --------------------------------
      Legacy Fastest records were calculated before the full-span timing fix.
      They cannot be safely repaired because each historical record did not
@@ -6839,7 +6839,7 @@
       try { afaConfirm(); } catch(err) {}
     });
 
-    /* v23.9.119: restore the original VERTICAL dashboard length.
+    /* v23.9.120: restore the original VERTICAL dashboard length.
        Width stays exactly as before. The compact 240px default from older
        versions is migrated back to 350px once. If someone manually made the
        board taller than 350px, keep that larger custom height. */
@@ -6854,7 +6854,7 @@
       }
     } catch(eRestore) {}
 
-    /* v23.9.119: persist the dashboard's collapsed/open state across reloads. */
+    /* v23.9.120: persist the dashboard's collapsed/open state across reloads. */
     var isCollapsed = false;
     try { isCollapsed = localStorage.getItem('cbt_panel_collapsed') === '1'; } catch(eCollapsedLoad) {}
     var collapseBtn = panel2.querySelector('#cbt-collapse-btn');
@@ -10016,6 +10016,95 @@
     return cbtAssignSiteTaskState().hasTasks;
   }
 
+  var CBT_ASSIGN_PROTECT_MS = 90 * 1000;
+
+  function cbtAssignProtectKey() {
+    return 'cbt_assign_protect_v1_' + String(STORE_ID || 'unknown')
+      .replace(/[^A-Za-z0-9_.-]/g, '_');
+  }
+
+  function cbtAssignLoadProtection() {
+    var nowMs = Date.now();
+    var out = Object.create(null);
+    var changed = false;
+
+    try {
+      var raw = localStorage.getItem(cbtAssignProtectKey());
+      if (!raw) return out;
+
+      var parsed = JSON.parse(raw);
+      if (!parsed || typeof parsed !== 'object') return out;
+
+      Object.keys(parsed).forEach(function(jobId){
+        var row = parsed[jobId];
+        var until = Number(row && row.until) || 0;
+
+        if (until <= nowMs) {
+          changed = true;
+          return;
+        }
+
+        out[String(jobId)] = {
+          until: until,
+          associate: cbtAssignNormText(row.associate || ''),
+          ref: cbtAssignNormText(row.ref || '')
+        };
+      });
+
+      if (changed) {
+        localStorage.setItem(cbtAssignProtectKey(), JSON.stringify(out));
+      }
+    } catch(e) {}
+
+    return out;
+  }
+
+  function cbtAssignProtect(jobId, associate, ref) {
+    jobId = String(jobId || '');
+    if (!jobId) return;
+
+    var rows = cbtAssignLoadProtection();
+
+    rows[jobId] = {
+      until: Date.now() + CBT_ASSIGN_PROTECT_MS,
+      associate: cbtAssignNormText(associate || ''),
+      ref: cbtAssignNormText(ref || '')
+    };
+
+    try {
+      localStorage.setItem(
+        cbtAssignProtectKey(),
+        JSON.stringify(rows)
+      );
+    } catch(e) {}
+  }
+
+  function cbtAssignProtection(jobId) {
+    jobId = String(jobId || '');
+    if (!jobId) return null;
+
+    var rows = cbtAssignLoadProtection();
+    var row = rows[jobId];
+
+    if (!row || Number(row.until) <= Date.now()) return null;
+
+    return row;
+  }
+
+  function cbtAssignIsProtected(jobId) {
+    return !!cbtAssignProtection(jobId);
+  }
+
+  function cbtAssignProtectionSeconds(jobId) {
+    var row = cbtAssignProtection(jobId);
+    if (!row) return 0;
+
+    return Math.max(
+      1,
+      Math.ceil((Number(row.until) - Date.now()) / 1000)
+    );
+  }
+
   function cbtAssignReadRows() {
     var map = cbtAssignHeaderMap();
     if (!map) return [];
@@ -10106,13 +10195,18 @@
   function cbtAssignRowCanBeTried(r) {
     if (!r || r.batchMs == null) return false;
 
-    /* Requested rule:
-       - name only        -> TRY
-       - cart only        -> TRY
-       - neither          -> TRY
-       - name + cart      -> SKIP
-       ASSIGNABLE is a status and therefore counts as "no name". */
-    return !(r.cartHasValue && r.assignmentHasName);
+    /* Visual columns are no longer treated as proof that a task is safe or
+       unsafe to assign. All four combinations may be considered:
+       - no name + no cart -> TRY
+       - name only         -> TRY
+       - cart only         -> TRY
+       - name + cart       -> TRY
+
+       Safety is handled separately by:
+       1) the successful-assignment protection window,
+       2) a fresh read-only backend state check,
+       3) Amazon's assignToAssociate API itself. */
+    return true;
   }
 
   function cbtAssignEligibleRows(claimed, blocked) {
@@ -10123,6 +10217,7 @@
       .filter(function(r){
         return !claimed[r.key] &&
           !blocked[r.key] &&
+          !cbtAssignIsProtected(r.key) &&
           cbtAssignRowCanBeTried(r);
       })
       .sort(function(a, b){
@@ -10149,7 +10244,8 @@
 
       if (r.key !== String(jobKey)) continue;
 
-      return cbtAssignRowCanBeTried(r);
+      return !cbtAssignIsProtected(r.key) &&
+        cbtAssignRowCanBeTried(r);
     }
 
     return false;
@@ -10650,20 +10746,159 @@
     return null;
   }
 
+  function cbtAssignOperationStateDeep(obj, depth) {
+    if (!obj || typeof obj !== 'object' || depth > 4) return null;
+
+    if (Array.isArray(obj)) {
+      for (var i = 0; i < obj.length && i < 80; i++) {
+        var ar = cbtAssignOperationStateDeep(obj[i], depth + 1);
+        if (ar) return ar;
+      }
+      return null;
+    }
+
+    var preferred = [
+      'operationState',
+      'jobState',
+      'taskState'
+    ];
+
+    for (var p = 0; p < preferred.length; p++) {
+      var pv = obj[preferred[p]];
+      if (typeof pv === 'string' && pv.trim()) {
+        return pv.trim().toUpperCase();
+      }
+    }
+
+    /* Plain "state" is common, but only trust it near the top of the job
+       payload so a nested package/item state cannot incorrectly block a job. */
+    if (depth <= 2 &&
+        typeof obj.state === 'string' &&
+        obj.state.trim()) {
+      return obj.state.trim().toUpperCase();
+    }
+
+    var keys;
+    try { keys = Object.keys(obj); } catch(e) { return null; }
+
+    for (var k = 0; k < keys.length; k++) {
+      var child = obj[keys[k]];
+      if (!child || typeof child !== 'object') continue;
+
+      var r = cbtAssignOperationStateDeep(child, depth + 1);
+      if (r) return r;
+    }
+
+    return null;
+  }
+
+  function cbtAssignStateLooksAccepted(state) {
+    state = String(state || '').toUpperCase();
+
+    return (
+      state === 'BATCHING' ||
+      state === 'IN_PROGRESS' ||
+      state === 'ACCEPTED' ||
+      state === 'STARTED' ||
+      state === 'COMPLETED' ||
+      state === 'COMPLETE' ||
+      state === 'DONE'
+    );
+  }
+
+  function cbtAssignBackendPreflight(jobId) {
+    /* Fresh read-only check immediately before the POST. This does not decide
+       from Name/Cart columns. If the backend clearly says the task is already
+       active/accepted, skip it. For an unknown/non-active state, Amazon's
+       assignToAssociate endpoint remains the final authority. */
+    return afaFetchJobInfo(jobId).then(function(info){
+      if (!info) {
+        return {
+          ok: true,
+          verified: false,
+          state: null,
+          reason: 'backend state unavailable — assignment API will decide'
+        };
+      }
+
+      var state = cbtAssignOperationStateDeep(info, 0);
+
+      if (cbtAssignStateLooksAccepted(state)) {
+        return {
+          ok: false,
+          retryable: true,
+          accepted: true,
+          state: state,
+          reason: 'task already active/accepted' + (state ? ' — ' + state : '')
+        };
+      }
+
+      return {
+        ok: true,
+        verified: true,
+        state: state || null
+      };
+    });
+  }
+
   function cbtAssignFreshPreflight(jobId, guardFn) {
-    /* The dashboard row is re-read immediately before every UI step.
-       Do NOT reject merely because a name exists or Cart/s has a value by
-       itself: the user explicitly wants those one-sided cases attempted.
-       Only the BOTH-name-and-cart condition makes the row untouchable. */
+    /* Protection comes first. A successful script assignment gets 90 seconds
+       to be accepted on the scanner before this button may reassign it. */
+    var protectedRow = cbtAssignProtection(jobId);
+
+    if (protectedRow) {
+      return Promise.resolve({
+        ok: false,
+        retryable: true,
+        protected: true,
+        reason:
+          'recently assigned' +
+          (protectedRow.associate ? ' to ' + protectedRow.associate : '') +
+          ' — protected for ' +
+          cbtAssignProtectionSeconds(jobId) +
+          's more'
+      });
+    }
+
     if (guardFn && !guardFn()) {
       return Promise.resolve({
         ok: false,
         retryable: true,
-        reason: 'task now has both a name and a cart'
+        reason: 'task changed before assignment'
       });
     }
 
-    return Promise.resolve({ ok: true });
+    return cbtAssignBackendPreflight(jobId).then(function(check){
+      if (!check || !check.ok) {
+        return check || {
+          ok: false,
+          retryable: true,
+          reason: 'backend pre-check failed'
+        };
+      }
+
+      /* Re-check the live row after the GET so a task that changed during the
+         network round trip is not written blindly. */
+      if (guardFn) {
+        try {
+          if (!guardFn()) {
+            return {
+              ok: false,
+              retryable: true,
+              reason: 'task changed during backend pre-check'
+            };
+          }
+        } catch(eGuard) {
+          return {
+            ok: false,
+            retryable: true,
+            reason: 'task changed during backend pre-check'
+          };
+        }
+      }
+
+      return check;
+    });
   }
 
   function cbtAssignDashboardAssociate(jobId) {
@@ -10808,7 +11043,7 @@
   }
 
   function cbtAssignViaUi(jobId, associate, guardFn, detailsUrl) {
-    /* v23.9.119: despite the historical function name, this no longer opens
+    /* v23.9.120: despite the historical function name, this no longer opens
        a task page or iframe. It sends the exact request captured from one
        successful manual COMO assignment:
 
@@ -10862,9 +11097,12 @@
         associate
       ).then(function(r){
         if (cbtAssignDirectResponseOk(r)) {
+          cbtAssignProtect(jobId, associate, '');
+
           return {
             ok: true,
             verified: true,
+            protectedMs: CBT_ASSIGN_PROTECT_MS,
             status: r.status
           };
         }
@@ -10896,9 +11134,12 @@
             associate
           ).then(function(verified){
             if (verified === true) {
+              cbtAssignProtect(jobId, associate, '');
+
               return {
                 ok: true,
                 verified: true,
+                protectedMs: CBT_ASSIGN_PROTECT_MS,
                 status: status
               };
             }
@@ -11255,7 +11496,7 @@
                 ? ' after ' + attemptedForAssociate + ' attempt' +
                   (attemptedForAssociate === 1 ? '' : 's')
                 : '') +
-              ' — tasks with both a name and cart are skipped'
+              ' — recently assigned carts stay protected for 90 seconds'
           });
 
           cbtAssignProgress(
@@ -11284,6 +11525,7 @@
         function targetStillEligible() {
           return !claimed[target.key] &&
             !blocked[target.key] &&
+            !cbtAssignIsProtected(target.key) &&
             cbtAssignCurrentEligible(target.key);
         }
 
@@ -11312,6 +11554,24 @@
                just-assigned task in this same run. */
             claimed[target.key] = true;
 
+            /* Keep the existing success timestamp, but attach the visible task
+               ref for easier local debugging/history. */
+            try {
+              var protection = cbtAssignProtection(target.key);
+              if (protection) {
+                var rows = cbtAssignLoadProtection();
+                rows[String(target.key)] = {
+                  until: protection.until,
+                  associate: associate,
+                  ref: target.ref
+                };
+                localStorage.setItem(
+                  cbtAssignProtectKey(),
+                  JSON.stringify(rows)
+                );
+              }
+            } catch(eProtectMeta) {}
+
             results.push({
               ref: associate,
               id: target.id,
@@ -11323,7 +11583,8 @@
                 (
                   target.batchRaw ||
                   'earliest'
-                )
+                ) +
+                ' — protected 90s'
             });
 
             cbtAssignProgress(
@@ -12077,7 +12338,7 @@
         return;
       }
 
-      /* v23.9.119: Assign opens associate search/selection only.
+      /* v23.9.120: Assign opens associate search/selection only.
          Do not assign, fetch a task, complete, force, or modify any task. */
       if (action === 'assign') {
         if (b.disabled || !cbtAssignHasSiteTasks()) {
@@ -13230,7 +13491,7 @@
     } catch(e2) {}
 
     /* Legacy Fastest cleanup is retained only for backward compatibility.
-       v23.9.119 reads the clean v2 Fastest namespace instead. */
+       v23.9.120 reads the clean v2 Fastest namespace instead. */
     try {
       var peaks = hofLoadPeaks(), cleanP = {};
       for (var pk in peaks) {
@@ -13255,7 +13516,7 @@
   }
 
   function runLegacyDataMigration() {
-    /* v23.9.119 intentionally starts Today + Weekly clean. Do not import any
+    /* v23.9.120 intentionally starts Today + Weekly clean. Do not import any
        pre-reset local history into the new shared generation. */
     if (gmGet('cbt_today_weekly_reset_v23948', null)) return;
 
