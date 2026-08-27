@@ -1,6 +1,6 @@
 # COMO - Early Task In Order With Timer & Batcher Dashboard
 
-A Tampermonkey userscript for the Amazon Fresh COMO Operations Dashboard that helps dispatchers manage batching tasks, associates, deadlines, and cart actions more efficiently.
+A Tampermonkey userscript for the Amazon Fresh COMO Operations Dashboard that helps dispatchers manage batching tasks, associates, deadlines, cart actions, and staffing more efficiently.
 
 ---
 
@@ -8,7 +8,7 @@ A Tampermonkey userscript for the Amazon Fresh COMO Operations Dashboard that he
 
 ### ⏰ Early Task In Order
 
-Automatically keeps tasks organized by **Batch Target time**.
+Automatically keeps normal tasks organized by **Batch Target time**.
 
 The earliest deadline always gets priority so dispatchers can focus on the carts that need attention first.
 
@@ -31,6 +31,30 @@ The countdown updates automatically so you can immediately see how much time rem
 - 🔴 Red → overdue
 
 Problem Solve, Partially Batched, and Staged for Pickup are excluded from the normal Time Left task logic.
+
+---
+
+### 🌎 Automatic Warehouse Timezone
+
+The script automatically follows the **timezone and clock shown by the COMO website**.
+
+If you switch to a warehouse in another timezone, the script updates automatically.
+
+Example:
+
+- New York warehouse → `America/New_York`
+- Los Angeles warehouse → `America/Los_Angeles`
+
+The warehouse clock is used for:
+
+- Batch Target
+- Time Left
+- overdue calculations
+- task ordering
+- Recommended staffing timing
+- Today/store-midnight timing
+
+You do not need to manually change the script when switching warehouses.
 
 ---
 
@@ -57,25 +81,41 @@ The panel also includes associate search.
 The top of the Batcher Timer panel shows:
 
 ### 🦺 Batchers
+
 Number of associates currently batching normal tasks.
 
-### 👥 Recommended
+### 👥 Recommended This Hour
+
 Recommended minimum number of batchers based on the current task workload, Batch Targets, cart count, and time remaining.
 
 The recommendation planning cycle updates at **:55 each hour**.
 
-The recommendation is designed around task deadlines instead of individual associate speed.
+The recommendation is deadline-based and does not depend on individual associate speed.
 
 ### 📦 Remaining
-Total remaining batching package workload.
 
-### ⚡ Fast Reload
+Total remaining package workload.
 
-Batchers, Recommended, and Remaining are optimized to appear quickly after a page reload.
+---
 
-Recent same-cycle values can display immediately while the fresh dashboard data loads in the background.
+## ⚡ Fast Stat Loading
 
-The script avoids unnecessary repeated requests and heavy page scanning to reduce website lag.
+**Batchers, Recommended, and Remaining** are optimized to appear quickly after a page reload.
+
+The script can immediately show a recent store-specific snapshot while fresh dashboard data finishes loading.
+
+Fresh data automatically replaces the temporary value as soon as the normal Tasks section is authoritative.
+
+Performance protections include:
+
+- store-specific cache
+- limited storage writes
+- reuse of already-fetched data
+- no extra permanent polling loop
+- no extra MutationObserver
+- dashboard-only stats requests
+
+The `+/-` staffing difference stays hidden until fresh authoritative task data is available.
 
 ---
 
@@ -107,7 +147,7 @@ Tasks are assigned using this order:
 
 1. **Earliest Batch Target**
 2. If multiple tasks have the same Batch Target → **most packages first**
-3. If the Batch Target and package count are both the same → **task displayed higher on the dashboard first**
+3. If Batch Target and package count are both the same → **task displayed higher on the dashboard first**
 
 Example:
 
@@ -124,8 +164,6 @@ Package count is only used when Batch Targets are identical.
 
 ### Eligible Task Rules
 
-The Assign Cart feature uses these rules:
-
 | Associate Name | Cart/s | Action |
 |---|---|---|
 | Blank / ASSIGNABLE | Blank | ✅ Try |
@@ -137,7 +175,7 @@ If one task rejects an assignment, the script keeps the **same associate** and t
 
 It does not advance to the next selected associate until the current associate has been assigned or there are no eligible tasks remaining.
 
-Assignments happen directly without requiring the dispatcher to manually open each task.
+Assignments happen directly without opening each task page.
 
 ---
 
@@ -183,6 +221,44 @@ This feature is read-only and does not modify the job.
 
 ---
 
+# ⚡ Faster Cart Actions
+
+The Run actions are optimized to move quickly while still keeping API requests sequential.
+
+### Current action pacing
+
+- **Force Assign** — short pause between carts
+- **Partially Batched** — short pause between carts
+- **Auto Complete** — short pause between carts
+- **Assign Cart** — very short pause between associates/retries
+
+The script does **not** send large parallel request bursts.
+
+One API operation completes before the next begins.
+
+This keeps actions fast while reducing the chance of unnecessary site load.
+
+---
+
+# 🪟 Background Tab Processing
+
+Cart actions continue processing when you switch to another browser tab.
+
+Supported background processing:
+
+- **Assign Cart**
+- **Force Assign**
+- **Partially Batched**
+- **Auto Complete**
+
+Browsers normally throttle timers in hidden tabs. The script avoids depending on those throttled timers for the action sequence.
+
+API writes still remain sequential.
+
+**Missing Package QR** is read-only/on-demand and does not require a background write process.
+
+---
+
 # 🔎 Associate Search & Autocomplete
 
 Provides associate username/name suggestions in supported assignment fields.
@@ -197,7 +273,7 @@ The script includes QR functionality for operational values.
 
 Selected text can be displayed as a QR code for quick scanner use.
 
-The QR stays open until dismissed instead of closing automatically after a timer.
+The QR stays open until dismissed instead of automatically closing after a timer.
 
 ---
 
@@ -207,15 +283,19 @@ The script is designed to minimize impact on the COMO dashboard.
 
 Performance optimizations include:
 
-- No continuous whole-page scanning
-- Targeted DOM updates
-- Coalesced UI rendering
-- Guarded network requests
-- Hidden-tab work reduction
-- Dashboard-only stats requests
-- Reusing already-fetched data when possible
-- No unnecessary assignment polling
-- No background automatic task assignment system
+- no continuous whole-page scanning
+- targeted DOM updates
+- coalesced UI rendering
+- guarded network requests
+- hidden-tab work reduction
+- dashboard-only stats requests
+- reuse of already-fetched data
+- lightweight warehouse timezone detection
+- no unnecessary assignment polling
+- no background automatic task assignment monitor
+- no extra permanent polling loop for timezone detection
+- no extra permanent MutationObserver for timezone detection
+- sequential cart-action API writes
 
 The goal is to add dispatcher tools without making the normal COMO website feel slow.
 
@@ -228,6 +308,7 @@ The goal is to add dispatcher tools without making the normal COMO website feel 
 | Early task sorting | Earliest Batch Target gets priority |
 | Same-time package priority | Most packages first when Batch Targets match |
 | Time Left | Live deadline countdown |
+| Automatic warehouse timezone | Follows the COMO website clock/timezone |
 | Live tab | Current batchers and elapsed time |
 | Today tab | Daily associate performance |
 | Weekly tab | 7-day associate performance |
@@ -236,17 +317,18 @@ The goal is to add dispatcher tools without making the normal COMO website feel 
 | Batchers | Current active batcher count |
 | Recommended | Deadline-based staffing recommendation |
 | Remaining | Remaining package workload |
-| Fast stats loading | Restores recent stats while fresh data loads |
+| Fast stats loading | Shows recent store-specific stats while fresh data loads |
 | Assign Cart | Assign selected associates to prioritized tasks |
 | Force Assign | Process eligible UNASSIGNABLE carts |
 | Partially Batched | Separate handling for partially batched carts |
 | Auto Complete | Complete eligible tasks |
+| Faster actions | Reduced unnecessary between-action delays |
+| Background actions | Run actions continue while another browser tab is active |
 | Missing/Damaged QR | QR codes for problem packages and cart locations |
 | Associate autocomplete | Suggestions in supported associate fields |
 | QR Generator | Create scanner-friendly QR codes |
 | Click to copy | Click supported associate names to copy |
 | Resizable panel | Resize the Batcher Timer panel |
-| Theme support | Dashboard UI adapts with the script theme |
 
 ---
 
@@ -295,7 +377,7 @@ Tasks are automatically kept in Batch Target order so earlier deadlines receive 
 
 The Time Left column appears automatically beside Batch Target.
 
-It updates continuously while you are viewing the dashboard.
+It updates continuously while you are viewing the dashboard and follows the active warehouse's COMO clock.
 
 ---
 
@@ -305,14 +387,14 @@ The panel is located above the Utilization section.
 
 You can:
 
-- Switch between **Live, Today, Weekly, Fastest, and Names**
-- Search for an associate
-- View elapsed batching time
-- View bags/min
-- View Batchers, Recommended, and Remaining
-- Click supported associate names to copy them
-- Resize the dashboard panel
-- Reset the panel size
+- switch between **Live, Today, Weekly, Fastest, and Names**
+- search for an associate
+- view elapsed batching time
+- view bags/min
+- view Batchers, Recommended, and Remaining
+- click supported associate names to copy them
+- resize the dashboard panel
+- reset the panel size
 
 ---
 
@@ -344,7 +426,7 @@ Some associate autocomplete functionality is also supported on relevant:
 
 - `https://na.store-management.f3.amazon.dev/*`
 
-Features activate only on the pages where they are relevant.
+Features activate only on pages where they are relevant.
 
 ---
 
@@ -353,6 +435,10 @@ Features activate only on the pages where they are relevant.
 When a new version is published, Tampermonkey can detect the updated userscript.
 
 Use Tampermonkey's update feature to install the latest version.
+
+Current script version documented here:
+
+**v23.9.116**
 
 ---
 
