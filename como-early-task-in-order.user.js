@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.97
+// @version      23.9.110
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -22,7 +22,7 @@
      inside those probe frames. The Amazon page inside the frame still loads
      normally, but duplicate timers, observers and polling are prevented. */
   if (window.top !== window.self &&
-      /[?&](?:cbtAfaProbe|cbtMissingQrProbe)=1(?:&|$)/.test(window.location.search)) return;
+      /[?&](?:cbtAfaProbe|cbtMissingQrProbe|cbtAssignProbe)=1(?:&|$)/.test(window.location.search)) return;
 
   var STORE_ID  = (window.location.href.split('store/')[1] || '').split('/')[0];
   var DRIVE_URL = 'https://drive.corp.amazon.com/view/jsermar@/COMO_Dashboard_BatchRate_NA.json?download=true';
@@ -2126,7 +2126,7 @@
      itself. Otherwise every timer/stat/table update can wake another observer,
      which creates needless feedback work on the Amazon page. */
   var CBT_OWN_UI_SELECTOR =
-    '#cbt-panel,#cbt-tp,#cbt-qr-overlay,#cbt-afa-overlay,#cbt-ac-drop,.etf-col-cell,.cbt-missing-probe-frame';
+    '#cbt-panel,#cbt-tp,#cbt-qr-overlay,#cbt-afa-overlay,#cbt-ac-drop,.etf-col-cell,.cbt-missing-probe-frame,.cbt-assign-probe-frame';
 
   function cbtIsOwnUiNode(node) {
     if (!node) return false;
@@ -2520,7 +2520,7 @@
      The old recommendation divided remaining PACKAGES by live batcher speed.
      That could recommend "1" even when many carts were due soon.
 
-     v23.9.97 deliberately does NOT use individual associate speed/rate.
+     v23.9.110 deliberately does NOT use individual associate speed/rate.
 
      It treats each open batching job/cart as one unit of work and asks:
        "How many concurrent batchers are needed to clear these carts before
@@ -3051,6 +3051,114 @@
     return parts.join(' · ');
   }
 
+  var CBT_STATS_REFRESH_MS = 2000;
+  var CBT_STATS_WARM_MAX_AGE_MS = 120000;
+  var _statsLastSummaryData = null;
+  var _statsLastRequestAt = 0;
+  var _statsStartupRecheckTimer = 0;
+  var _statsStartupRecheckTries = 0;
+
+  function cbtStatsCacheKey() {
+    return 'cbt_stats_warm_v1_' + String(STORE_ID || 'unknown');
+  }
+
+  function cbtStatsCurrentCycleKey() {
+    try {
+      var c = cbtRecCycleInfo(Date.now());
+      return c && c.key ? String(c.key) : '';
+    } catch(e) {}
+
+    return '';
+  }
+
+  function cbtStatsLoadWarm() {
+    try {
+      var raw = sessionStorage.getItem(cbtStatsCacheKey());
+      if (!raw) return null;
+
+      var s = JSON.parse(raw);
+      if (!s || !s.ts) return null;
+
+      if ((Date.now() - Number(s.ts)) > CBT_STATS_WARM_MAX_AGE_MS) {
+        return null;
+      }
+
+      /* Never carry a recommendation across a new :55 planning cycle. */
+      var cycleKey = cbtStatsCurrentCycleKey();
+      if (cycleKey && s.cycleKey && String(s.cycleKey) !== cycleKey) {
+        return null;
+      }
+
+      if (s.inProgress == null ||
+          s.remaining == null ||
+          s.recommended == null) {
+        return null;
+      }
+
+      return s;
+    } catch(e) {}
+
+    return null;
+  }
+
+  function cbtStatsSaveWarm(inProgress, remaining, recommended, dotColor, recTitle, cycleKey) {
+    if (inProgress == null || remaining == null || recommended == null) return;
+
+    try {
+      sessionStorage.setItem(
+        cbtStatsCacheKey(),
+        JSON.stringify({
+          ts: Date.now(),
+          cycleKey: cycleKey || cbtStatsCurrentCycleKey(),
+          inProgress: Number(inProgress),
+          remaining: Number(remaining),
+          recommended: Number(recommended),
+          dotColor: dotColor || 'gray',
+          recTitle: recTitle || ''
+        })
+      );
+    } catch(e) {}
+  }
+
+  function cbtStatsHydrateWarm() {
+    var s = cbtStatsLoadWarm();
+    if (!s) return false;
+
+    updateStats(
+      s.inProgress,
+      s.remaining,
+      s.recommended,
+      s.dotColor || 'gray',
+      'Refreshing current dashboard…' + (s.recTitle ? ' · ' + s.recTitle : '')
+    );
+
+    return true;
+  }
+
+  function cbtStatsScheduleStartupRecheck() {
+    /* Re-use the already-fetched JSON while Angular is finishing the main
+       Tasks DOM. No extra network request is made here. This is bounded to
+       roughly the first 1.2 seconds after startup/reload. */
+    if (!_statsLastSummaryData || _statsStartupRecheckTimer) return;
+    if (_statsStartupRecheckTries >= 8) return;
+
+    _statsStartupRecheckTimer = setTimeout(function(){
+      _statsStartupRecheckTimer = 0;
+      _statsStartupRecheckTries++;
+
+      var ready = false;
+      try { ready = !!cbtRecMainTasksSnapshot(); } catch(e) {}
+
+      if (ready) {
+        _statsStartupRecheckTries = 8;
+        try { cbtApplyStatsData(_statsLastSummaryData); } catch(e2) {}
+        return;
+      }
+
+      cbtStatsScheduleStartupRecheck();
+    }, 150);
+  }
+
   var _statsDomCache = {
     inProgress: null,
     remaining: null,
@@ -3149,10 +3257,109 @@
     if (old) old.remove();
   }
 
+  function cbtApplyStatsData(data) {
+    if (!Array.isArray(data)) data = [];
+
+    var staffingJobs = data.filter(cbtRecIsBatchingWork);
+
+    /* ONE authoritative normal-Tasks snapshot per stats update.
+       Batchers and Recommended are never compared across different
+       API/DOM moments after a reload. */
+    var mainTasks = cbtRecMainTasksSnapshot();
+    var scopedStaffingJobs = cbtRecScopeJobsToMainTasks(staffingJobs, mainTasks);
+
+    var inProgress = null;
+    if (scopedStaffingJobs !== null) {
+      inProgress = scopedStaffingJobs.filter(function (j) {
+        var st = String(j.operationState || j.state || '').toUpperCase();
+        return st === 'IN_PROGRESS' || st === 'BATCHING';
+      }).length;
+    }
+
+    /* Remaining stays package-based because that stat is useful as a
+       package backlog indicator. It is NOT used by Recommended anymore. */
+    var expected  = staffingJobs.reduce(function (s, j) {
+      return s + (Number(j.totalExpectedPackages) || 0);
+    }, 0);
+    var batched   = staffingJobs.reduce(function (s, j) {
+      return s + (Number(j.packagesBatched) || 0);
+    }, 0);
+    var collected = staffingJobs.reduce(function (s, j) {
+      return s + (Number(j.packagesCollected) || 0);
+    }, 0);
+    var remaining = Math.max(0, expected - (batched + collected));
+
+    var calc = cbtRecCalculate(data, Date.now(), mainTasks);
+    var recommended = cbtRecLockedValue(calc, mainTasks);
+
+    /* During the short Angular startup window, keep the last SAME-CYCLE
+       Batchers/Recommended values visible instead of flashing dashes.
+       Remaining can already use the new API response because it is independent
+       of the normal-Tasks DOM snapshot. */
+    var warm = null;
+    if (inProgress == null || recommended == null) {
+      warm = cbtStatsLoadWarm();
+      if (warm) {
+        if (inProgress == null) inProgress = warm.inProgress;
+        if (recommended == null) recommended = warm.recommended;
+      }
+    }
+
+    /* Recommended now means MINIMUM staffing target.
+       Having more batchers than Recommended is not an error. */
+    var dotColor = warm && warm.dotColor ? warm.dotColor : 'gray';
+    if (recommended != null && inProgress != null && recommended > 0) {
+      if (inProgress >= recommended) {
+        dotColor = '#3fb950';
+      } else {
+        var deficit = recommended - inProgress;
+        var coverage = recommended > 0 ? inProgress / recommended : 1;
+        dotColor = (deficit >= 3 || coverage < 0.75) ? '#f85149' : '#e3b341';
+      }
+    }
+
+    var recTitle =
+      (calc && calc.ready === false && warm)
+        ? 'Refreshing current dashboard…'
+        : cbtRecTooltip(calc, recommended);
+
+    updateStats(
+      inProgress,
+      remaining,
+      recommended,
+      dotColor,
+      recTitle
+    );
+
+    /* Only persist a fully authoritative SAME-snapshot result. Warm fallback
+       values are display-only and never overwrite the cache timestamp. */
+    if (mainTasks &&
+        scopedStaffingJobs !== null &&
+        calc &&
+        calc.ready !== false &&
+        inProgress != null &&
+        recommended != null) {
+      cbtStatsSaveWarm(
+        inProgress,
+        remaining,
+        recommended,
+        dotColor,
+        cbtRecTooltip(calc, recommended),
+        calc.cycle && calc.cycle.key
+      );
+    } else {
+      cbtStatsScheduleStartupRecheck();
+    }
+
+    removeFromHeader();
+  }
+
   var _statsFetchInFlight = false;
   function fetchAndUpdate() {
-    if (_statsFetchInFlight || document.hidden) return;
+    if (_statsFetchInFlight || document.hidden || !isDashboardView()) return;
+
     _statsFetchInFlight = true;
+    _statsLastRequestAt = Date.now();
     removeFromHeader();
 
     /* Use the original fetch for this script-owned stats request so our global
@@ -3165,59 +3372,8 @@
       .then(function (data) {
         if (!Array.isArray(data)) data = [];
 
-        var staffingJobs = data.filter(cbtRecIsBatchingWork);
-
-        /* ONE authoritative normal-Tasks snapshot per stats update.
-           Batchers and Recommended are never compared across different
-           API/DOM moments after a reload. */
-        var mainTasks = cbtRecMainTasksSnapshot();
-        var scopedStaffingJobs = cbtRecScopeJobsToMainTasks(staffingJobs, mainTasks);
-
-        var inProgress = null;
-        if (scopedStaffingJobs !== null) {
-          inProgress = scopedStaffingJobs.filter(function (j) {
-            var st = String(j.operationState || j.state || '').toUpperCase();
-            return st === 'IN_PROGRESS' || st === 'BATCHING';
-          }).length;
-        }
-
-        /* Remaining stays package-based because that stat is useful as a
-           package backlog indicator. It is NOT used by Recommended anymore. */
-        var expected  = staffingJobs.reduce(function (s, j) {
-          return s + (Number(j.totalExpectedPackages) || 0);
-        }, 0);
-        var batched   = staffingJobs.reduce(function (s, j) {
-          return s + (Number(j.packagesBatched) || 0);
-        }, 0);
-        var collected = staffingJobs.reduce(function (s, j) {
-          return s + (Number(j.packagesCollected) || 0);
-        }, 0);
-        var remaining = Math.max(0, expected - (batched + collected));
-
-        var calc = cbtRecCalculate(data, Date.now(), mainTasks);
-        var recommended = cbtRecLockedValue(calc, mainTasks);
-
-        /* Recommended now means MINIMUM staffing target.
-           Having more batchers than Recommended is not an error. */
-        var dotColor = 'gray';
-        if (recommended != null && inProgress != null && recommended > 0) {
-          if (inProgress >= recommended) {
-            dotColor = '#3fb950';
-          } else {
-            var deficit = recommended - inProgress;
-            var coverage = recommended > 0 ? inProgress / recommended : 1;
-            dotColor = (deficit >= 3 || coverage < 0.75) ? '#f85149' : '#e3b341';
-          }
-        }
-
-        updateStats(
-          inProgress,
-          remaining,
-          recommended,
-          dotColor,
-          cbtRecTooltip(calc, recommended)
-        );
-        removeFromHeader();
+        _statsLastSummaryData = data;
+        cbtApplyStatsData(data);
       })
       .catch(function () {})
       .then(function(){ _statsFetchInFlight = false; });
@@ -3521,7 +3677,7 @@
       };
       delete _cbtObservedProgressByRef[ref];
     } else {
-      /* Critical v23.9.97 fix: for the SAME job, an authoritative API update
+      /* Critical v23.9.110 fix: for the SAME job, an authoritative API update
          may correct the clock only BACKWARD. It can never shorten elapsed time
          by introducing a newer BATCHING sub-operation. */
       if (info.startMs < cur.ms - 1000) {
@@ -3876,7 +4032,7 @@
   function cbtMergeBestFields(target, source) {
     if (!target || !source) return;
 
-    /* v23.9.97+ stores bestRate explicitly. For older cached rows, use the
+    /* v23.9.110+ stores bestRate explicitly. For older cached rows, use the
        strongest recoverable value (bestRate -> lastRate -> avgRate). */
     var candidate = Math.max(
       Number(source.bestRate) || 0,
@@ -4022,7 +4178,7 @@
       var hdr = panel.querySelector('#cbt-header');
       if (hdr) hdr.style.zoom = HEADER_FIXED_SCALE;
 
-      /* v23.9.97: pin the three-number stats row at the same 130% as the
+      /* v23.9.110: pin the three-number stats row at the same 130% as the
          header. A- / A+ must never resize Batchers, Recommended This Hour,
          or Remaining. */
       var stats = panel.querySelector('#cbt-stats-bar');
@@ -4427,7 +4583,7 @@
                   /* Legacy v23.9.31-and-older device nodes have no date
                      metadata. Keep them only while the Firebase basket has no
                      modern metadata at all, so an all-old installation still
-                     migrates once. As soon as v23.9.97 devices are present,
+                     migrates once. As soon as v23.9.110 devices are present,
                      undated stale nodes are not allowed into Today. */
                   if (!deviceDate && anyModernMeta) continue;
 
@@ -5115,7 +5271,7 @@
   var HOF_MAX_RATE = CBT_MAX_VALID_RATE; /* shared trusted-rate ceiling */
   var HOF_TOP      = 30;
 
-  /* v23.9.97 TRUSTED FASTEST RESET
+  /* v23.9.110 TRUSTED FASTEST RESET
      --------------------------------
      Legacy Fastest records were calculated before the full-span timing fix.
      They cannot be safely repaired because each historical record did not
@@ -6435,6 +6591,14 @@
 
     mount.el.parentNode.insertBefore(_panel2Ref, mount.el);
 
+    /* Instant reload experience: paint the last fresh same-cycle numbers
+       immediately, then replace them from the already-fetched current summary
+       as soon as Angular's Tasks DOM is authoritative. */
+    try { cbtStatsHydrateWarm(); } catch(eWarmStats) {}
+    try {
+      if (_statsLastSummaryData) cbtApplyStatsData(_statsLastSummaryData);
+    } catch(eCurrentStats) {}
+
     _mountFails = 0;              /* mounted successfully */
     try { applyUiScale(); } catch(ex) {}   /* restore the saved size */
 
@@ -6589,7 +6753,7 @@
       try { afaConfirm(); } catch(err) {}
     });
 
-    /* v23.9.97: restore the original VERTICAL dashboard length.
+    /* v23.9.110: restore the original VERTICAL dashboard length.
        Width stays exactly as before. The compact 240px default from older
        versions is migrated back to 350px once. If someone manually made the
        board taller than 350px, keep that larger custom height. */
@@ -6604,7 +6768,7 @@
       }
     } catch(eRestore) {}
 
-    /* v23.9.97: persist the dashboard's collapsed/open state across reloads. */
+    /* v23.9.110: persist the dashboard's collapsed/open state across reloads. */
     var isCollapsed = false;
     try { isCollapsed = localStorage.getItem('cbt_panel_collapsed') === '1'; } catch(eCollapsedLoad) {}
     var collapseBtn = panel2.querySelector('#cbt-collapse-btn');
@@ -8131,7 +8295,7 @@
     /* Inputs/textareas have their own selectionStart/selectionEnd API and do
        not always appear in window.getSelection(). */
     var direct = qrControlSelection(event && event.target);
-    if (direct) return direct;
+    if (direct && cbtAssignHiddenUsable(direct)) return direct;
 
     var candidates = [];
 
@@ -9584,6 +9748,1457 @@
     });
   }
 
+
+  /* ══════════════════════════════════════
+     MANUAL EARLIEST-ELIGIBLE ASSIGN
+
+     Runs ONLY when the user presses Assign.
+
+     Requested attempt rule:
+       - no name + no cart  -> TRY
+       - name + no cart     -> TRY
+       - no name + cart     -> TRY
+       - name + cart        -> SKIP
+
+     If a tried task rejects the selected associate, keep that SAME associate
+     and continue to the next earliest Batch Target.
+     No recurring observer/polling loop is added.
+  ══════════════════════════════════════ */
+
+  var CBT_ASSIGN_ACTION_TIMEOUT_MS = 9000;
+
+  function cbtAssignNormText(v) {
+    return String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
+  }
+
+  function cbtAssignHeaderMap() {
+    var header = document.querySelector('div.row.job-card-header');
+    if (!header) return null;
+
+    var cols;
+    try {
+      cols = Array.prototype.slice.call(
+        header.querySelectorAll(':scope > div[class*="col-"]')
+      );
+    } catch(e) {
+      cols = Array.prototype.slice.call(header.children || []);
+    }
+
+    var map = { cart: -1, assignment: -1, batch: -1, progress: -1 };
+
+    for (var i = 0; i < cols.length; i++) {
+      var t = cbtAssignNormText(cols[i].textContent || '').toLowerCase();
+
+      if (map.cart < 0 && /^cart(?:\/s)?$|^carts?$/.test(t)) {
+        map.cart = i;
+      }
+
+      if (map.assignment < 0 && /task\s*assignment/.test(t)) {
+        map.assignment = i;
+      }
+
+      if (map.batch < 0 && /batch\s*target/.test(t)) {
+        map.batch = i;
+      }
+
+      if (map.progress < 0 && /^progress$/.test(t)) {
+        map.progress = i;
+      }
+    }
+
+    return (map.cart >= 0 && map.assignment >= 0 && map.batch >= 0)
+      ? map
+      : null;
+  }
+
+  function cbtAssignDirectCols(row) {
+    if (!row) return [];
+
+    try {
+      return Array.prototype.slice.call(
+        row.querySelectorAll(':scope > div[class*="col-"]')
+      );
+    } catch(e) {
+      return Array.prototype.slice.call(row.children || []).filter(function(el){
+        return el &&
+          /(^|\s)col-(?:xs|sm|md|lg)-/.test(String(el.className || ''));
+      });
+    }
+  }
+
+  function cbtAssignPackageCount(progressText) {
+    var s = cbtAssignNormText(progressText || '');
+    if (!s) return 0;
+
+    /* Examples currently shown by COMO:
+       CREATED 34       -> 34 packages
+       BATCHING 34/38   -> 38 total packages
+       BATCHING 0/30    -> 30 total packages
+
+       For a fraction, use the denominator (total task packages).
+       Otherwise use the last visible number. */
+    var fraction = s.match(/(\d+)\s*\/\s*(\d+)/);
+    if (fraction) {
+      return Number(fraction[2]) || 0;
+    }
+
+    var nums = s.match(/\d+/g);
+    if (!nums || !nums.length) return 0;
+
+    return Number(nums[nums.length - 1]) || 0;
+  }
+
+  function cbtAssignCartIsBlank(v) {
+    var s = cbtAssignNormText(v).toUpperCase();
+
+    return !s ||
+      s === '-' ||
+      s === '—' ||
+      s === 'N/A' ||
+      s === 'NA' ||
+      s === 'NONE';
+  }
+
+  function cbtAssignLinkInfoFromCard(card, ref) {
+    var links = [];
+
+    try {
+      links = Array.prototype.slice.call(card.querySelectorAll('a[href]'));
+    } catch(e) {}
+
+    for (var i = 0; i < links.length; i++) {
+      var rawHref = links[i].getAttribute('href') || '';
+      var m = rawHref.match(/jobId=([^&#]+)/i);
+
+      if (!m) continue;
+
+      var id = null;
+      try { id = decodeURIComponent(m[1]); }
+      catch(e2) { id = m[1]; }
+
+      var detailsUrl = null;
+      try {
+        detailsUrl = new URL(rawHref, window.location.href).href;
+      } catch(e3) {
+        detailsUrl = rawHref;
+      }
+
+      return { id: id, detailsUrl: detailsUrl };
+    }
+
+    var fallbackId =
+      (ref && _afaJobIndex && _afaJobIndex[ref])
+        ? _afaJobIndex[ref]
+        : null;
+
+    return {
+      id: fallbackId,
+      detailsUrl: fallbackId
+        ? (
+            COMO_BASE +
+            '/store/' +
+            encodeURIComponent(STORE_ID) +
+            '/jobdetails?jobId=' +
+            encodeURIComponent(fallbackId)
+          )
+        : null
+    };
+  }
+
+  function cbtAssignReadRows() {
+    var map = cbtAssignHeaderMap();
+    if (!map) return [];
+
+    var out = [];
+    var cards = document.querySelectorAll('job-card');
+
+    for (var i = 0; i < cards.length; i++) {
+      var card = cards[i];
+
+      try {
+        if (isInExcludedSection(card)) continue;
+      } catch(eExcluded) {}
+
+      var row = null;
+
+      try {
+        row = card.querySelector('div.row');
+      } catch(eRow) {}
+
+      if (!row) continue;
+
+      var cols = cbtAssignDirectCols(row);
+
+      if (cols.length <= Math.max(
+            map.cart,
+            map.assignment,
+            map.batch,
+            map.progress >= 0 ? map.progress : 0
+          )) {
+        continue;
+      }
+
+      var a = null;
+
+      try {
+        a = card.querySelector('a');
+      } catch(eLink) {}
+
+      var ref = a ? cbtAssignNormText(a.textContent || '') : '';
+
+      if (!ref) continue;
+
+      var linkInfo = cbtAssignLinkInfoFromCard(card, ref);
+      var id = linkInfo && linkInfo.id;
+
+      if (!id) continue;
+
+      var cart = cbtAssignNormText(cols[map.cart].textContent || '');
+      var assignment = cbtAssignNormText(
+        cols[map.assignment].textContent || ''
+      );
+      var batchRaw = cbtAssignNormText(cols[map.batch].textContent || '');
+      var batchMatch = batchRaw.match(/\d{1,2}:\d{2}\s*(?:AM|PM)/i);
+      var batchMs = batchMatch ? parseTime(batchMatch[0]) : null;
+
+      var progressRaw =
+        (map.progress >= 0 && cols[map.progress])
+          ? cbtAssignNormText(cols[map.progress].textContent || '')
+          : '';
+
+      var packageCount = cbtAssignPackageCount(progressRaw);
+
+      out.push({
+        key: String(id),
+        id: id,
+        detailsUrl: linkInfo && linkInfo.detailsUrl,
+        ref: ref,
+        cart: cart,
+        cartBlank: cbtAssignCartIsBlank(cart),
+        cartHasValue: !cbtAssignCartIsBlank(cart),
+        assignment: assignment,
+        assignmentHasName:
+          !!assignment &&
+          assignment.toUpperCase() !== 'ASSIGNABLE',
+        assignable: assignment.toUpperCase() === 'ASSIGNABLE',
+        batchRaw: batchRaw,
+        batchMs: batchMs,
+        progressRaw: progressRaw,
+        packageCount: packageCount,
+        rowOrder: i
+      });
+    }
+
+    return out;
+  }
+
+  function cbtAssignRowCanBeTried(r) {
+    if (!r || r.batchMs == null) return false;
+
+    /* Requested rule:
+       - name only        -> TRY
+       - cart only        -> TRY
+       - neither          -> TRY
+       - name + cart      -> SKIP
+       ASSIGNABLE is a status and therefore counts as "no name". */
+    return !(r.cartHasValue && r.assignmentHasName);
+  }
+
+  function cbtAssignEligibleRows(claimed, blocked) {
+    claimed = claimed || Object.create(null);
+    blocked = blocked || Object.create(null);
+
+    return cbtAssignReadRows()
+      .filter(function(r){
+        return !claimed[r.key] &&
+          !blocked[r.key] &&
+          cbtAssignRowCanBeTried(r);
+      })
+      .sort(function(a, b){
+        /* Priority:
+           1. Earliest Batch Target first.
+           2. If Batch Target is the same, task with MOST packages first.
+           3. If package totals are also the same, keep the task that is
+              physically higher on the dashboard first. */
+        if (a.batchMs !== b.batchMs) return a.batchMs - b.batchMs;
+
+        if (a.packageCount !== b.packageCount) {
+          return b.packageCount - a.packageCount;
+        }
+
+        return a.rowOrder - b.rowOrder;
+      });
+  }
+
+  function cbtAssignCurrentEligible(jobKey) {
+    var rows = cbtAssignReadRows();
+
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i];
+
+      if (r.key !== String(jobKey)) continue;
+
+      return cbtAssignRowCanBeTried(r);
+    }
+
+    return false;
+  }
+
+  function cbtAssignHiddenUsable(el) {
+    if (!el || !el.isConnected) return false;
+
+    try {
+      if (el.disabled || el.readOnly) return false;
+    } catch(e) {}
+
+    return true;
+  }
+
+  function cbtAssignVisible(el) {
+    if (!el || !el.isConnected) return false;
+
+    try {
+      var s = el.ownerDocument.defaultView.getComputedStyle(el);
+
+      if (s.display === 'none' || s.visibility === 'hidden') {
+        return false;
+      }
+    } catch(e) {}
+
+    try {
+      var r = el.getBoundingClientRect();
+
+      return r.width > 0 && r.height > 0;
+    } catch(e2) {}
+
+    return true;
+  }
+
+  function cbtAssignWait(test, timeoutMs, intervalMs, timeoutLabel) {
+    timeoutMs = Number(timeoutMs) || CBT_ASSIGN_ACTION_TIMEOUT_MS;
+    intervalMs = Number(intervalMs) || 100;
+    timeoutLabel = timeoutLabel || 'timeout';
+
+    return new Promise(function(resolve, reject){
+      var started = Date.now();
+
+      function step() {
+        var value = null;
+
+        try {
+          value = test();
+        } catch(e) {
+          /* Do not swallow real task-change/site errors until they become a
+             misleading generic timeout. Propagate them immediately. */
+          reject(e);
+          return;
+        }
+
+        if (value) {
+          resolve(value);
+          return;
+        }
+
+        if (Date.now() - started >= timeoutMs) {
+          reject(new Error(timeoutLabel));
+          return;
+        }
+
+        setTimeout(step, intervalMs);
+      }
+
+      step();
+    });
+  }
+
+  function cbtAssignSetInput(input, value) {
+    if (!input) return;
+
+    var win = input.ownerDocument && input.ownerDocument.defaultView;
+
+    try {
+      var proto = (input.tagName === 'TEXTAREA')
+        ? win.HTMLTextAreaElement.prototype
+        : win.HTMLInputElement.prototype;
+
+      var desc = Object.getOwnPropertyDescriptor(proto, 'value');
+
+      if (desc && desc.set) {
+        desc.set.call(input, value);
+      } else {
+        input.value = value;
+      }
+    } catch(e) {
+      try {
+        input.value = value;
+      } catch(e2) {}
+    }
+
+    /* Exact AngularJS ng-model sync when available. */
+    try {
+      var ng = win && win.angular;
+
+      if (ng && ng.element) {
+        var wrapped = ng.element(input);
+        var ngModelCtrl = wrapped.controller('ngModel');
+
+        if (ngModelCtrl && ngModelCtrl.$setViewValue) {
+          ngModelCtrl.$setViewValue(value);
+
+          if (ngModelCtrl.$render) {
+            ngModelCtrl.$render();
+          }
+
+          var scope = wrapped.scope && wrapped.scope();
+
+          if (scope && scope.$applyAsync) {
+            scope.$applyAsync();
+          }
+        }
+      }
+    } catch(eNgModel) {}
+
+    ['input', 'change', 'keyup', 'blur'].forEach(function(type){
+      try {
+        var Ev = (win && win.Event) ? win.Event : Event;
+
+        input.dispatchEvent(new Ev(type, {
+          bubbles: true,
+          composed: true
+        }));
+      } catch(e3) {}
+    });
+  }
+
+  function cbtAssignFindButton(doc) {
+    var direct = null;
+
+    try {
+      direct = doc.querySelector(
+        'button[ng-click*="showAssignToAssociateDialog"],' +
+        'button[data-ng-click*="showAssignToAssociateDialog"]'
+      );
+    } catch(e) {}
+
+    if (direct) return direct;
+
+    var buttons = [];
+
+    try {
+      buttons = Array.prototype.slice.call(doc.querySelectorAll('button'));
+    } catch(e2) {}
+
+    for (var i = 0; i < buttons.length; i++) {
+      var t = cbtAssignNormText(buttons[i].textContent || '');
+
+      if (/^Assign to Associate$/i.test(t)) {
+        return buttons[i];
+      }
+    }
+
+    return null;
+  }
+
+  function cbtAssignFindDialog(doc) {
+    /* Exact COMO Manager Action modal from inspected live markup. */
+    var exact = null;
+
+    try {
+      exact = doc.querySelector(
+        '.modal.assignToAssociateModal.in,' +
+        '.modal.assignToAssociateModal.show,' +
+        '.modal.assignToAssociateModal'
+      );
+    } catch(eExact) {}
+
+    if (exact && exact.isConnected) return exact;
+
+    /* Defensive fallback if Amazon changes modal classes later. */
+    var nodes = [];
+
+    try {
+      nodes = Array.prototype.slice.call(
+        doc.querySelectorAll(
+          '.modal.in,.modal.show,[role="dialog"],' +
+          '[role="alertdialog"],.modal-dialog'
+        )
+      );
+    } catch(e) {}
+
+    for (var i = nodes.length - 1; i >= 0; i--) {
+      if (!cbtAssignVisible(nodes[i])) continue;
+
+      var t = cbtAssignNormText(nodes[i].textContent || '');
+
+      if (/assign/i.test(t) &&
+          /associate|login|user\s*id/i.test(t)) {
+        return nodes[i];
+      }
+    }
+
+    return null;
+  }
+
+  function cbtAssignFindInput(scope) {
+    if (!scope) return null;
+
+    /* Exact inspected input:
+       ng-model="assignToAssociateModalController.associateId" */
+    var exact = null;
+
+    try {
+      exact = scope.querySelector(
+        'input[ng-model="assignToAssociateModalController.associateId"],' +
+        'input[data-ng-model="assignToAssociateModalController.associateId"]'
+      );
+    } catch(eExact) {}
+
+    if (exact && cbtAssignHiddenUsable(exact)) {
+      return exact;
+    }
+
+    /* Defensive generic fallback. */
+    var inputs = [];
+
+    try {
+      inputs = Array.prototype.slice.call(
+        scope.querySelectorAll(
+          'input:not([type="hidden"]),textarea'
+        )
+      );
+    } catch(e) {}
+
+    var fallback = null;
+
+    for (var i = 0; i < inputs.length; i++) {
+      var el = inputs[i];
+
+      if (!cbtAssignVisible(el) || el.disabled || el.readOnly) {
+        continue;
+      }
+
+      if (!fallback) fallback = el;
+
+      var meta = [
+        el.getAttribute('placeholder'),
+        el.getAttribute('aria-label'),
+        el.getAttribute('name'),
+        el.getAttribute('id'),
+        el.getAttribute('ng-model'),
+        el.getAttribute('data-ng-model')
+      ].filter(Boolean).join(' ');
+
+      var parentText = '';
+
+      try {
+        parentText = cbtAssignNormText(
+          (el.parentElement && el.parentElement.textContent) || ''
+        );
+      } catch(e2) {}
+
+      if (/associate|login|user\s*id|userid|employee/i.test(
+            meta + ' ' + parentText
+          )) {
+        return el;
+      }
+    }
+
+    return fallback;
+  }
+
+  function cbtAssignAngularScopeFor(el) {
+    if (!el || !el.ownerDocument) return null;
+
+    var win = el.ownerDocument.defaultView;
+    var ng = win && win.angular;
+
+    if (!ng || !ng.element) return null;
+
+    try {
+      var wrapped = ng.element(el);
+
+      return (
+        (wrapped.scope && wrapped.scope()) ||
+        (wrapped.isolateScope && wrapped.isolateScope()) ||
+        null
+      );
+    } catch(e) {}
+
+    return null;
+  }
+
+  function cbtAssignControllerFromScope(scope) {
+    var seen = 0;
+
+    while (scope && seen++ < 20) {
+      try {
+        if (scope.assignToAssociateModalController) {
+          return {
+            scope: scope,
+            controller: scope.assignToAssociateModalController
+          };
+        }
+      } catch(e) {}
+
+      try {
+        scope = scope.$parent;
+      } catch(e2) {
+        scope = null;
+      }
+    }
+
+    return null;
+  }
+
+  function cbtAssignInvokeExactController(input, submit, associate) {
+    var scope =
+      cbtAssignAngularScopeFor(submit) ||
+      cbtAssignAngularScopeFor(input);
+
+    var found = cbtAssignControllerFromScope(scope);
+
+    if (!found ||
+        !found.controller ||
+        typeof found.controller.assign !== 'function') {
+      return null;
+    }
+
+    var ctrl = found.controller;
+    var ownerScope = found.scope;
+    var result;
+    var invoked = false;
+
+    function invoke() {
+      ctrl.associateId = associate;
+      result = ctrl.assign();
+      invoked = true;
+    }
+
+    try {
+      /* If Angular is already digesting, call directly. Otherwise wrap the
+         exact controller call in $apply so bindings and validation are current. */
+      if (ownerScope && ownerScope.$root && ownerScope.$root.$$phase) {
+        invoke();
+      } else if (ownerScope && typeof ownerScope.$apply === 'function') {
+        ownerScope.$apply(invoke);
+      } else {
+        invoke();
+      }
+    } catch(e) {
+      return {
+        invoked: false,
+        error: e
+      };
+    }
+
+    return {
+      invoked: invoked,
+      result: result
+    };
+  }
+
+  function cbtAssignFindSubmit(scope) {
+    if (!scope) return null;
+
+    /* Exact inspected final button:
+       ng-click="assignToAssociateModalController.assign()" */
+    var exact = null;
+
+    try {
+      exact = scope.querySelector(
+        'button[ng-click="assignToAssociateModalController.assign()"],' +
+        'button[data-ng-click="assignToAssociateModalController.assign()"]'
+      );
+    } catch(eExact) {}
+
+    if (exact && cbtAssignHiddenUsable(exact)) {
+      return exact;
+    }
+
+    /* Defensive generic fallback. */
+    var buttons = [];
+
+    try {
+      buttons = Array.prototype.slice.call(
+        scope.querySelectorAll(
+          'button,input[type="button"],input[type="submit"]'
+        )
+      );
+    } catch(e) {}
+
+    var scored = [];
+
+    for (var i = 0; i < buttons.length; i++) {
+      var b = buttons[i];
+
+      if (!cbtAssignVisible(b) || b.disabled) continue;
+
+      var t = cbtAssignNormText(b.textContent || b.value || '');
+
+      if (/cancel|close|back/i.test(t)) continue;
+
+      var ng = [
+        b.getAttribute && b.getAttribute('ng-click'),
+        b.getAttribute && b.getAttribute('data-ng-click')
+      ].filter(Boolean).join(' ');
+
+      var score = 0;
+
+      if (/^assign$/i.test(t)) score += 100;
+      else if (/^confirm$/i.test(t)) score += 90;
+      else if (/^save$/i.test(t)) score += 80;
+      else if (/^ok$/i.test(t)) score += 70;
+      else if (/assign/i.test(t)) score += 50;
+
+      if (/assign/i.test(ng) && !/showAssign/i.test(ng)) {
+        score += 30;
+      }
+
+      if (score) {
+        scored.push({
+          button: b,
+          score: score
+        });
+      }
+    }
+
+    scored.sort(function(a, b){
+      return b.score - a.score;
+    });
+
+    return scored.length ? scored[0].button : null;
+  }
+
+  function cbtAssignExtractAssociateDeep(obj, depth) {
+    if (obj == null || depth > 7) return null;
+
+    if (Array.isArray(obj)) {
+      for (var i = 0; i < obj.length && i < 500; i++) {
+        var a = cbtAssignExtractAssociateDeep(
+          obj[i],
+          depth + 1
+        );
+
+        if (a) return a;
+      }
+
+      return null;
+    }
+
+    if (typeof obj !== 'object') return null;
+
+    var preferred = [
+      'associateId',
+      'associateID',
+      'associate',
+      'assignedAssociate',
+      'assignedTo',
+      'assignee'
+    ];
+
+    for (var p = 0; p < preferred.length; p++) {
+      var v = obj[preferred[p]];
+
+      if (typeof v !== 'string') continue;
+
+      var s = cbtAssignNormText(v);
+
+      if (s &&
+          !/^(ASSIGNABLE|UNASSIGNABLE|NONE)$/i.test(s)) {
+        return s;
+      }
+    }
+
+    for (var k in obj) {
+      var value = obj[k];
+
+      if (typeof value !== 'string') continue;
+      if (!/associate|assignee|assigned.*to/i.test(k)) continue;
+
+      var s2 = cbtAssignNormText(value);
+
+      if (s2 &&
+          !/^(ASSIGNABLE|UNASSIGNABLE|NONE)$/i.test(s2)) {
+        return s2;
+      }
+    }
+
+    for (var k2 in obj) {
+      var child = obj[k2];
+
+      if (!child || typeof child !== 'object') continue;
+
+      var r = cbtAssignExtractAssociateDeep(
+        child,
+        depth + 1
+      );
+
+      if (r) return r;
+    }
+
+    return null;
+  }
+
+  function cbtAssignFreshPreflight(jobId, guardFn) {
+    /* The dashboard row is re-read immediately before every UI step.
+       Do NOT reject merely because a name exists or Cart/s has a value by
+       itself: the user explicitly wants those one-sided cases attempted.
+       Only the BOTH-name-and-cart condition makes the row untouchable. */
+    if (guardFn && !guardFn()) {
+      return Promise.resolve({
+        ok: false,
+        retryable: true,
+        reason: 'task now has both a name and a cart'
+      });
+    }
+
+    return Promise.resolve({ ok: true });
+  }
+
+  function cbtAssignDashboardAssociate(jobId) {
+    var rows = cbtAssignReadRows();
+
+    for (var i = 0; i < rows.length; i++) {
+      if (String(rows[i].key) !== String(jobId)) continue;
+
+      var assignment = cbtAssignNormText(
+        rows[i].assignment || ''
+      );
+
+      if (!assignment ||
+          assignment.toUpperCase() === 'ASSIGNABLE') {
+        return null;
+      }
+
+      return assignment;
+    }
+
+    return null;
+  }
+
+  function cbtAssignVerifyDashboard(jobId, login) {
+    login = String(login || '').toLowerCase();
+
+    var current = cbtAssignDashboardAssociate(jobId);
+
+    if (!current) return null;
+
+    return String(current).toLowerCase() === login;
+  }
+
+  function cbtAssignVerifyAssociate(jobId, login) {
+    var tries = 0;
+    login = String(login || '').toLowerCase();
+
+    function once() {
+      tries++;
+
+      return afaFetchJobInfo(jobId).then(function(info){
+        var got = info
+          ? cbtAssignExtractAssociateDeep(info, 0)
+          : null;
+
+        if (got &&
+            String(got).toLowerCase() === login) {
+          return true;
+        }
+
+        if (tries >= 4) {
+          return got ? false : null;
+        }
+
+        return new Promise(function(resolve){
+          setTimeout(function(){
+            resolve(once());
+          }, 280);
+        });
+      });
+    }
+
+    return once();
+  }
+
+  function cbtAssignDirectResponseOk(r) {
+    if (!r || !r.ok) return false;
+
+    var body = String(
+      r.body == null ? '' : r.body
+    ).trim().replace(/^"|"$/g, '');
+
+    return /^true$/i.test(body);
+  }
+
+  function cbtAssignDirectSubmit(jobId, associate) {
+    var url =
+      COMO_BASE +
+      '/api/store/' +
+      encodeURIComponent(STORE_ID) +
+      '/job/' +
+      encodeURIComponent(jobId) +
+      '/assignToAssociate';
+
+    var ctrl =
+      (typeof AbortController === 'function')
+        ? new AbortController()
+        : null;
+
+    var timer = setTimeout(function(){
+      if (ctrl) ctrl.abort();
+    }, AFA_TIMEOUT_MS);
+
+    var opts = {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({
+        associateId: String(associate || '')
+      })
+    };
+
+    if (ctrl) opts.signal = ctrl.signal;
+
+    return _origFetch(url, opts).then(
+      function(res){
+        clearTimeout(timer);
+
+        return res.text().then(
+          function(t){
+            return {
+              ok: res.ok,
+              status: res.status,
+              body: t
+            };
+          },
+          function(){
+            return {
+              ok: res.ok,
+              status: res.status,
+              body: ''
+            };
+          }
+        );
+      },
+      function(err){
+        clearTimeout(timer);
+
+        return {
+          ok: false,
+          status: 0,
+          body:
+            (err && err.message)
+              ? String(err.message)
+              : 'network error'
+        };
+      }
+    );
+  }
+
+  function cbtAssignViaUi(jobId, associate, guardFn, detailsUrl) {
+    /* v23.9.110: despite the historical function name, this no longer opens
+       a task page or iframe. It sends the exact request captured from one
+       successful manual COMO assignment:
+
+       POST /api/store/{storeId}/job/{jobId}/assignToAssociate
+       {"associateId":"<login>"}
+       success = HTTP 200 with response true
+    */
+
+    associate = cbtAssignNormText(associate);
+
+    if (!jobId || !associate) {
+      return Promise.resolve({
+        ok: false,
+        retryable: false,
+        reason: 'missing task/associate'
+      });
+    }
+
+    return cbtAssignFreshPreflight(
+      jobId,
+      guardFn
+    ).then(function(preflight){
+      if (!preflight || !preflight.ok) {
+        return preflight || {
+          ok: false,
+          retryable: false,
+          reason: 'pre-check failed'
+        };
+      }
+
+      if (guardFn) {
+        try {
+          if (!guardFn()) {
+            return {
+              ok: false,
+              retryable: true,
+              reason: 'task changed before direct assignment'
+            };
+          }
+        } catch(eGuard) {
+          return {
+            ok: false,
+            retryable: true,
+            reason: 'task changed before direct assignment'
+          };
+        }
+      }
+
+      return cbtAssignDirectSubmit(
+        jobId,
+        associate
+      ).then(function(r){
+        if (cbtAssignDirectResponseOk(r)) {
+          return {
+            ok: true,
+            verified: true,
+            status: r.status
+          };
+        }
+
+        var status = Number(r && r.status) || 0;
+        var body = cbtAssignNormText(
+          r && r.body != null ? r.body : ''
+        );
+
+        /* 401/403 are account/session/permission failures, not a reason to
+           hammer every remaining task with the same request. */
+        if (status === 401 || status === 403) {
+          return {
+            ok: false,
+            retryable: false,
+            reason:
+              'Assign request denied — HTTP ' +
+              status +
+              (body ? ' — ' + body.slice(0, 120) : '')
+          };
+        }
+
+        /* A network failure / abort / 5xx is ambiguous because the server may
+           have received the POST before the browser lost the response.
+           Verify first so the same associate is never assigned twice. */
+        if (!status || status >= 500) {
+          return cbtAssignVerifyAssociate(
+            jobId,
+            associate
+          ).then(function(verified){
+            if (verified === true) {
+              return {
+                ok: true,
+                verified: true,
+                status: status
+              };
+            }
+
+            if (verified === false) {
+              return {
+                ok: false,
+                retryable: true,
+                reason:
+                  (status ? 'HTTP ' + status : 'no response') +
+                  (body ? ' — ' + body.slice(0, 120) : '')
+              };
+            }
+
+            return {
+              ok: false,
+              retryable: false,
+              reason:
+                'Could not safely confirm direct assignment' +
+                (
+                  status
+                    ? ' — HTTP ' + status
+                    : body
+                      ? ' — ' + body.slice(0, 120)
+                      : ''
+                )
+            };
+          });
+        }
+
+        /* Normal 4xx/false responses are a clear rejection for this task.
+           Block this task and keep the SAME selected associate on the next
+           earliest candidate. */
+        return {
+          ok: false,
+          retryable: true,
+          reason:
+            'Assignment rejected' +
+            (status ? ' — HTTP ' + status : '') +
+            (body ? ' — ' + body.slice(0, 120) : '')
+        };
+      });
+    });
+  }
+
+  function cbtAssignProgressView() {
+    afaShell(
+      'Assign — running',
+      '<div id="cbt-afa-lead">' +
+        '<span id="cbt-assign-count">' +
+          'Starting…' +
+        '</span>' +
+      '</div>' +
+      '<div id="cbt-afa-bar">' +
+        '<div id="cbt-afa-fill"></div>' +
+      '</div>' +
+      '<div id="cbt-afa-live"></div>',
+      '<button class="cbt-afa-act stop" ' +
+        'data-afa="assign-stop">' +
+        '⏹ Stop' +
+      '</button>'
+    );
+
+    var card =
+      _afaOverlay &&
+      _afaOverlay.querySelector('#cbt-afa-card');
+
+    if (!card) return;
+
+    card.addEventListener('click', function(e){
+      var b = e.target.closest('[data-afa]');
+
+      if (!b ||
+          b.getAttribute('data-afa') !== 'assign-stop') {
+        return;
+      }
+
+      _afaStop = true;
+      b.textContent = '⏹ Stopping…';
+      b.disabled = true;
+    });
+  }
+
+  function cbtAssignProgress(
+    done,
+    total,
+    associate,
+    target,
+    results
+  ) {
+    var c = document.getElementById(
+      'cbt-assign-count'
+    );
+
+    if (c) {
+      c.innerHTML =
+        'Assigning <b>' +
+        Math.min(done, total) +
+        '</b> of <b>' +
+        total +
+        '</b>' +
+        (associate
+          ? ' — ' + afaEsc(associate)
+          : '') +
+        (target
+          ? ' → task ' +
+            afaEsc(target.ref) +
+            ' (' +
+            afaEsc(
+              target.batchRaw || 'earliest'
+            ) +
+            ')'
+          : '');
+    }
+
+    var fill = document.getElementById(
+      'cbt-afa-fill'
+    );
+
+    if (fill) {
+      fill.style.width =
+        Math.round(
+          (
+            Math.max(0, done - 1) /
+            Math.max(1, total)
+          ) * 100
+        ) + '%';
+    }
+
+    var live = document.getElementById(
+      'cbt-afa-live'
+    );
+
+    if (live && results.length) {
+      live.innerHTML =
+        afaRowsHtml(results.slice(-8));
+    }
+  }
+
+  function cbtAssignSummary(results, stopped) {
+    var okN = results.filter(function(r){
+      return r.ok === true;
+    }).length;
+
+    var skipN = results.filter(function(r){
+      return r.skip;
+    }).length;
+
+    var badN = results.filter(function(r){
+      return r.ok === false && !r.skip;
+    }).length;
+
+    afaShell(
+      'Assign — finished',
+      '<div id="cbt-afa-lead">' +
+        (stopped ? 'Stopped early. ' : '') +
+        '<b>' + okN + '</b> assigned' +
+        (skipN
+          ? ', <b>' + skipN + '</b> skipped'
+          : '') +
+        (badN
+          ? ', <b>' + badN + '</b> failed'
+          : '') +
+        '.</div>' +
+        (
+          results.length
+            ? afaRowsHtml(results)
+            : '<div style="color:var(--cb-text2)">' +
+                'Nothing was processed.' +
+              '</div>'
+        ),
+      '<button class="cbt-afa-act" ' +
+        'data-afa="assign-summary-back">' +
+        'Back' +
+      '</button>' +
+      '<button class="cbt-afa-act go" ' +
+        'data-afa="assign-summary-done">' +
+        'Done' +
+      '</button>'
+    );
+
+    var card =
+      _afaOverlay &&
+      _afaOverlay.querySelector('#cbt-afa-card');
+
+    if (!card) return;
+
+    card.addEventListener('click', function(e){
+      var b = e.target.closest('[data-afa]');
+
+      if (!b) return;
+
+      var action = b.getAttribute('data-afa');
+
+      if (action === 'assign-summary-done') {
+        afaClose();
+        return;
+      }
+
+      if (action === 'assign-summary-back') {
+        afaAssignPicker();
+      }
+    });
+  }
+
+  function cbtAssignRun(names) {
+    names = Array.isArray(names)
+      ? names.map(cbtAssignNormText).filter(Boolean)
+      : [];
+
+    if (!names.length || _afaRunning) return;
+
+    _afaRunning = true;
+    _afaStop = false;
+
+    afaSetBtn('⏹ Stop', true);
+
+    var results = [];
+    var claimed = Object.create(null);
+    var blocked = Object.create(null);
+    var nameIndex = 0;
+
+    cbtAssignProgressView();
+
+    function finish() {
+      _afaRunning = false;
+
+      afaSetBtn('▶ Run', false);
+
+      try {
+        pollActiveTasks();
+      } catch(eLive) {}
+
+      try {
+        fetchAndUpdate();
+      } catch(eStats) {}
+
+      try {
+        afaRefreshJobData();
+      } catch(eJobs) {}
+
+      cbtAssignSummary(
+        results,
+        _afaStop
+      );
+    }
+
+    function nextName(delay) {
+      nameIndex++;
+
+      setTimeout(
+        stepName,
+        delay == null ? 100 : delay
+      );
+    }
+
+    function stepName() {
+      if (_afaStop ||
+          nameIndex >= names.length) {
+        finish();
+        return;
+      }
+
+      var associate = names[nameIndex];
+      var attemptedForAssociate = 0;
+
+      function tryEarliest() {
+        if (_afaStop) {
+          finish();
+          return;
+        }
+
+        /* Fresh dashboard state for this associate. */
+        var eligible =
+          cbtAssignEligibleRows(claimed, blocked);
+
+        if (!eligible.length) {
+          results.push({
+            ref: associate,
+            skip: true,
+            ok: false,
+            msg:
+              'No task left to try' +
+              (attemptedForAssociate
+                ? ' after ' + attemptedForAssociate + ' attempt' +
+                  (attemptedForAssociate === 1 ? '' : 's')
+                : '') +
+              ' — tasks with both a name and cart are skipped'
+          });
+
+          cbtAssignProgress(
+            nameIndex + 1,
+            names.length,
+            associate,
+            null,
+            results
+          );
+
+          nextName(70);
+          return;
+        }
+
+        var target = eligible[0];
+        attemptedForAssociate++;
+
+        cbtAssignProgress(
+          nameIndex + 1,
+          names.length,
+          associate,
+          target,
+          results
+        );
+
+        function targetStillEligible() {
+          return !claimed[target.key] &&
+            !blocked[target.key] &&
+            cbtAssignCurrentEligible(target.key);
+        }
+
+        if (!targetStillEligible()) {
+          blocked[target.key] = true;
+
+          /* Keep the SAME selected associate and move to the next earliest
+             task instead of advancing to the next name. */
+          setTimeout(tryEarliest, 60);
+          return;
+        }
+
+        cbtAssignViaUi(
+          target.id,
+          associate,
+          targetStillEligible,
+          target.detailsUrl
+        ).then(function(result){
+          if (_afaStop) {
+            finish();
+            return;
+          }
+
+          if (result && result.ok) {
+            /* Prevent a slow dashboard rerender from reusing the
+               just-assigned task in this same run. */
+            claimed[target.key] = true;
+
+            results.push({
+              ref: associate,
+              id: target.id,
+              ok: true,
+              msg:
+                'Assigned → task ' +
+                target.ref +
+                ' — Batch Target ' +
+                (
+                  target.batchRaw ||
+                  'earliest'
+                )
+            });
+
+            cbtAssignProgress(
+              nameIndex + 1,
+              names.length,
+              associate,
+              target,
+              results
+            );
+
+            nextName(120);
+            return;
+          }
+
+          if (result && result.retryable) {
+            /* Direct API rejected this task. Block only this task and keep
+               the SAME selected associate on the next earliest candidate. */
+            blocked[target.key] = true;
+            setTimeout(tryEarliest, 80);
+            return;
+          }
+
+          /* Ambiguous direct-request failures are not automatically retried because
+             the POST may actually have succeeded while verification lagged.
+             This avoids assigning one person to two tasks. */
+          results.push({
+            ref: associate,
+            ok: false,
+            msg:
+              'Could not safely confirm assignment' +
+              (
+                result && result.reason
+                  ? ' — ' + result.reason
+                  : ''
+              )
+          });
+
+          cbtAssignProgress(
+            nameIndex + 1,
+            names.length,
+            associate,
+            target,
+            results
+          );
+
+          nextName(100);
+        });
+      }
+
+      tryEarliest();
+    }
+
+    stepName();
+  }
+
   /* ── modal ── */
   /* Keeps the icon and label as separate elements so they stay aligned. */
   function afaSetBtn(text, busy) {
@@ -9670,9 +11285,9 @@
         '<button id="cbt-afa-assign-clear" type="button" disabled>Clear</button>' +
       '</div>' +
         '<div class="cbt-afa-assign-empty">None selected.</div></div>' +
-      '<div class="cbt-afa-note">Multi-select only. No task will be assigned yet.</div>',
+      '<div class="cbt-afa-note">Assign tries earliest Batch Target first. A task is skipped only when it has BOTH a Cart/s value and an associate name.</div>',
       '<button class="cbt-afa-act" data-afa="assign-back">Back</button>' +
-      '<button class="cbt-afa-act primary" data-afa="assign-start">Assign</button>'
+      '<button class="cbt-afa-act primary" data-afa="assign-start" disabled>Assign</button>'
     );
 
     var card = _afaOverlay && _afaOverlay.querySelector('#cbt-afa-card');
@@ -9694,6 +11309,9 @@
     }
 
     function renderSelected() {
+      var startBtn = card.querySelector('[data-afa="assign-start"]');
+      if (startBtn) startBtn.disabled = selectedNames.length === 0;
+
       if (!selectedNames.length) {
         selected.innerHTML =
           '<div class="cbt-afa-selected-title">' +
@@ -9854,10 +11472,13 @@
       }
 
       if (b.getAttribute('data-afa') === 'assign-start') {
-        /* v23.9.97 placeholder only.
-           This button will start the real early-task assignment flow later.
-           For now it intentionally performs NO assignment, NO fetch,
-           NO task mutation, and NO network request. */
+        if (!selectedNames.length || b.disabled) return;
+
+        /* Freeze exact user selection order:
+           #1 -> earliest eligible task
+           #2 -> next earliest eligible task
+           and so on. */
+        cbtAssignRun(selectedNames.slice());
         return;
       }
     });
@@ -9919,15 +11540,13 @@
       '</div>';
     }
 
-    /* Placeholder only. The Assign workflow will be connected later.
-       For now this adds the requested button to the Run / Cart Actions menu
-       without making any assignment request or changing any task. */
+    /* User-triggered earliest-eligible associate assignment. */
     var assignBlock = actionBlock(
       'assign',
-      '▶ Assign',
+      '▶ Assign Cart',
       null,
       false,
-      'Search and select multiple associates. Task assignment is not connected yet.'
+      'Select associates in order, then assign them to the earliest eligible tasks.'
     );
 
     var forceBlock = actionBlock(
@@ -10149,7 +11768,7 @@
         return;
       }
 
-      /* v23.9.97: Assign opens associate search/selection only.
+      /* v23.9.110: Assign opens associate search/selection only.
          Do not assign, fetch a task, complete, force, or modify any task. */
       if (action === 'assign') {
         afaAssignPicker();
@@ -11236,7 +12855,7 @@
     } catch(e2) {}
 
     /* Legacy Fastest cleanup is retained only for backward compatibility.
-       v23.9.97 reads the clean v2 Fastest namespace instead. */
+       v23.9.110 reads the clean v2 Fastest namespace instead. */
     try {
       var peaks = hofLoadPeaks(), cleanP = {};
       for (var pk in peaks) {
@@ -11261,7 +12880,7 @@
   }
 
   function runLegacyDataMigration() {
-    /* v23.9.97 intentionally starts Today + Weekly clean. Do not import any
+    /* v23.9.110 intentionally starts Today + Weekly clean. Do not import any
        pre-reset local history into the new shared generation. */
     if (gmGet('cbt_today_weekly_reset_v23948', null)) return;
 
@@ -11450,10 +13069,20 @@
 
       /* Authoritative Live data + stats keep the same refresh cadence. */
       pollActiveTasks();
-      fetchAndUpdate();
+
+      /* If start() just warmed stats, reuse that request instead of firing a
+         second one a few milliseconds later. */
+      if (!_statsLastRequestAt ||
+          (Date.now() - _statsLastRequestAt) > 700) {
+        fetchAndUpdate();
+      }
+
       setInterval(pollActiveTasks, POLL_MS);
       setInterval(tickLive, TICK_MS);
-      setInterval(fetchAndUpdate, 1000);
+
+      /* 2s is fast enough for staffing counters, halves this script's stats
+         request/DOM-compute pressure, and the initial load is now immediate. */
+      setInterval(fetchAndUpdate, CBT_STATS_REFRESH_MS);
     }
   }
 
@@ -11527,6 +13156,13 @@
     if (_cbtStartupDone) return;
     _cbtStartupDone = true;
     MY_DEVICE_ID = getDeviceId();
+
+    /* Warm the three stat cards immediately. This request is asynchronous and
+       does not block Amazon's first paint. The response is reused when the
+       panel/Tasks DOM mounts, so there is no extra parsing burst later. */
+    if (isComoSite() && isDashboardView() && !document.hidden) {
+      try { fetchAndUpdate(); } catch(eStatsWarm) {}
+    }
 
     /* Core UI comes in just after the first two browser paints. */
     cbtAfterFirstPaint(startCoreFeatures, 120);
