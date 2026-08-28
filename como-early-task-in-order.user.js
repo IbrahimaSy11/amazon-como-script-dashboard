@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.127
+// @version      23.9.128
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -3974,8 +3974,23 @@
     });
   }
 
-  var STORAGE_KEY = 'cbt_history', DATE_KEY = 'cbt_history_date';
-  var WEEKLY_KEY = 'cbt_weekly_history', WEEKLY_DAYS = 7;
+  function cbtHistoryStoreScope() {
+    return String(STORE_ID || 'unknown')
+      .trim()
+      .toUpperCase()
+      .replace(/[.$#\[\]\/]/g, '_') || 'UNKNOWN';
+  }
+
+  var CBT_HISTORY_STORE_SCOPE = cbtHistoryStoreScope();
+
+  /* v23.9.128: Today + Weekly are warehouse-scoped. The old keys were global
+     across every warehouse using the script, so remote/local data from another
+     site could inflate the Batcher totals. A new v3 local generation starts
+     clean for each warehouse and then rolls at store midnight / Sunday. */
+  var STORAGE_KEY = 'cbt_history_v3_' + CBT_HISTORY_STORE_SCOPE;
+  var DATE_KEY    = 'cbt_history_date_v3_' + CBT_HISTORY_STORE_SCOPE;
+  var WEEKLY_KEY  = 'cbt_weekly_history_v3_' + CBT_HISTORY_STORE_SCOPE;
+  var WEEKLY_DAYS = 7;
   var ALL_NAMES_KEY = 'cbt_all_names';
   var DEVICE_ID_KEY  = 'cbt_device_id';
 
@@ -3998,28 +4013,33 @@
   // touches its own slice; pulls read the full tree and sum other devices.
   var FIREBASE_URL          = 'https://como-sync-default-rtdb.firebaseio.com';
   var FIREBASE_NAMES_PATH   = '/como_names.json';
-  var FIREBASE_HISTORY_PATH = '/como_history_v2.json';
-  var FIREBASE_WEEKLY_PATH  = '/como_weekly_v2.json';
+
+  /* Today/Weekly used to share one global Firebase basket across warehouses.
+     v23.9.128 isolates both reports by STORE_ID so UNY2 can only see UNY2
+     devices. This is the main correction for impossible 100+ early-day totals. */
+  var FIREBASE_HISTORY_ROOT = '/como_history_v3/' + CBT_HISTORY_STORE_SCOPE;
+  var FIREBASE_WEEKLY_ROOT  = '/como_weekly_v3/'  + CBT_HISTORY_STORE_SCOPE;
+
   function syncEnabled()    { return true; }
   function syncUrl()        { return FIREBASE_URL + FIREBASE_NAMES_PATH; }
-  function syncHistoryUrl() { return FIREBASE_URL + FIREBASE_HISTORY_PATH; }
-  function syncWeeklyUrl()  { return FIREBASE_URL + FIREBASE_WEEKLY_PATH; }
-  function syncHistoryDeviceUrl(devId) { return FIREBASE_URL + '/como_history_v2/devices/' + devId + '.json'; }
-  function syncHistoryMetaUrl(devId)   { return FIREBASE_URL + '/como_history_v2/meta/' + devId + '.json'; }
-  function syncWeeklyDeviceUrl(devId)  { return FIREBASE_URL + '/como_weekly_v2/devices/'  + devId + '.json'; }
-  function syncWeeklyMetaUrl(devId)    { return FIREBASE_URL + '/como_weekly_v2/meta/' + devId + '.json'; }
+  function syncHistoryUrl() { return FIREBASE_URL + FIREBASE_HISTORY_ROOT + '.json'; }
+  function syncWeeklyUrl()  { return FIREBASE_URL + FIREBASE_WEEKLY_ROOT  + '.json'; }
+  function syncHistoryDeviceUrl(devId) { return FIREBASE_URL + FIREBASE_HISTORY_ROOT + '/devices/' + devId + '.json'; }
+  function syncHistoryMetaUrl(devId)   { return FIREBASE_URL + FIREBASE_HISTORY_ROOT + '/meta/' + devId + '.json'; }
+  function syncWeeklyDeviceUrl(devId)  { return FIREBASE_URL + FIREBASE_WEEKLY_ROOT  + '/devices/' + devId + '.json'; }
+  function syncWeeklyMetaUrl(devId)    { return FIREBASE_URL + FIREBASE_WEEKLY_ROOT  + '/meta/' + devId + '.json'; }
 
   // ── Own vs Remote cache keys ──
   // OWN = only this device's recorded batches (pushed to Pantry)
   // REMOTE_CACHE = sum of all OTHER devices' slices (rebuilt on pull, never pushed)
-  var OWN_WEEKLY_KEY            = 'cbt_own_weekly';
-  var WEEKLY_PERIOD_KEY         = 'cbt_weekly_period_start';
-  var REMOTE_HISTORY_KEY        = 'cbt_remote_history_cache';
-  var REMOTE_HISTORY_DATE_KEY   = 'cbt_remote_history_date';
-  var REMOTE_WEEKLY_KEY         = 'cbt_remote_weekly_cache';
-  var REMOTE_WEEKLY_PERIOD_KEY  = 'cbt_remote_weekly_period_start';
-  var HISTORY_SYNC_SCHEMA_KEY   = 'cbt_history_sync_schema_v2';
-  var WEEKLY_SYNC_SCHEMA_KEY    = 'cbt_weekly_sync_schema_v2';
+  var OWN_WEEKLY_KEY            = 'cbt_own_weekly_v3_' + CBT_HISTORY_STORE_SCOPE;
+  var WEEKLY_PERIOD_KEY         = 'cbt_weekly_period_start_v3_' + CBT_HISTORY_STORE_SCOPE;
+  var REMOTE_HISTORY_KEY        = 'cbt_remote_history_cache_v3_' + CBT_HISTORY_STORE_SCOPE;
+  var REMOTE_HISTORY_DATE_KEY   = 'cbt_remote_history_date_v3_' + CBT_HISTORY_STORE_SCOPE;
+  var REMOTE_WEEKLY_KEY         = 'cbt_remote_weekly_cache_v3_' + CBT_HISTORY_STORE_SCOPE;
+  var REMOTE_WEEKLY_PERIOD_KEY  = 'cbt_remote_weekly_period_start_v3_' + CBT_HISTORY_STORE_SCOPE;
+  var HISTORY_SYNC_SCHEMA_KEY   = 'cbt_history_sync_schema_v3_' + CBT_HISTORY_STORE_SCOPE;
+  var WEEKLY_SYNC_SCHEMA_KEY    = 'cbt_weekly_sync_schema_v3_' + CBT_HISTORY_STORE_SCOPE;
 
   var taskCache = new Map();
   var activeTab = 'live';
@@ -4725,8 +4745,8 @@
               GM_xmlhttpRequest({
                 method: 'PUT', url: syncHistoryMetaUrl(devId),
                 headers: { 'Content-Type': 'application/json' },
-                data: JSON.stringify({ date: todayStr(), updatedAt: Date.now(), schema: 2 }),
-                onload: function(){ gmSet(HISTORY_SYNC_SCHEMA_KEY, '2'); },
+                data: JSON.stringify({ date: todayStr(), storeId: CBT_HISTORY_STORE_SCOPE, updatedAt: Date.now(), schema: 3 }),
+                onload: function(){ gmSet(HISTORY_SYNC_SCHEMA_KEY, '3'); },
                 onerror: function(){ _histPushQueued = true; }
               });
             } catch(e2) { _histPushQueued = true; }
@@ -4772,6 +4792,11 @@
 
                   var md = meta[d];
                   var deviceDate = md && typeof md === 'object' ? md.date : null;
+                  var deviceStore = md && typeof md === 'object' ? md.storeId : null;
+
+                  /* The v3 path is already warehouse-scoped. Reject mismatched
+                     metadata too, so copied/malformed nodes cannot leak in. */
+                  if (deviceStore && deviceStore !== CBT_HISTORY_STORE_SCOPE) continue;
 
                   /* Modern slices are accepted ONLY for today's store date.
                      This is the key guarantee that yesterday cannot reappear
@@ -4781,7 +4806,7 @@
                   /* Legacy v23.9.31-and-older device nodes have no date
                      metadata. Keep them only while the Firebase basket has no
                      modern metadata at all, so an all-old installation still
-                     migrates once. As soon as v23.9.127 devices are present,
+                     migrates once. As soon as v23.9.128 v3 devices are present,
                      undated stale nodes are not allowed into Today. */
                   if (!deviceDate && anyModernMeta) continue;
 
@@ -4870,10 +4895,11 @@
                 headers: { 'Content-Type': 'application/json' },
                 data: JSON.stringify({
                   weekStart: currentWeekStartStr(),
+                  storeId: CBT_HISTORY_STORE_SCOPE,
                   updatedAt: Date.now(),
-                  schema: 2
+                  schema: 3
                 }),
-                onload: function(){ gmSet(WEEKLY_SYNC_SCHEMA_KEY, '2'); },
+                onload: function(){ gmSet(WEEKLY_SYNC_SCHEMA_KEY, '3'); },
                 onerror: function(){ _weeklyPushQueued = true; }
               });
             } catch(e2) { _weeklyPushQueued = true; }
@@ -4968,6 +4994,11 @@
 
                   var md = meta[d];
                   var deviceWeek = md && typeof md === 'object' ? md.weekStart : null;
+                  var deviceStore = md && typeof md === 'object' ? md.storeId : null;
+
+                  /* The v3 path is already warehouse-scoped. Reject mismatched
+                     metadata too, so copied/malformed nodes cannot leak in. */
+                  if (deviceStore && deviceStore !== CBT_HISTORY_STORE_SCOPE) continue;
 
                   /* New-week guarantee: a sleeping/offline computer that still
                      has LAST week's slice cannot repopulate the new Weekly tab. */
@@ -13671,7 +13702,9 @@
   var _cbtStartupDone = false;
 
   function cbtResetTodayWeeklyV2() {
-    var RESET_KEY = 'cbt_today_weekly_reset_v23948';
+    /* v23.9.128 starts a clean per-warehouse v3 generation exactly once.
+       Do NOT migrate the old global Today/Weekly data into this generation. */
+    var RESET_KEY = 'cbt_today_weekly_reset_v239128_v3_' + CBT_HISTORY_STORE_SCOPE;
     try {
       if (gmGet(RESET_KEY, null) || localStorage.getItem(RESET_KEY)) return;
     } catch(e0) {}
@@ -13749,7 +13782,7 @@
     } catch(e2) {}
 
     /* Legacy Fastest cleanup is retained only for backward compatibility.
-       v23.9.127 reads the clean v2 Fastest namespace instead. */
+       v23.9.128 reads the clean v2 Fastest namespace instead. */
     try {
       var peaks = hofLoadPeaks(), cleanP = {};
       for (var pk in peaks) {
@@ -13774,9 +13807,9 @@
   }
 
   function runLegacyDataMigration() {
-    /* v23.9.127 intentionally starts Today + Weekly clean. Do not import any
-       pre-reset local history into the new shared generation. */
-    if (gmGet('cbt_today_weekly_reset_v23948', null)) return;
+    /* v23.9.128 intentionally starts Today + Weekly clean per warehouse.
+       Do not import the old global v2 history into the corrected v3 generation. */
+    if (gmGet('cbt_today_weekly_reset_v239128_v3_' + CBT_HISTORY_STORE_SCOPE, null)) return;
 
     /* One-time migration kept exactly for compatibility with older installs. */
     var CLEAN_KEY = 'cbt_cleaned_v21_9';
