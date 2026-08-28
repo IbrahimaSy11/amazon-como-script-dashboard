@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.122
+// @version      23.9.127
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -723,6 +723,9 @@
     }
     #cbt-afa-overlay.cbt-dark .cbt-afa-opt:hover { background: #1c2333; border-color: #58a6ff; }
     #cbt-afa-overlay.cbt-dark .cbt-afa-opt.off:hover { background: #161b22; border-color: #30363d; }
+    #cbt-afa-overlay.cbt-dark #cbt-afa-assign-types .cbt-afa-opt b {
+      color: #e6edf3;
+    }
     #cbt-afa-overlay.cbt-dark .cbt-afa-note { color: #8b99aa; }
 
     /* ══════════════════════════════════════
@@ -1256,7 +1259,7 @@
       display: flex;
       align-items: center;
       justify-content: flex-start;
-      gap: 5px;
+      gap: 4px;
       width: 100%;
       min-width: 0;
       height: 18px;
@@ -1674,6 +1677,10 @@
       overflow-wrap: anywhere;
       word-break: normal;
     }
+    #cbt-afa-missing-copy {
+      font-size: 10px;
+      line-height: 1.30;
+    }
 
     /* Assign associate picker — search/select only. */
     #cbt-afa-assign-search {
@@ -2006,6 +2013,33 @@
     .cbt-afa-opt.off { opacity: .55; cursor: default; }
     .cbt-afa-opt.off:hover { border-color: var(--cb-border); background: var(--cb-row-alt); }
     .cbt-afa-opt input { margin-top: 2px; width: 15px; height: 15px; cursor: pointer; flex-shrink: 0; }
+
+    #cbt-afa-assign-types {
+      margin: 0 0 12px;
+      padding: 10px 11px;
+      border: 1px solid var(--cb-border);
+      border-radius: 8px;
+      background: var(--cb-row-alt);
+    }
+    .cbt-afa-assign-type-title {
+      color: var(--cb-navy);
+      font-size: 11px;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+      margin-bottom: 7px;
+    }
+    #cbt-afa-assign-types .cbt-afa-opt {
+      margin-top: 6px;
+      padding: 7px 8px;
+      gap: 5px;
+      font-size: 12px;
+      line-height: 1.35;
+    }
+    #cbt-afa-assign-types .cbt-afa-opt b {
+      color: var(--cb-navy);
+    }
+
     .cbt-afa-note {
       font-size: 12px; color: var(--cb-text2); line-height: 1.55;
       padding: 8px 13px 0; }
@@ -2558,7 +2592,7 @@
      The old recommendation divided remaining PACKAGES by live batcher speed.
      That could recommend "1" even when many carts were due soon.
 
-     v23.9.122 deliberately does NOT use individual associate speed/rate.
+     v23.9.127 deliberately does NOT use individual associate speed/rate.
 
      It treats each open batching job/cart as one unit of work and asks:
        "How many concurrent batchers are needed to clear these carts before
@@ -3099,6 +3133,9 @@
   var _statsLastRequestAt = 0;
   var _statsStartupRecheckTimer = 0;
   var _statsStartupRecheckTries = 0;
+  var _statsStartupWarm = null;
+  var _statsStartupWarmChecked = false;
+  var _statsStartupGraceUntil = 0;
 
   function cbtStatsCacheKey() {
     return 'cbt_stats_warm_v1_' + String(STORE_ID || 'unknown');
@@ -3203,10 +3240,25 @@
     try { localStorage.setItem(cbtStatsCacheKey(), raw); } catch(e1) {}
   }
 
+  function cbtStatsPrimeStartupWarm() {
+    if (_statsStartupWarmChecked) return _statsStartupWarm;
+
+    _statsStartupWarmChecked = true;
+
+    try {
+      _statsStartupWarm = cbtStatsLoadWarm(true);
+    } catch(e) {
+      _statsStartupWarm = null;
+    }
+
+    return _statsStartupWarm;
+  }
+
   function cbtStatsHydrateWarm() {
-    /* On a reload, favor immediate display. A <=30s cycle mismatch is allowed
-       only here because it is visibly marked Refreshing current dashboard… */
-    var s = cbtStatsLoadWarm(true);
+    /* On a reload, favor immediate display. The startup snapshot was already
+       read once before the first stats request, so mounting the panel does not
+       need another synchronous storage read. */
+    var s = cbtStatsPrimeStartupWarm();
     if (!s) return false;
 
     updateStats(
@@ -3384,15 +3436,38 @@
        Remaining can already use the new API response because it is independent
        of the normal-Tasks DOM snapshot. */
     var warm = null;
+
+    /* During the first moments of a reload, Angular can expose the main Tasks
+       container before inserting its job-card children. If the API already has
+       open batching work, a temporary DOM count of 0 is NOT authoritative. */
+    var startupZeroTransition =
+      Date.now() < _statsStartupGraceUntil &&
+      mainTasks &&
+      mainTasks.count === 0 &&
+      staffingJobs.length > 0;
+
     var provisional =
+      startupZeroTransition ||
       !mainTasks ||
       scopedStaffingJobs === null ||
       !calc ||
       calc.ready === false;
 
+    if (provisional) {
+      /* Preserve the last fresh store-scoped values during the short Angular
+         mount window. Most importantly, do not replace a real cached 8 / 8
+         with temporary 0 / 0 just because the cards have not rendered yet. */
+      warm = cbtStatsPrimeStartupWarm() || cbtStatsLoadWarm(false);
+
+      if (warm) {
+        inProgress = warm.inProgress;
+        recommended = warm.recommended;
+      }
+    }
+
     if (inProgress == null || recommended == null) {
-      /* Strict same-cycle warm data is the first startup fallback. */
-      warm = cbtStatsLoadWarm(false);
+      /* Same-cycle warm data remains the normal fallback after startup. */
+      if (!warm) warm = cbtStatsLoadWarm(false);
 
       if (warm) {
         if (inProgress == null) inProgress = warm.inProgress;
@@ -3455,7 +3530,8 @@
 
     /* Only persist a fully authoritative SAME-snapshot result. Warm fallback
        values are display-only and never overwrite the cache timestamp. */
-    if (mainTasks &&
+    if (!startupZeroTransition &&
+        mainTasks &&
         scopedStaffingJobs !== null &&
         calc &&
         calc.ready !== false &&
@@ -3799,7 +3875,7 @@
       };
       delete _cbtObservedProgressByRef[ref];
     } else {
-      /* Critical v23.9.122 fix: for the SAME job, an authoritative API update
+      /* Critical v23.9.127 fix: for the SAME job, an authoritative API update
          may correct the clock only BACKWARD. It can never shorten elapsed time
          by introducing a newer BATCHING sub-operation. */
       if (info.startMs < cur.ms - 1000) {
@@ -4154,7 +4230,7 @@
   function cbtMergeBestFields(target, source) {
     if (!target || !source) return;
 
-    /* v23.9.122+ stores bestRate explicitly. For older cached rows, use the
+    /* v23.9.127+ stores bestRate explicitly. For older cached rows, use the
        strongest recoverable value (bestRate -> lastRate -> avgRate). */
     var candidate = Math.max(
       Number(source.bestRate) || 0,
@@ -4300,7 +4376,7 @@
       var hdr = panel.querySelector('#cbt-header');
       if (hdr) hdr.style.zoom = HEADER_FIXED_SCALE;
 
-      /* v23.9.122: pin the three-number stats row at the same 130% as the
+      /* v23.9.127: pin the three-number stats row at the same 130% as the
          header. A- / A+ must never resize Batchers, Recommended This Hour,
          or Remaining. */
       var stats = panel.querySelector('#cbt-stats-bar');
@@ -4705,7 +4781,7 @@
                   /* Legacy v23.9.31-and-older device nodes have no date
                      metadata. Keep them only while the Firebase basket has no
                      modern metadata at all, so an all-old installation still
-                     migrates once. As soon as v23.9.122 devices are present,
+                     migrates once. As soon as v23.9.127 devices are present,
                      undated stale nodes are not allowed into Today. */
                   if (!deviceDate && anyModernMeta) continue;
 
@@ -5393,7 +5469,7 @@
   var HOF_MAX_RATE = CBT_MAX_VALID_RATE; /* shared trusted-rate ceiling */
   var HOF_TOP      = 30;
 
-  /* v23.9.122 TRUSTED FASTEST RESET
+  /* v23.9.127 TRUSTED FASTEST RESET
      --------------------------------
      Legacy Fastest records were calculated before the full-span timing fix.
      They cannot be safely repaired because each historical record did not
@@ -6447,6 +6523,15 @@
   function buildPanel() {
     var panel2 = document.createElement('div');
     panel2.id = 'cbt-panel';
+
+    /* Build the three stat values with the last fresh snapshot already in the
+       HTML. This is faster than mounting placeholders and patching them one
+       DOM update later. */
+    var bootStats = cbtStatsPrimeStartupWarm();
+    var bootIp = bootStats ? String(bootStats.inProgress) : '\u2014';
+    var bootRec = bootStats ? String(bootStats.recommended) : '\u2014';
+    var bootRem = bootStats ? String(bootStats.remaining) : '\u2014';
+
     panel2.innerHTML =
       '<div id="cbt-header">' +
         '<span id="cbt-title">Batcher Timers</span>' +
@@ -6465,17 +6550,17 @@
         '<div class="cbt-stat-card">' +
           '<div class="cbt-stat-icon">\uD83E\uDDBA</div>' +
           '<div class="cbt-stat-label">Batchers</div>' +
-          '<div class="cbt-stat-value"><span id="cbt-stat-ip">\u2014</span><span id="cbt-stat-delta"></span></div>' +
+          '<div class="cbt-stat-value"><span id="cbt-stat-ip">' + bootIp + '</span><span id="cbt-stat-delta"></span></div>' +
         '</div>' +
         '<div class="cbt-stat-card">' +
           '<div class="cbt-stat-icon">\uD83D\uDCCA</div>' +
           '<div class="cbt-stat-label">Recommended This Hour</div>' +
-          '<div class="cbt-stat-value"><span id="cbt-stat-rec">\u2014</span><span id="cbt-stat-dot"></span></div>' +
+          '<div class="cbt-stat-value"><span id="cbt-stat-rec">' + bootRec + '</span><span id="cbt-stat-dot"></span></div>' +
         '</div>' +
         '<div class="cbt-stat-card">' +
           '<div class="cbt-stat-icon">\uD83D\uDCE6</div>' +
           '<div class="cbt-stat-label">Remaining</div>' +
-          '<div class="cbt-stat-value" id="cbt-stat-rem">\u2014</div>' +
+          '<div class="cbt-stat-value" id="cbt-stat-rem">' + bootRem + '</div>' +
         '</div>' +
       '</div>' +
       '<div id="cbt-tabs">' +
@@ -6876,7 +6961,7 @@
       try { afaConfirm(); } catch(err) {}
     });
 
-    /* v23.9.122: restore the original VERTICAL dashboard length.
+    /* v23.9.127: restore the original VERTICAL dashboard length.
        Width stays exactly as before. The compact 240px default from older
        versions is migrated back to 350px once. If someone manually made the
        board taller than 350px, keep that larger custom height. */
@@ -6891,7 +6976,7 @@
       }
     } catch(eRestore) {}
 
-    /* v23.9.122: persist the dashboard's collapsed/open state across reloads. */
+    /* v23.9.127: persist the dashboard's collapsed/open state across reloads. */
     var isCollapsed = false;
     try { isCollapsed = localStorage.getItem('cbt_panel_collapsed') === '1'; } catch(eCollapsedLoad) {}
     var collapseBtn = panel2.querySelector('#cbt-collapse-btn');
@@ -10258,26 +10343,74 @@
     return out;
   }
 
-  function cbtAssignRowCanBeTried(r) {
+  function cbtAssignTaskType(r) {
+    if (!r) return '';
+
+    if (!r.assignmentHasName && !r.cartHasValue) return 'blank';
+    if (r.assignmentHasName && !r.cartHasValue) return 'name';
+    if (!r.assignmentHasName && r.cartHasValue) return 'cart';
+    return 'both';
+  }
+
+  function cbtAssignNormalizeTaskTypes(options) {
+    options = options || {};
+
+    return {
+      /* No Name + No Cart is intentionally not configurable.
+         It ALWAYS runs first whenever Assign Cart is used. */
+      blank: true,
+      name: !!options.name,
+      cart: !!options.cart,
+      both: !!options.both
+    };
+  }
+
+  function cbtAssignTaskTypeAllowed(r, options) {
+    var scope = cbtAssignNormalizeTaskTypes(options);
+    var type = cbtAssignTaskType(r);
+
+    if (type === 'blank') return true;
+    if (type === 'name') return scope.name;
+    if (type === 'cart') return scope.cart;
+    if (type === 'both') return scope.both;
+
+    return false;
+  }
+
+  function cbtAssignTaskTypePriority(r) {
+    /* Fixed category order requested:
+       1. No Name + No Cart
+       2. Name Only
+       3. Cart Only
+       4. Name + Cart */
+    var type = cbtAssignTaskType(r);
+
+    if (type === 'blank') return 0;
+    if (type === 'name') return 1;
+    if (type === 'cart') return 2;
+    if (type === 'both') return 3;
+
+    return 99;
+  }
+
+  function cbtAssignRowCanBeTried(r, options) {
     if (!r || r.batchMs == null) return false;
 
-    /* Visual columns are no longer treated as proof that a task is safe or
-       unsafe to assign. All four combinations may be considered:
-       - no name + no cart -> TRY
-       - name only         -> TRY
-       - cart only         -> TRY
-       - name + cart       -> TRY
+    /* No Name + No Cart always runs.
+       The other three visual task types are optional picker choices.
 
-       Safety is handled separately by:
+       Visual columns still are NOT proof that a task is safe to assign.
+       Safety remains handled by:
        1) the successful-assignment protection window,
        2) a fresh read-only backend state check,
        3) Amazon's assignToAssociate API itself. */
-    return true;
+    return cbtAssignTaskTypeAllowed(r, options);
   }
 
-  function cbtAssignEligibleRows(claimed, blocked) {
+  function cbtAssignEligibleRows(claimed, blocked, options) {
     claimed = claimed || Object.create(null);
     blocked = blocked || Object.create(null);
+    options = cbtAssignNormalizeTaskTypes(options);
 
     var protectedRows = cbtAssignLoadProtection();
     var nowMs = Date.now();
@@ -10296,7 +10429,7 @@
         return !claimed[r.key] &&
           !blocked[r.key] &&
           !p &&
-          cbtAssignRowCanBeTried(r);
+          cbtAssignRowCanBeTried(r, options);
       });
 
     if (protectionPruned) cbtAssignPersistProtection();
@@ -10304,10 +10437,18 @@
     return rows
       .sort(function(a, b){
         /* Priority:
-           1. Earliest Batch Target first.
-           2. If Batch Target is the same, task with MOST packages first.
-           3. If package totals are also the same, keep the task that is
-              physically higher on the dashboard first. */
+           1. Task type:
+              No Name + No Cart -> Name Only -> Cart Only -> Name + Cart
+              (unchecked optional types were already filtered out).
+           2. Within that task type: earliest Batch Target first.
+           3. Same Batch Target: MOST packages first.
+           4. Same time + package count: higher dashboard row first. */
+        var typeDiff =
+          cbtAssignTaskTypePriority(a) -
+          cbtAssignTaskTypePriority(b);
+
+        if (typeDiff) return typeDiff;
+
         if (a.batchMs !== b.batchMs) return a.batchMs - b.batchMs;
 
         if (a.packageCount !== b.packageCount) {
@@ -10318,8 +10459,9 @@
       });
   }
 
-  function cbtAssignCurrentEligible(jobKey) {
+  function cbtAssignCurrentEligible(jobKey, options) {
     var rows = cbtAssignReadRows();
+    options = cbtAssignNormalizeTaskTypes(options);
 
     for (var i = 0; i < rows.length; i++) {
       var r = rows[i];
@@ -10327,7 +10469,7 @@
       if (r.key !== String(jobKey)) continue;
 
       return !cbtAssignIsProtected(r.key) &&
-        cbtAssignRowCanBeTried(r);
+        cbtAssignRowCanBeTried(r, options);
     }
 
     return false;
@@ -11125,7 +11267,7 @@
   }
 
   function cbtAssignViaUi(jobId, associate, guardFn, detailsUrl) {
-    /* v23.9.122: despite the historical function name, this no longer opens
+    /* v23.9.127: despite the historical function name, this no longer opens
        a task page or iframe. It sends the exact request captured from one
        successful manual COMO assignment:
 
@@ -11427,10 +11569,14 @@
     });
   }
 
-  function cbtAssignRun(names) {
+  function cbtAssignRun(names, taskTypes) {
     names = Array.isArray(names)
       ? names.map(cbtAssignNormText).filter(Boolean)
       : [];
+
+    /* Freeze the picker choices for this run.
+       No Name + No Cart remains enabled even if no optional box was checked. */
+    taskTypes = cbtAssignNormalizeTaskTypes(taskTypes);
 
     if (!names.length || _afaRunning) return;
 
@@ -11565,7 +11711,11 @@
 
         /* Fresh dashboard state for this associate. */
         var eligible =
-          cbtAssignEligibleRows(claimed, blocked);
+          cbtAssignEligibleRows(
+            claimed,
+            blocked,
+            taskTypes
+          );
 
         if (!eligible.length) {
           results.push({
@@ -11578,7 +11728,7 @@
                 ? ' after ' + attemptedForAssociate + ' attempt' +
                   (attemptedForAssociate === 1 ? '' : 's')
                 : '') +
-              ' — recently assigned carts stay protected for 90 seconds'
+              ' — no eligible task left in the selected task types; recently assigned carts stay protected for 90 seconds'
           });
 
           cbtAssignProgress(
@@ -11607,7 +11757,10 @@
         function targetStillEligible() {
           return !claimed[target.key] &&
             !blocked[target.key] &&
-            cbtAssignCurrentEligible(target.key);
+            cbtAssignCurrentEligible(
+              target.key,
+              taskTypes
+            );
         }
 
         if (!targetStillEligible()) {
@@ -11890,6 +12043,21 @@
     afaShell(
       'Assign',
       '<div id="cbt-afa-lead">Search and select one or more associates.</div>' +
+      '<div id="cbt-afa-assign-types">' +
+        '<div class="cbt-afa-assign-type-title">Also include</div>' +
+        '<label class="cbt-afa-opt">' +
+          '<input id="cbt-afa-type-name" type="checkbox">' +
+          '<span><b>Task with Associate Name only</b></span>' +
+        '</label>' +
+        '<label class="cbt-afa-opt">' +
+          '<input id="cbt-afa-type-cart" type="checkbox">' +
+          '<span><b>Task with Cart Number only</b></span>' +
+        '</label>' +
+        '<label class="cbt-afa-opt">' +
+          '<input id="cbt-afa-type-both" type="checkbox">' +
+          '<span><b>Task with Associate Name + Cart Number</b></span>' +
+        '</label>' +
+      '</div>' +
       '<input id="cbt-afa-assign-search" type="text" autocomplete="off" spellcheck="false" ' +
         'placeholder="Search associate name..." aria-label="Search associate name">' +
       '<div id="cbt-afa-assign-results">' +
@@ -11900,7 +12068,7 @@
         '<button id="cbt-afa-assign-clear" type="button" disabled>Clear</button>' +
       '</div>' +
         '<div class="cbt-afa-assign-empty">None selected.</div></div>' +
-      '<div class="cbt-afa-note">Assign tries earliest Batch Target first. A task is skipped only when it has BOTH a Cart/s value and an associate name.</div>',
+      '<div class="cbt-afa-note">No Name + No Cart always runs first. Checked task types are fallback groups. Inside each group: earliest Batch Target → most packages if the time matches → top row if still tied.</div>',
       '<button class="cbt-afa-act" data-afa="assign-back">Back</button>' +
       '<button class="cbt-afa-act primary" data-afa="assign-start" disabled>Assign</button>'
     );
@@ -11909,7 +12077,17 @@
     var input = document.getElementById('cbt-afa-assign-search');
     var results = document.getElementById('cbt-afa-assign-results');
     var selected = document.getElementById('cbt-afa-assign-selected');
-    if (!card || !input || !results || !selected) return;
+    var typeName = document.getElementById('cbt-afa-type-name');
+    var typeCart = document.getElementById('cbt-afa-type-cart');
+    var typeBoth = document.getElementById('cbt-afa-type-both');
+
+    if (!card ||
+        !input ||
+        !results ||
+        !selected ||
+        !typeName ||
+        !typeCart ||
+        !typeBoth) return;
 
     function esc(v) {
       return afaEsc(v);
@@ -12109,11 +12287,18 @@
            productivity/performance ranking. */
         cbtAssignRememberRecentNames(selectedNames);
 
-        /* Freeze exact user selection order:
-           #1 -> earliest eligible task
-           #2 -> next earliest eligible task
-           and so on. */
-        cbtAssignRun(selectedNames.slice());
+        /* Freeze exact user selection order and task-type choices.
+           No Name + No Cart is always enabled by cbtAssignRun().
+           Optional checked fallback groups keep this exact order:
+           Name Only -> Cart Only -> Name + Cart. */
+        cbtAssignRun(
+          selectedNames.slice(),
+          {
+            name: !!typeName.checked,
+            cart: !!typeCart.checked,
+            both: !!typeBoth.checked
+          }
+        );
         return;
       }
     });
@@ -12411,7 +12596,7 @@
         return;
       }
 
-      /* v23.9.122: Assign opens associate search/selection only.
+      /* v23.9.127: Assign opens associate search/selection only.
          Do not assign, fetch a task, complete, force, or modify any task. */
       if (action === 'assign') {
         if (b.disabled || !cbtAssignHasSiteTasks()) {
@@ -13564,7 +13749,7 @@
     } catch(e2) {}
 
     /* Legacy Fastest cleanup is retained only for backward compatibility.
-       v23.9.122 reads the clean v2 Fastest namespace instead. */
+       v23.9.127 reads the clean v2 Fastest namespace instead. */
     try {
       var peaks = hofLoadPeaks(), cleanP = {};
       for (var pk in peaks) {
@@ -13589,7 +13774,7 @@
   }
 
   function runLegacyDataMigration() {
-    /* v23.9.122 intentionally starts Today + Weekly clean. Do not import any
+    /* v23.9.127 intentionally starts Today + Weekly clean. Do not import any
        pre-reset local history into the new shared generation. */
     if (gmGet('cbt_today_weekly_reset_v23948', null)) return;
 
@@ -13865,6 +14050,11 @@
     if (_cbtStartupDone) return;
     _cbtStartupDone = true;
     MY_DEVICE_ID = getDeviceId();
+
+    /* Read the last fresh store-scoped stat snapshot once, before the panel or
+       the early API response can flash temporary startup zeros. */
+    _statsStartupGraceUntil = Date.now() + 2500;
+    try { cbtStatsPrimeStartupWarm(); } catch(eWarmPrime) {}
 
     /* Warm the three stat cards immediately. This request is asynchronous and
        does not block Amazon's first paint. The response is reused when the
