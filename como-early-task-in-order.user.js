@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.128
+// @version      23.9.129
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -5220,11 +5220,26 @@
     } catch(e) {}
   }
 
+  function cbtHistoryEntryHasData(e) {
+    if (!e || typeof e !== 'object') return false;
+
+    return (Number(e.runs) || 0) > 0 ||
+      (Number(e.totalPkgs) || 0) > 0 ||
+      (Number(e.totalSec) || 0) > 0 ||
+      (Number(e.bestRate) || 0) > 0 ||
+      (Number(e.lastRate) || 0) > 0 ||
+      (Number(e.totalMissing) || 0) > 0 ||
+      (Number(e.totalExpected) || 0) > 0;
+  }
+
   function sanitizeHistory(h) {
     var clean = {};
     for (var a in (h || {})) {
       var e = h[a];
       if (!e || typeof e !== 'object') continue;
+      /* v23.9.129: names with no actual batch/performance data are not
+         display records. Keep saved-name storage separate from history. */
+      if (!cbtHistoryEntryHasData(e)) continue;
       var pkgs = Number(e.totalPkgs) || 0;
       var runs = Number(e.runs) || 0;
       var sec  = Number(e.totalSec) || 0;
@@ -5961,17 +5976,17 @@
         addSearchOnly(hofKey(td.assoc || kk), td.assoc || kk, td.runs, td.totalPkgs, 1);
       }
 
-      /* Finally make every permanently saved name searchable, even with no
-         batch data yet. */
-      var savedSearchNames = loadAllNames();
-      for (kk in savedSearchNames) {
-        var sn = savedSearchNames[kk];
-        addSearchOnly(hofKey(sn), sn, 0, 0, 0);
-      }
-
+      /* Saved-name-only rows are intentionally excluded in v23.9.129.
+         Fastest search should show an associate only when some actual
+         Today/Weekly/Fastest data exists. */
       var extra = Object.keys(extraByKey).map(function(kx){ return extraByKey[kx]; });
       rows = rows.concat(extra).filter(function(x){
-        return (x.assoc || '').toLowerCase().indexOf(hofTerm) !== -1;
+        var hasData =
+          (Number(x.rate) || 0) > 0 ||
+          (Number(x.latestRate) || 0) > 0 ||
+          (Number(x.runs) || 0) > 0 ||
+          (Number(x.pkgs) || 0) > 0;
+        return hasData && (x.assoc || '').toLowerCase().indexOf(hofTerm) !== -1;
       });
       rows = prioritizeNameMatches(rows, hofTerm, function(x){ return x.assoc; });
     }
@@ -7540,6 +7555,7 @@
       for (var a in w[dk]) {
         var e = w[dk][a];
         if (!e || typeof e !== 'object') continue;
+        if (!cbtHistoryEntryHasData(e)) continue;
         if ((e.totalPkgs||0) > 50000 || (e.runs||0) > 300) continue;
         var sec = Number(e.totalSec) || 0;
         if (sec > 60 && (Number(e.totalPkgs)||0) / (sec / 60) > CBT_MAX_VALID_RATE) continue;
@@ -7634,13 +7650,101 @@
     requestUnifiedSearchCount();
   }
 
+  var _cbtDataNameSetCache = null;
+  var _cbtDataNameSetAt = 0;
+
+  function cbtNameKey(v) {
+    return String(v || '').trim().toLowerCase();
+  }
+
+  function cbtDataBearingNameSet() {
+    var now = Date.now();
+    if (_cbtDataNameSetCache && (now - _cbtDataNameSetAt) < 1500) {
+      return _cbtDataNameSetCache;
+    }
+
+    var set = new Set();
+
+    function addName(v) {
+      var k = cbtNameKey(v);
+      if (k) set.add(k);
+    }
+
+    /* Today */
+    try {
+      var today = getDisplayHistory();
+      for (var tk in today) {
+        var te = today[tk];
+        if (cbtHistoryEntryHasData(te)) addName((te && te.assoc) || tk);
+      }
+    } catch(e0) {}
+
+    /* Weekly */
+    try {
+      var week = sanitizeWeekly(getDisplayWeekly());
+      for (var dk in week) {
+        for (var wk in week[dk]) {
+          var we = week[dk][wk];
+          if (cbtHistoryEntryHasData(we)) addName((we && we.assoc) || wk);
+        }
+      }
+    } catch(e1) {}
+
+    /* Fastest / all-time totals */
+    try {
+      var peaks = hofLoadPeaks();
+      for (var pk in peaks) {
+        var p = peaks[pk] || {};
+        if ((Number(p.rate) || 0) > 0) addName(p.assoc || pk);
+      }
+
+      var latest = hofLoadLatest();
+      for (var lk in latest) {
+        var l = latest[lk] || {};
+        if ((Number(l.rate) || 0) > 0) addName(l.assoc || lk);
+      }
+
+      var own = hofLoadOwnTotals();
+      for (var ok in own) {
+        var o = own[ok] || {};
+        if ((Number(o.runs) || 0) > 0 || (Number(o.pkgs) || 0) > 0) {
+          addName(o.assoc || ok);
+        }
+      }
+
+      var remote = hofLoadRemoteTotals();
+      for (var rk in remote) {
+        var r = remote[rk] || {};
+        if ((Number(r.runs) || 0) > 0 || (Number(r.pkgs) || 0) > 0) {
+          addName(r.assoc || rk);
+        }
+      }
+    } catch(e2) {}
+
+    /* A currently active Live batcher is real current data even before they
+       finish enough work to create Today/Weekly performance history. */
+    try {
+      taskCache.forEach(function(d) {
+        if (!d || !cbtIsLiveBatch(d)) return;
+        addName(d.associateId || d.associate || d.driverAssignment || '');
+      });
+    } catch(e3) {}
+
+    _cbtDataNameSetCache = set;
+    _cbtDataNameSetAt = now;
+    return set;
+  }
+
   function savedNamesSearchHTML(term, excludeSet) {
     term = (term||'').toLowerCase().trim();
     if (!term) return '';
     var all = loadAllNames();
+    var dataNames = cbtDataBearingNameSet();
     var matches = [];
     for (var k in all) {
-      if (k.indexOf(term) !== -1 && (!excludeSet || !excludeSet.has(k))) matches.push(all[k]);
+      var n = all[k];
+      if (!dataNames.has(cbtNameKey(n))) continue;
+      if (k.indexOf(term) !== -1 && (!excludeSet || !excludeSet.has(k))) matches.push(n);
     }
     if (!matches.length) return '';
     matches.sort(function(a,b){ return a.toLowerCase().localeCompare(b.toLowerCase()); });
@@ -7669,8 +7773,11 @@
       syncNamesFromAllTabs();
     }
     var all = loadAllNames();
-    var totalCount = Object.keys(all).length;
-    var names = Object.keys(all).map(function(k){ return all[k]; });
+    var dataNames = cbtDataBearingNameSet();
+    var names = Object.keys(all)
+      .map(function(k){ return all[k]; })
+      .filter(function(n){ return dataNames.has(cbtNameKey(n)); });
+    var totalCount = names.length;
     names.sort(function(a,b){ return a.toLowerCase().localeCompare(b.toLowerCase()); });
 
     var term = (namesSearchTerm||'').toLowerCase().trim();
@@ -7690,7 +7797,7 @@
     var emptyEl = document.getElementById('cbt-names-empty');
     if (!names.length) {
       setHTML(tbody, '');
-      if (emptyEl) { emptyEl.style.display = 'block'; emptyEl.textContent = term ? 'No names match "' + namesSearchTerm + '"' : 'No names saved yet'; }
+      if (emptyEl) { emptyEl.style.display = 'block'; emptyEl.textContent = term ? 'No data names match "' + namesSearchTerm + '"' : 'No associates with data yet'; }
       return;
     }
     if (emptyEl) emptyEl.style.display = 'none';
