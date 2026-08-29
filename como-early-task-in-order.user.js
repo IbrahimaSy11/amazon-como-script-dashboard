@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.177
+// @version      23.9.178
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -3601,19 +3601,28 @@ if (!raw) raw = localStorage.getItem(CBT_BATCH_EVENT_FASTEST_KEY);
 var obj = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : null;
 if (!obj || typeof obj !== 'object') obj = {};
 if (!obj.stats) obj.stats = {totals:{},peaks:{},latest:{}};
-if (!obj.recentIds || typeof obj.recentIds !== 'object') obj.recentIds = {};
+var legacyRecentIds = obj.recentIds && typeof obj.recentIds === 'object';
+if (!obj.recentEvents || typeof obj.recentEvents !== 'object') obj.recentEvents = {};
+obj.legacy = !!(legacyRecentIds && !obj.format);
 obj.pulledAt = Number(obj.pulledAt) || 0;
 _cbtFastestSnapshotCache = obj;
 return _cbtFastestSnapshotCache;
 } catch(e) {
-_cbtFastestSnapshotCache = { pulledAt:0, recentIds:{}, stats:{totals:{},peaks:{},latest:{}} };
+_cbtFastestSnapshotCache = { pulledAt:0, format:3, legacy:false, recentEvents:{}, stats:{totals:{},peaks:{},latest:{}} };
 return _cbtFastestSnapshotCache;
 }
 }
-function cbtFastestSnapshotSave(stats, pulledAt, recentIds) {
+function cbtFastestSnapshotSave(stats, pulledAt, recentEvents) {
+var cleanRecent = {};
+for (var id in (recentEvents || {})) {
+var ev = cbtSanitizeBatchEvent(recentEvents[id], id);
+if (ev) cleanRecent[ev.eventId] = cbtChooseBatchEvent(cleanRecent[ev.eventId], ev);
+}
 var obj = {
+format:3,
+legacy:false,
 pulledAt:Number(pulledAt)||((typeof cbtNowMs === 'function')?cbtNowMs():Date.now()),
-recentIds:recentIds || {},
+recentEvents:cleanRecent,
 stats:stats || {totals:{},peaks:{},latest:{}}
 };
 _cbtFastestSnapshotCache = obj;
@@ -3793,16 +3802,35 @@ ontimeout: function(){ if (done) done(false); }
 });
 } catch(e) { if (done) done(false); }
 }
+var _cbtBatchBackfillState = Object.create(null);
 function cbtPushMissingLocalBatchEvents(remote) {
 remote = remote || {};
 var local = cbtLoadLocalBatchEvents();
-var sent = 0;
+var sent = 0, now = Date.now();
 for (var id in local) {
 var ev = local[id];
-if (!ev || !cbtIsDateInCurrentWeek(ev.dateKey)) continue;
+if (!ev) continue;
 var chosen = cbtChooseBatchEvent(remote[id], ev);
 if (remote[id] && JSON.stringify(chosen) === JSON.stringify(remote[id])) continue;
+if (cbtIsDateInCurrentWeek(ev.dateKey)) {
 cbtPushBatchEvent(ev);
+if (++sent >= 25) break;
+continue;
+}
+// Current-week pulls intentionally do not contain older retained events. Backfill
+// those events with a small per-event retry guard so a Saturday batch that missed
+// Firebase sync is not lost after Sunday, without re-reading the same old event
+// every 15 seconds forever.
+var sig = JSON.stringify(cbtSanitizeBatchEvent(ev, id) || ev);
+var st = _cbtBatchBackfillState[id];
+if (st && st.sig === sig && (st.done || now - Number(st.lastTry || 0) < 120000)) continue;
+st = _cbtBatchBackfillState[id] = { sig:sig, lastTry:now, done:false };
+(function(backfillId, backfillSig, backfillEvent){
+cbtPushBatchEvent(backfillEvent, function(ok){
+var cur = _cbtBatchBackfillState[backfillId];
+if (cur && cur.sig === backfillSig && ok) cur.done = true;
+});
+})(id, sig, ev);
 if (++sent >= 25) break;
 }
 }
@@ -3892,7 +3920,10 @@ if (cb) cb(false); return;
 _cbtBatchEventAllPullInFlight = true;
 var etag = '';
 try { etag = gmGet(CBT_BATCH_EVENT_ALL_ETAG_KEY, null) || localStorage.getItem(CBT_BATCH_EVENT_ALL_ETAG_KEY) || ''; } catch(e0) {}
-try { if (!(cbtFastestSnapshotLoad().pulledAt > 0)) etag = ''; } catch(eSnap) { etag = ''; }
+try {
+var fastestSnapForPull = cbtFastestSnapshotLoad();
+if (!(fastestSnapForPull.pulledAt > 0) || fastestSnapForPull.legacy) etag = '';
+} catch(eSnap) { etag = ''; }
 var headers = { 'Content-Type':'application/json', 'X-Firebase-ETag':'true' };
 if (etag) headers['If-None-Match'] = etag;
 try {
@@ -3916,9 +3947,15 @@ canonical[ev.eventId] = cbtChooseBatchEvent(canonical[ev.eventId], ev);
 if (cb) cb(false);
 return;
 }
-var recentIds = {}, recentFloor = ((typeof cbtNowMs === 'function') ? cbtNowMs() : Date.now()) - 10 * 86400000;
-for (var rid in canonical) if (Number(canonical[rid].completedAt) >= recentFloor) recentIds[rid] = true;
-cbtFastestSnapshotSave(cbtFastestStatsFromEvents(canonical), ((typeof cbtNowMs === 'function') ? cbtNowMs() : Date.now()), recentIds);
+var recentEvents = {}, olderEvents = {}, recentFloor = ((typeof cbtNowMs === 'function') ? cbtNowMs() : Date.now()) - 10 * 86400000;
+for (var rid in canonical) {
+if (Number(canonical[rid].completedAt) >= recentFloor) recentEvents[rid] = canonical[rid];
+else olderEvents[rid] = canonical[rid];
+}
+// Keep older all-time totals separate from recent event records. This lets a later,
+// higher-quality copy of the same recent batch replace the older copy without
+// double-counting that cart in Fastest.
+cbtFastestSnapshotSave(cbtFastestStatsFromEvents(olderEvents), ((typeof cbtNowMs === 'function') ? cbtNowMs() : Date.now()), recentEvents);
 for (var cid in canonical) {
 if (cbtIsDateInCurrentWeek(canonical[cid].dateKey)) current[cid] = canonical[cid];
 }
@@ -3991,12 +4028,27 @@ totals: JSON.parse(JSON.stringify(base.totals || {})),
 peaks: JSON.parse(JSON.stringify(base.peaks || {})),
 latest: JSON.parse(JSON.stringify(base.latest || {}))
 };
-var recentIds = (snap && snap.recentIds) || {};
-var recent = cbtAllBatchEvents();
-for (var id in recent) {
-var ev = recent[id];
-if (!recentIds[id]) cbtApplyEventToFastestStats(stats, ev);
+// Older snapshots already included their recent events inside stats. Keep showing
+// that known-good snapshot until the first forced all-time refresh converts it to
+// the split format, otherwise recent carts would be counted twice during migration.
+if (snap && snap.legacy) {
+_cbtEventFastestStatsCache = stats;
+return _cbtEventFastestStatsCache;
 }
+// Merge the all-time snapshot's recent event records with the newest local/current-week
+// copies by canonical event id, then count each batch exactly once.
+var recent = {};
+var snapRecent = (snap && snap.recentEvents) || {};
+for (var sid in snapRecent) {
+var sev = cbtSanitizeBatchEvent(snapRecent[sid], sid);
+if (sev) recent[sev.eventId] = cbtChooseBatchEvent(recent[sev.eventId], sev);
+}
+var liveRecent = cbtAllBatchEvents();
+for (var lid in liveRecent) {
+var lev = cbtSanitizeBatchEvent(liveRecent[lid], lid);
+if (lev) recent[lev.eventId] = cbtChooseBatchEvent(recent[lev.eventId], lev);
+}
+for (var id in recent) cbtApplyEventToFastestStats(stats, recent[id]);
 _cbtEventFastestStatsCache = stats;
 return _cbtEventFastestStatsCache;
 }
