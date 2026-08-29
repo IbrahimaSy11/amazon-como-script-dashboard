@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.153
+// @version      23.9.154
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -10524,8 +10524,10 @@
        - If the selected associate already has another BATCHING task, DO NOT
          skip them. Still attempt the earliest eligible cart and let Amazon's
          assignment endpoint make the final decision.
-       - If a tried task is clearly rejected, keep the SAME associate and try
-         the next-earliest eligible Batch Target.
+       - If Amazon actually receives an assignment attempt for an associate
+         and that assignment fails, stop using that associate for this run and
+         move to the next selected associate. The failed cart remains available
+         for the next associate if it is still eligible.
 
      Existing 1-minute just-assigned cart protection remains in place so the
      script does not immediately reuse a cart whose assignment is still settling.
@@ -12819,6 +12821,7 @@
 
           return {
             ok: true,
+            attempted: true,
             verified: true,
             protectedMs: CBT_ASSIGN_PROTECT_MS,
             status: r.status
@@ -12836,6 +12839,7 @@
           if (reservationToken) cbtAssignReleaseSharedReservation(jobId, reservationToken);
           return {
             ok: false,
+            attempted: true,
             retryable: false,
             reason:
               'Assign request denied — HTTP ' +
@@ -12857,6 +12861,7 @@
 
               return {
                 ok: true,
+                attempted: true,
                 verified: true,
                 protectedMs: CBT_ASSIGN_PROTECT_MS,
                 status: status
@@ -12867,6 +12872,7 @@
               if (reservationToken) cbtAssignReleaseSharedReservation(jobId, reservationToken);
               return {
                 ok: false,
+                attempted: true,
                 retryable: true,
                 reason:
                   (status ? 'HTTP ' + status : 'no response') +
@@ -12877,6 +12883,7 @@
             if (reservationToken) cbtAssignReleaseSharedReservation(jobId, reservationToken);
             return {
               ok: false,
+              attempted: true,
               retryable: false,
               reason:
                 'Could not safely confirm direct assignment' +
@@ -12891,12 +12898,14 @@
           });
         }
 
-        /* Normal 4xx/false responses are a clear rejection for this task.
-           Block this task and keep the SAME selected associate on the next
-           earliest candidate. */
+        /* Normal 4xx/false responses are a real assignment attempt that
+           Amazon rejected. The run-level logic will stop using this associate
+           and move to the next selected associate. Do not poison/block the cart
+           globally because the next associate may still be valid for it. */
         if (reservationToken) cbtAssignReleaseSharedReservation(jobId, reservationToken);
         return {
           ok: false,
+          attempted: true,
           retryable: true,
           reason:
             'Assignment rejected' +
@@ -13489,32 +13498,57 @@
             return;
           }
 
+          /* v23.9.154: once an actual assignToAssociate POST was sent for
+             this associate, ANY confirmed/ambiguous failure ends this
+             associate's turn. Do not try another cart with the same name.
+
+             Also do NOT globally block this cart just because one associate
+             failed. The next selected associate is allowed to try the same
+             earliest cart if Amazon still reports it as eligible. */
+          if (result && result.attempted) {
+            results.push({
+              ref: associate,
+              id: target.id,
+              ok: false,
+              msg:
+                'Not Assigned. Skipping This Associate And Trying The Next Associate' +
+                (
+                  result.reason
+                    ? '. Details: ' + result.reason
+                    : '.'
+                )
+            });
+
+            cbtAssignProgress(
+              nameIndex + 1,
+              names.length,
+              associate,
+              target,
+              results
+            );
+
+            nextName(5);
+            return;
+          }
+
           if (result && result.retryable) {
-            /* Direct API rejected this exact task.
-
-               Partial Only:
-               - remove this failed forced-partial handoff;
-               - try ONLY another remembered forced-partial job;
-               - if none remain, the associate stays UNASSIGNED;
-               - NEVER substitute a normal Tasks cart. */
+            /* No assignment POST was actually sent. This is a task-side race
+               such as protection, an accepted/changed task, or a preflight
+               change. Skip that task for this run and keep the SAME associate
+               on the next-earliest eligible task. */
             blocked[target.key] = true;
-
-            if (taskTypes.partialOnly) {
-              cbtForgetForcedPartial(target.key);
-            }
-
             scheduleAssignStep(tryEarliest, 5);
             return;
           }
 
-          /* Ambiguous direct-request failures are not automatically retried because
-             the POST may actually have succeeded while verification lagged.
-             This avoids assigning one person to two tasks. */
+          /* A failure before the assignment request could be sent is not a
+             trustworthy associate failure, but if it is non-retryable there is
+             nothing safe to do for this name in the current run. */
           results.push({
             ref: associate,
             ok: false,
             msg:
-              'Not Assigned. Reason: The Assignment Could Not Be Safely Confirmed' +
+              'Not Assigned. Reason: The Assignment Could Not Be Safely Started' +
               (
                 result && result.reason
                   ? '. Details: ' + result.reason
