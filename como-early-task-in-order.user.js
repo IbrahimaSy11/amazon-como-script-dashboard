@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.175
+// @version      23.9.176
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -2193,7 +2193,7 @@ _bodyWatcherStarted = true;
 }
 }
 function fmtTimeLeft(targetMs) {
-var diffMs = targetMs - Date.now();
+var diffMs = targetMs - ((typeof cbtNowMs === 'function') ? cbtNowMs() : Date.now());
 var diffMin = Math.floor(Math.abs(diffMs) / 60000);
 var diffSec = Math.floor((Math.abs(diffMs) % 60000) / 1000);
 if (diffMs < 0) return { text: 'Overdue ' + diffMin + 'm', cls: 'overdue' };
@@ -3422,6 +3422,7 @@ return id;
 }
 var MY_DEVICE_ID = null;
 var FIREBASE_URL = 'https://como-sync-default-rtdb.firebaseio.com';
+var CBT_FIREBASE_SYNC_TIMEOUT_MS = 12000;
 var FIREBASE_NAMES_PATH = '/como_names.json';
 function syncEnabled() { return true; }
 function syncUrl() { return FIREBASE_URL + FIREBASE_NAMES_PATH; }
@@ -3743,6 +3744,7 @@ try {
 GM_xmlhttpRequest({
 method: 'GET', url: url,
 headers: { 'Content-Type':'application/json', 'X-Firebase-ETag':'true' },
+timeout: CBT_FIREBASE_SYNC_TIMEOUT_MS,
 onload: function(getRes) {
 if (!(getRes.status >= 200 && getRes.status < 300)) {
 if (done) done(false); return;
@@ -3766,6 +3768,7 @@ GM_xmlhttpRequest({
 method: 'PUT', url: url,
 headers: { 'Content-Type':'application/json', 'If-Match':etag },
 data: JSON.stringify(merged),
+timeout: CBT_FIREBASE_SYNC_TIMEOUT_MS,
 onload: function(putRes) {
 if (putRes.status === 412 && attempt < 3) {
 setTimeout(function(){ cbtPushBatchEvent(event, done, attempt + 1); }, 80 * (attempt + 1));
@@ -3781,10 +3784,12 @@ return;
 }
 if (done) done(false);
 },
-onerror: function(){ if (done) done(false); }
+onerror: function(){ if (done) done(false); },
+ontimeout: function(){ if (done) done(false); }
 });
 },
-onerror: function(){ if (done) done(false); }
+onerror: function(){ if (done) done(false); },
+ontimeout: function(){ if (done) done(false); }
 });
 } catch(e) { if (done) done(false); }
 }
@@ -3834,6 +3839,7 @@ var headers = { 'Content-Type':'application/json', 'X-Firebase-ETag':'true' };
 if (etag) headers['If-None-Match'] = etag;
 GM_xmlhttpRequest({
 method:'GET', url:url, headers:headers,
+timeout:CBT_FIREBASE_SYNC_TIMEOUT_MS,
 onload:function(res){
 if (res.status === 304) {
 _cbtBatchEventPullInFlight = false;
@@ -3844,7 +3850,13 @@ return;
 }
 if (res.status >= 200 && res.status < 300) {
 var raw = {};
-try { raw = res.responseText && res.responseText !== 'null' ? (JSON.parse(res.responseText) || {}) : {}; } catch(e3) {}
+try {
+raw = res.responseText && res.responseText !== 'null' ? (JSON.parse(res.responseText) || {}) : {};
+} catch(e3) {
+_cbtBatchEventPullInFlight = false;
+if (cb) cb(false);
+return;
+}
 finishFromRaw(raw, cbtFirebaseEtag(res.responseHeaders), etagKey);
 return;
 }
@@ -3858,6 +3870,11 @@ if (cb) cb(false);
 },
 onerror:function(){
 if (!useFull) { _cbtBatchRecentQueryUnsupported = true; try { request(true); return; } catch(e4) {} }
+_cbtBatchEventPullInFlight = false;
+if (cb) cb(false);
+},
+ontimeout:function(){
+if (!useFull) { _cbtBatchRecentQueryUnsupported = true; try { request(true); return; } catch(e5) {} }
 _cbtBatchEventPullInFlight = false;
 if (cb) cb(false);
 }
@@ -3881,6 +3898,7 @@ if (etag) headers['If-None-Match'] = etag;
 try {
 GM_xmlhttpRequest({
 method:'GET', url:cbtBatchEventUrl(''), headers:headers,
+timeout:CBT_FIREBASE_SYNC_TIMEOUT_MS,
 onload:function(res){
 _cbtBatchEventAllPullInFlight = false;
 _cbtBatchEventLastAllPullAt = Date.now();
@@ -3894,7 +3912,10 @@ var ev = cbtSanitizeBatchEvent(raw[id], id);
 if (!ev) continue;
 canonical[ev.eventId] = cbtChooseBatchEvent(canonical[ev.eventId], ev);
 }
-} catch(e1) {}
+} catch(e1) {
+if (cb) cb(false);
+return;
+}
 var recentIds = {}, recentFloor = ((typeof cbtNowMs === 'function') ? cbtNowMs() : Date.now()) - 10 * 86400000;
 for (var rid in canonical) if (Number(canonical[rid].completedAt) >= recentFloor) recentIds[rid] = true;
 cbtFastestSnapshotSave(cbtFastestStatsFromEvents(canonical), ((typeof cbtNowMs === 'function') ? cbtNowMs() : Date.now()), recentIds);
@@ -3907,7 +3928,8 @@ if (newEtag) { gmSet(CBT_BATCH_EVENT_ALL_ETAG_KEY, newEtag); try { localStorage.
 cbtScheduleEventRender();
 if (cb) cb(true);
 },
-onerror:function(){ _cbtBatchEventAllPullInFlight = false; if (cb) cb(false); }
+onerror:function(){ _cbtBatchEventAllPullInFlight = false; if (cb) cb(false); },
+ontimeout:function(){ _cbtBatchEventAllPullInFlight = false; if (cb) cb(false); }
 });
 } catch(e) { _cbtBatchEventAllPullInFlight = false; if (cb) cb(false); }
 }
@@ -4386,6 +4408,7 @@ if (!syncEnabled()) { if (cb) cb(false); return; }
 try {
 GM_xmlhttpRequest({
 method: 'GET', url: syncUrl(), headers: { 'Content-Type': 'application/json' },
+timeout: CBT_FIREBASE_SYNC_TIMEOUT_MS,
 onload: function(res){
 var added = false, localExtra = false;
 try {
@@ -4404,6 +4427,12 @@ syncPush();
 if (cb) cb(added);
 },
 onerror: function(){
+if (!_namesPulled && !_namesFirstPullRetry) {
+_namesFirstPullRetry = setTimeout(function(){ _namesFirstPullRetry = null; syncPull(); }, 5000);
+}
+if (cb) cb(false);
+},
+ontimeout: function(){
 if (!_namesPulled && !_namesFirstPullRetry) {
 _namesFirstPullRetry = setTimeout(function(){ _namesFirstPullRetry = null; syncPull(); }, 5000);
 }
@@ -4430,8 +4459,10 @@ GM_xmlhttpRequest({
 method: 'PATCH', url: syncUrl(),
 headers: { 'Content-Type': 'application/json' },
 data: JSON.stringify(all),
+timeout: CBT_FIREBASE_SYNC_TIMEOUT_MS,
 onload: function(){},
-onerror: function(){ _namesPushQueued = true; }
+onerror: function(){ _namesPushQueued = true; },
+ontimeout: function(){ _namesPushQueued = true; }
 });
 } catch(e) {}
 }, 2500);
@@ -7827,6 +7858,7 @@ function cbtAssignHasSiteTasks() {
 return cbtAssignSiteTaskState().hasTasks;
 }
 var CBT_ASSIGN_PROTECT_MS = 1 * 60 * 1000;
+var CBT_ASSIGN_LOCK_REQUEST_TIMEOUT_MS = 4000;
 var CBT_ASSIGN_SHARED_PROTECT_ROOT = '/como_assign_protect_v1/' + CBT_HISTORY_STORE_SCOPE;
 var CBT_ASSIGN_SHARED_PROTECT_KEY = 'cbt_assign_shared_protect_v1_' + CBT_HISTORY_STORE_SCOPE;
 var _cbtAssignSharedProtectCache = Object.create(null);
@@ -7917,8 +7949,10 @@ row = Object.assign({}, row, { jobId:String(jobId) });
 try {
 GM_xmlhttpRequest({
 method:'PUT', url:cbtAssignSharedProtectUrl(jobId), headers:{'Content-Type':'application/json'}, data:JSON.stringify(row),
+timeout:CBT_ASSIGN_LOCK_REQUEST_TIMEOUT_MS,
 onload:function(res){ if (!(res.status>=200&&res.status<300) && attempt<3) setTimeout(function(){cbtAssignSharedProtectionPut(jobId,row,attempt+1);},75*(attempt+1)); },
-onerror:function(){ if(attempt<3)setTimeout(function(){cbtAssignSharedProtectionPut(jobId,row,attempt+1);},75*(attempt+1)); }
+onerror:function(){ if(attempt<3)setTimeout(function(){cbtAssignSharedProtectionPut(jobId,row,attempt+1);},75*(attempt+1)); },
+ontimeout:function(){ if(attempt<3)setTimeout(function(){cbtAssignSharedProtectionPut(jobId,row,attempt+1);},75*(attempt+1)); }
 });
 } catch(e) { if(attempt<3)setTimeout(function(){cbtAssignSharedProtectionPut(jobId,row,attempt+1);},75*(attempt+1)); }
 }
@@ -7927,24 +7961,53 @@ jobId = String(jobId || '');
 associate = cbtNormalizeAssociateName(associate || '');
 attempt = Number(attempt) || 0;
 visibleRef = cbtAssignNormText(visibleRef || '').slice(0,80);
-if (!jobId || !syncEnabled()) return Promise.resolve({ok:true,token:''});
+if (!jobId) {
+return Promise.resolve({
+ok:false,
+error:true,
+fatal:true,
+reason:'Shared assignment lock key is missing.'
+});
+}
+if (!syncEnabled()) return Promise.resolve({ok:true,token:'',local:true});
 var token = (MY_DEVICE_ID || getDeviceId()) + '_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8);
 return new Promise(function(resolve){
+function fatal(reason) {
+resolve({
+ok:false,
+error:true,
+fatal:true,
+reason:reason || 'Shared assignment lock is unavailable.'
+});
+}
 function run(tryNo) {
+try {
 GM_xmlhttpRequest({
 method:'GET', url:cbtAssignSharedProtectUrl(jobId), headers:{'Content-Type':'application/json','X-Firebase-ETag':'true'},
+timeout:CBT_ASSIGN_LOCK_REQUEST_TIMEOUT_MS,
 onload:function(getRes){
-if (!(getRes.status>=200 && getRes.status<300)) { resolve({ok:true,token:''}); return; }
+if (!(getRes.status>=200 && getRes.status<300)) {
+fatal('Shared assignment lock could not be read. Assignment was not started to prevent a cross-computer conflict.');
+return;
+}
 var existing=null;
 try { if (getRes.responseText && getRes.responseText!=='null') existing=cbtAssignSanitizeProtection(JSON.parse(getRes.responseText)); } catch(e0) {}
-if (existing) { resolve({ok:false,row:existing}); return; }
+if (existing) { resolve({ok:false,row:existing,contention:true}); return; }
 var etag=cbtFirebaseEtag(getRes.responseHeaders);
-if (!etag) { resolve({ok:true,token:''}); return; }
+if (!etag) {
+fatal('Shared assignment lock could not be verified. Assignment was not started to prevent a cross-computer conflict.');
+return;
+}
 var row={jobId:jobId,until:cbtAssignNowMs()+30000,associate:associate,ref:visibleRef,token:token,pending:true};
 GM_xmlhttpRequest({
 method:'PUT',url:cbtAssignSharedProtectUrl(jobId),headers:{'Content-Type':'application/json','If-Match':etag},data:JSON.stringify(row),
+timeout:CBT_ASSIGN_LOCK_REQUEST_TIMEOUT_MS,
 onload:function(putRes){
-if(putRes.status===412 && tryNo<3){setTimeout(function(){run(tryNo+1);},25*(tryNo+1));return;}
+if(putRes.status===412){
+if(tryNo<4){setTimeout(function(){run(tryNo+1);},25*(tryNo+1));return;}
+resolve({ok:false,contention:true,reason:'Another computer reserved this item first.'});
+return;
+}
 if(putRes.status>=200&&putRes.status<300){
 cbtAssignLoadSharedProtection()[jobId] = row;
 _cbtAssignSharedNodeToJobId[cbtAssignSharedNodeForJob(jobId)] = jobId;
@@ -7953,13 +8016,18 @@ try { cbtAssignRenderProtectionCountdown(); } catch(eRenderPending) {}
 resolve({ok:true,token:token,row:row});
 return;
 }
-resolve({ok:true,token:''});
-},onerror:function(){resolve({ok:true,token:''});}
+fatal('Shared assignment lock could not be saved. Assignment was not started to prevent a cross-computer conflict.');
+},onerror:function(){fatal('Shared assignment lock could not be saved. Assignment was not started to prevent a cross-computer conflict.');},
+ontimeout:function(){fatal('Shared assignment lock save timed out. Assignment was not started to prevent a cross-computer conflict.');}
 });
-},onerror:function(){resolve({ok:true,token:''});}
+},onerror:function(){fatal('Shared assignment lock could not be read. Assignment was not started to prevent a cross-computer conflict.');},
+ontimeout:function(){fatal('Shared assignment lock timed out. Assignment was not started to prevent a cross-computer conflict.');}
 });
+} catch(e) {
+fatal('Shared assignment lock is unavailable. Assignment was not started to prevent a cross-computer conflict.');
 }
-try{run(attempt);}catch(e){resolve({ok:true,token:''});}
+}
+run(attempt);
 });
 }
 function cbtAssignReleaseSharedReservation(jobId, token) {
@@ -7968,6 +8036,7 @@ if(!jobId||!token||!syncEnabled()) return;
 try{
 GM_xmlhttpRequest({
 method:'GET',url:cbtAssignSharedProtectUrl(jobId),headers:{'Content-Type':'application/json','X-Firebase-ETag':'true'},
+timeout:CBT_ASSIGN_LOCK_REQUEST_TIMEOUT_MS,
 onload:function(res){
 var row=null;try{if(res.status>=200&&res.status<300&&res.responseText&&res.responseText!=='null')row=JSON.parse(res.responseText);}catch(e0){}
 if(!row||String(row.token||'')!==token||!row.pending)return;
@@ -7977,6 +8046,7 @@ GM_xmlhttpRequest({
 method:'DELETE',
 url:cbtAssignSharedProtectUrl(jobId),
 headers:{'If-Match':etag},
+timeout:CBT_ASSIGN_LOCK_REQUEST_TIMEOUT_MS,
 onload:function(delRes){
 if(delRes.status>=200&&delRes.status<300){
 var shared = cbtAssignLoadSharedProtection();
@@ -7987,10 +8057,11 @@ cbtAssignCommitSharedProtectionVisual();
 }
 }
 },
-onerror:function(){}
+onerror:function(){},
+ontimeout:function(){}
 });
 }catch(e1){}
-},onerror:function(){}
+},onerror:function(){},ontimeout:function(){}
 });
 }catch(e){}
 }
@@ -8001,6 +8072,7 @@ return new Promise(function(resolve){
 try {
 GM_xmlhttpRequest({
 method:'GET', url:cbtAssignSharedProtectUrl(jobId), headers:{'Content-Type':'application/json'},
+timeout:CBT_ASSIGN_LOCK_REQUEST_TIMEOUT_MS,
 onload:function(res){
 var row = null;
 try { if (res.status>=200 && res.status<300 && res.responseText && res.responseText!=='null') row = cbtAssignSanitizeProtection(JSON.parse(res.responseText)); } catch(e0) {}
@@ -8013,7 +8085,8 @@ try { cbtAssignRenderProtectionCountdown(); } catch(eRender) {}
 }
 resolve(row);
 },
-onerror:function(){ resolve(null); }
+onerror:function(){ resolve(null); },
+ontimeout:function(){ resolve(null); }
 });
 } catch(e) { resolve(null); }
 });
@@ -8247,6 +8320,42 @@ finish(150);
 finish(250);
 }
 }
+function cbtAssignDeleteExpiredSharedNode(node) {
+node = String(node || '').replace(/^\/+|\/+$/g, '');
+if (!node || !syncEnabled()) return;
+var url = FIREBASE_URL + CBT_ASSIGN_SHARED_PROTECT_ROOT + '/' + encodeURIComponent(node) + '.json';
+try {
+GM_xmlhttpRequest({
+method:'GET',
+url:url,
+headers:{'Content-Type':'application/json','X-Firebase-ETag':'true'},
+timeout:CBT_ASSIGN_LOCK_REQUEST_TIMEOUT_MS,
+onload:function(getRes){
+if (!(getRes.status>=200 && getRes.status<300)) return;
+if (!getRes.responseText || getRes.responseText === 'null') return;
+var current = null;
+try { current = JSON.parse(getRes.responseText); } catch(e0) { return; }
+// Never delete a node that became active after the root snapshot was taken.
+if (cbtAssignSanitizeProtection(current)) return;
+var etag = cbtFirebaseEtag(getRes.responseHeaders);
+if (!etag) return;
+try {
+GM_xmlhttpRequest({
+method:'DELETE',
+url:url,
+headers:{'If-Match':etag},
+timeout:CBT_ASSIGN_LOCK_REQUEST_TIMEOUT_MS,
+onload:function(){},
+onerror:function(){},
+ontimeout:function(){}
+});
+} catch(e1) {}
+},
+onerror:function(){},
+ontimeout:function(){}
+});
+} catch(e) {}
+}
 function cbtAssignSharedProtectionPull(force) {
 if (_cbtAssignSharedProtectPullInFlight || !syncEnabled()) return;
 if (!force && document.hidden) return;
@@ -8263,11 +8372,13 @@ GM_xmlhttpRequest({
 method:'GET',
 url:cbtAssignSharedProtectUrl(''),
 headers:headers,
+timeout:CBT_FIREBASE_SYNC_TIMEOUT_MS,
 onload:function(res){
 _cbtAssignSharedProtectPullInFlight = false;
 if (res.status === 304) return;
 var raw = {};
 var expiredNodes = [];
+var parsedOk = true;
 try {
 raw =
 res.status >= 200 &&
@@ -8277,30 +8388,21 @@ res.responseText !== 'null'
 ? (JSON.parse(res.responseText) || {})
 : {};
 } catch(e0) {
-raw = {};
+parsedOk = false;
 }
-if (res.status >= 200 && res.status < 300) {
+if (res.status >= 200 && res.status < 300 && parsedOk) {
 var nextEtag = cbtFirebaseEtag(res.responseHeaders);
 if (nextEtag) _cbtAssignSharedProtectEtag = nextEtag;
 expiredNodes = cbtAssignApplySharedProtectionSnapshot(raw);
 }
 expiredNodes.slice(0,20).forEach(function(node){
-try {
-GM_xmlhttpRequest({
-method:'DELETE',
-url:
-FIREBASE_URL +
-CBT_ASSIGN_SHARED_PROTECT_ROOT +
-'/' +
-encodeURIComponent(node) +
-'.json',
-onload:function(){},
-onerror:function(){}
-});
-} catch(e1) {}
+try { cbtAssignDeleteExpiredSharedNode(node); } catch(e1) {}
 });
 },
 onerror:function(){
+_cbtAssignSharedProtectPullInFlight = false;
+},
+ontimeout:function(){
 _cbtAssignSharedProtectPullInFlight = false;
 }
 });
@@ -8440,6 +8542,7 @@ var _cbtAssignUiSessionToken = '';
 var _cbtAssignUiSessionDeadline = 0;
 var _cbtAssignUiSessionRunHeartbeat = null;
 var _cbtAssignUiSessionAutoBackPending = false;
+var _cbtAssignUiAcquireSeq = 0;
 function cbtAssignUiSessionRow() {
 return cbtAssignProtection(CBT_ASSIGN_UI_SESSION_KEY);
 }
@@ -8461,8 +8564,12 @@ if (!row) return null;
 if (_cbtAssignUiSessionToken && String(row.token || '') === String(_cbtAssignUiSessionToken)) return null;
 return row;
 }
-function cbtAssignAcquireUiSessionLock() {
+function cbtAssignAcquireUiSessionLock(acquireSeq) {
+acquireSeq = Number(acquireSeq) || 0;
 if (!syncEnabled()) {
+if (acquireSeq && acquireSeq !== _cbtAssignUiAcquireSeq) {
+return Promise.resolve({ok:false,cancelled:true});
+}
 _cbtAssignUiSessionToken = 'local_' + Date.now().toString(36);
 _cbtAssignUiSessionDeadline = cbtAssignNowMs() + CBT_ASSIGN_UI_SESSION_MS;
 return Promise.resolve({ok:true,token:_cbtAssignUiSessionToken,local:true});
@@ -8475,7 +8582,12 @@ GM_xmlhttpRequest({
 method:'GET',
 url:cbtAssignSharedProtectUrl(CBT_ASSIGN_UI_SESSION_KEY),
 headers:{'Content-Type':'application/json','X-Firebase-ETag':'true'},
+timeout:CBT_ASSIGN_LOCK_REQUEST_TIMEOUT_MS,
 onload:function(getRes){
+if (acquireSeq && acquireSeq !== _cbtAssignUiAcquireSeq) {
+resolve({ok:false,cancelled:true});
+return;
+}
 if (!(getRes.status>=200 && getRes.status<300)) {
 resolve({ok:false,error:true,reason:'Shared Assign lock is unavailable.'});
 return;
@@ -8506,12 +8618,18 @@ method:'PUT',
 url:cbtAssignSharedProtectUrl(CBT_ASSIGN_UI_SESSION_KEY),
 headers:{'Content-Type':'application/json','If-Match':etag},
 data:JSON.stringify(row),
+timeout:CBT_ASSIGN_LOCK_REQUEST_TIMEOUT_MS,
 onload:function(putRes){
 if (putRes.status === 412 && tryNo < 4) {
 setTimeout(function(){ run(tryNo + 1); }, 20 * (tryNo + 1));
 return;
 }
 if (putRes.status >= 200 && putRes.status < 300) {
+if (acquireSeq && acquireSeq !== _cbtAssignUiAcquireSeq) {
+cbtAssignReleaseSharedReservation(CBT_ASSIGN_UI_SESSION_KEY, token);
+resolve({ok:false,cancelled:true});
+return;
+}
 _cbtAssignUiSessionToken = token;
 _cbtAssignUiSessionDeadline = Number(row.until) || 0;
 cbtAssignLoadSharedProtection()[CBT_ASSIGN_UI_SESSION_KEY] = row;
@@ -8523,10 +8641,12 @@ return;
 }
 resolve({ok:false,error:true,reason:'Another computer may have taken the Assign turn.'});
 },
-onerror:function(){ resolve({ok:false,error:true,reason:'Shared Assign lock is unavailable.'}); }
+onerror:function(){ resolve({ok:false,error:true,reason:'Shared Assign lock is unavailable.'}); },
+ontimeout:function(){ resolve({ok:false,error:true,reason:'Shared Assign lock timed out.'}); }
 });
 },
-onerror:function(){ resolve({ok:false,error:true,reason:'Shared Assign lock is unavailable.'}); }
+onerror:function(){ resolve({ok:false,error:true,reason:'Shared Assign lock is unavailable.'}); },
+ontimeout:function(){ resolve({ok:false,error:true,reason:'Shared Assign lock timed out.'}); }
 });
 } catch(e) {
 resolve({ok:false,error:true,reason:'Shared Assign lock is unavailable.'});
@@ -8548,12 +8668,14 @@ GM_xmlhttpRequest({
 method:'GET',
 url:cbtAssignSharedProtectUrl(CBT_ASSIGN_UI_SESSION_KEY),
 headers:{'Content-Type':'application/json','X-Firebase-ETag':'true'},
+timeout:CBT_ASSIGN_LOCK_REQUEST_TIMEOUT_MS,
 onload:function(getRes){
 var current = null;
 try {
 if (getRes.status>=200 && getRes.status<300 && getRes.responseText && getRes.responseText !== 'null') current = JSON.parse(getRes.responseText);
 } catch(e0) {}
 if (!current || String(current.token || '') !== token || !current.pending) { resolve(false); return; }
+if (String(_cbtAssignUiSessionToken || '') !== token) { resolve(false); return; }
 var etag = cbtFirebaseEtag(getRes.responseHeaders);
 if (!etag) { resolve(false); return; }
 var row = Object.assign({}, current, {
@@ -8568,8 +8690,14 @@ method:'PUT',
 url:cbtAssignSharedProtectUrl(CBT_ASSIGN_UI_SESSION_KEY),
 headers:{'Content-Type':'application/json','If-Match':etag},
 data:JSON.stringify(row),
+timeout:CBT_ASSIGN_LOCK_REQUEST_TIMEOUT_MS,
 onload:function(putRes){
 if (putRes.status>=200 && putRes.status<300) {
+if (String(_cbtAssignUiSessionToken || '') !== token) {
+cbtAssignReleaseSharedReservation(CBT_ASSIGN_UI_SESSION_KEY, token);
+resolve(false);
+return;
+}
 _cbtAssignUiSessionDeadline = Number(row.until) || 0;
 cbtAssignLoadSharedProtection()[CBT_ASSIGN_UI_SESSION_KEY] = cbtAssignSanitizeProtection(row) || row;
 cbtAssignScheduleSharedProtectionSave();
@@ -8579,15 +8707,18 @@ return;
 }
 resolve(false);
 },
-onerror:function(){ resolve(false); }
+onerror:function(){ resolve(false); },
+ontimeout:function(){ resolve(false); }
 });
 },
-onerror:function(){ resolve(false); }
+onerror:function(){ resolve(false); },
+ontimeout:function(){ resolve(false); }
 });
 } catch(e) { resolve(false); }
 });
 }
 function cbtAssignReleaseUiSessionLock() {
+_cbtAssignUiAcquireSeq++;
 var token = String(_cbtAssignUiSessionToken || '');
 _cbtAssignUiSessionToken = '';
 _cbtAssignUiSessionDeadline = 0;
@@ -8704,7 +8835,15 @@ if (other) {
 try { cbtAssignRenderGlobalSessionState(); } catch(e0) {}
 return;
 }
-cbtAssignAcquireUiSessionLock().then(function(lock){
+var overlayAtRequest = _afaOverlay;
+var acquireSeq = ++_cbtAssignUiAcquireSeq;
+cbtAssignAcquireUiSessionLock(acquireSeq).then(function(lock){
+if (acquireSeq !== _cbtAssignUiAcquireSeq || !_afaOverlay || _afaOverlay !== overlayAtRequest) {
+if (lock && lock.ok && lock.token && syncEnabled()) {
+cbtAssignReleaseSharedReservation(CBT_ASSIGN_UI_SESSION_KEY, lock.token);
+}
+return;
+}
 if (!lock || !lock.ok) {
 try { cbtAssignRenderGlobalSessionState(); } catch(e1) {}
 var card = _afaOverlay && _afaOverlay.querySelector('#cbt-afa-card');
@@ -9539,26 +9678,16 @@ function cbtAssignEligibleRows(claimed, blocked, options) {
 claimed = claimed || Object.create(null);
 blocked = blocked || Object.create(null);
 options = cbtAssignNormalizeTaskTypes(options);
-var protectedRows = cbtAssignLoadProtection();
-var nowMs = Date.now();
-var protectionPruned = false;
 var sourceRows = options.partialOnly
 ? cbtAssignReadPartialRows()
 : cbtAssignReadRows();
 var rows = sourceRows
 .filter(function(r){
-var p = protectedRows[r.key];
-if (p && Number(p.until) <= nowMs) {
-delete protectedRows[r.key];
-p = null;
-protectionPruned = true;
-}
 return !claimed[r.key] &&
 !blocked[r.key] &&
-!p &&
+!cbtAssignIsProtected(r.key) &&
 cbtAssignRowCanBeTried(r, options);
 });
-if (protectionPruned) cbtAssignPersistProtection();
 return rows
 .sort(function(a, b){
 if (options.partialOnly) {
@@ -9895,14 +10024,61 @@ reason: 'blocked: job was not remembered as a successfully Force Assigned partia
 }
 return cbtAssignAcquireSharedReservation(jobId, associate, 0, assignOptions.targetRef || '').then(function(lock){
 if (!lock || !lock.ok) {
+if (lock && (lock.error || lock.fatal)) {
+return {
+ok:false,
+retryable:false,
+fatal:true,
+reason:lock.reason || 'Shared cart lock is unavailable. Assignment was not started to prevent a cross-computer conflict.'
+};
+}
 var lr = lock && lock.row;
 return {
 ok:false, retryable:true, protected:true,
-reason:'recently assigned' + (lr && lr.associate ? ' to ' + lr.associate : '') +
-(lr ? ' — protected for ' + Math.max(1, Math.ceil((Number(lr.until)-cbtAssignNowMs())/1000)) + 's more' : '')
+reason:(lock && lock.reason) || ('recently assigned' + (lr && lr.associate ? ' to ' + lr.associate : '') +
+(lr ? ' — protected for ' + Math.max(1, Math.ceil((Number(lr.until)-cbtAssignNowMs())/1000)) + 's more' : ''))
 };
 }
 var reservationToken = lock.token || '';
+function releaseReservation() {
+if (reservationToken) cbtAssignReleaseSharedReservation(jobId, reservationToken);
+}
+function markSuccess(status, verified) {
+cbtAssignProtect(jobId, associate, assignOptions.targetRef || '');
+return {
+ok: true,
+attempted: true,
+verified: verified !== false,
+protectedMs: CBT_ASSIGN_PROTECT_MS,
+status: status
+};
+}
+function verifyAmbiguous(status, body, label) {
+return cbtAssignVerifyAssociate(jobId, associate).then(function(verified){
+if (verified === true) return markSuccess(status, true);
+releaseReservation();
+if (verified === false) {
+return {
+ok:false,
+attempted:true,
+retryable:true,
+reason:(label || 'Assignment could not be confirmed') +
+(status ? ' — HTTP ' + status : '') +
+(body ? ' — ' + body.slice(0,120) : '')
+};
+}
+return {
+ok:false,
+attempted:true,
+retryable:false,
+stopAssociate:true,
+reason:(label || 'Assignment response was ambiguous') +
+'. The script stopped trying this associate to avoid a duplicate assignment' +
+(status ? ' — HTTP ' + status : '') +
+(body ? ' — ' + body.slice(0,120) : '')
+};
+});
+}
 var preflightOptions = Object.assign({}, assignOptions, { sharedReservationToken: reservationToken });
 var reservedGuardFn = guardFn
 ? function(){ return guardFn(reservationToken); }
@@ -9913,13 +10089,13 @@ reservedGuardFn,
 preflightOptions
 ).then(function(preflight){
 if (!preflight || !preflight.ok) {
-if (reservationToken) cbtAssignReleaseSharedReservation(jobId, reservationToken);
+releaseReservation();
 return preflight || { ok:false, retryable:false, reason:'pre-check failed' };
 }
 if (reservedGuardFn) {
 try {
 if (!reservedGuardFn()) {
-if (reservationToken) cbtAssignReleaseSharedReservation(jobId, reservationToken);
+releaseReservation();
 return {
 ok: false,
 retryable: true,
@@ -9927,7 +10103,7 @@ reason: 'task changed before direct assignment'
 };
 }
 } catch(eGuard) {
-if (reservationToken) cbtAssignReleaseSharedReservation(jobId, reservationToken);
+releaseReservation();
 return {
 ok: false,
 retryable: true,
@@ -9940,75 +10116,43 @@ jobId,
 associate
 ).then(function(r){
 if (cbtAssignDirectResponseOk(r)) {
-cbtAssignProtect(jobId, associate, assignOptions.targetRef || '');
-return {
-ok: true,
-attempted: true,
-verified: true,
-protectedMs: CBT_ASSIGN_PROTECT_MS,
-status: r.status
-};
+return markSuccess(r.status, true);
 }
 var status = Number(r && r.status) || 0;
 var body = cbtAssignNormText(
 r && r.body != null ? r.body : ''
 );
+var plainBody = body.replace(/^"|"$/g, '').trim();
 if (status === 401 || status === 403) {
-if (reservationToken) cbtAssignReleaseSharedReservation(jobId, reservationToken);
+releaseReservation();
 return {
 ok: false,
 attempted: true,
 retryable: false,
+fatal: true,
 reason:
 'Assign request denied — HTTP ' +
 status +
 (body ? ' — ' + body.slice(0, 120) : '')
 };
 }
+if (r && r.ok) {
+if (/^false$/i.test(plainBody)) {
+releaseReservation();
+return {
+ok:false,
+attempted:true,
+retryable:true,
+reason:'Assignment rejected by the API' +
+(status ? ' — HTTP ' + status : '')
+};
+}
+return verifyAmbiguous(status, body, 'Successful HTTP response did not explicitly confirm the assignment');
+}
 if (!status || status >= 500) {
-return cbtAssignVerifyAssociate(
-jobId,
-associate
-).then(function(verified){
-if (verified === true) {
-cbtAssignProtect(jobId, associate, assignOptions.targetRef || '');
-return {
-ok: true,
-attempted: true,
-verified: true,
-protectedMs: CBT_ASSIGN_PROTECT_MS,
-status: status
-};
+return verifyAmbiguous(status, body, status ? ('Server error response') : 'No direct assignment response');
 }
-if (verified === false) {
-if (reservationToken) cbtAssignReleaseSharedReservation(jobId, reservationToken);
-return {
-ok: false,
-attempted: true,
-retryable: true,
-reason:
-(status ? 'HTTP ' + status : 'no response') +
-(body ? ' — ' + body.slice(0, 120) : '')
-};
-}
-if (reservationToken) cbtAssignReleaseSharedReservation(jobId, reservationToken);
-return {
-ok: false,
-attempted: true,
-retryable: false,
-reason:
-'Could not safely confirm direct assignment' +
-(
-status
-? ' — HTTP ' + status
-: body
-? ' — ' + body.slice(0, 120)
-: ''
-)
-};
-});
-}
-if (reservationToken) cbtAssignReleaseSharedReservation(jobId, reservationToken);
+releaseReservation();
 return {
 ok: false,
 attempted: true,
@@ -10196,6 +10340,7 @@ cbtAssignOpenPickerWithGlobalLock();
 }
 });
 }
+// v23.9.176 audit: each associate gets its own 5-cart failure set; shared locks fail closed.
 var CBT_ASSIGN_MAX_ATTEMPTS_PER_ASSOCIATE = 5;
 function cbtAssignRun(names, taskTypes) {
 names = Array.isArray(names)
@@ -10239,8 +10384,18 @@ try { cbtAssignStartUiSessionRunHeartbeat(); } catch(eAssignTurnHeartbeat) {}
 afaSetBtn('⏹ Stop', true);
 var results = [];
 var claimed = Object.create(null);
-var blocked = Object.create(null);
 var nameIndex = 0;
+var currentAssociateReservationName = '';
+var currentAssociateReservationToken = '';
+function releaseCurrentAssociateReservation() {
+var name = currentAssociateReservationName;
+var token = currentAssociateReservationToken;
+currentAssociateReservationName = '';
+currentAssociateReservationToken = '';
+if (name && token) {
+try { cbtAssignReleaseAssociateReservation(name, token); } catch(eReleaseAssociate) {}
+}
+}
 cbtAssignProgressView();
 var assignNextTimer = 0;
 var assignNextResume = null;
@@ -10275,6 +10430,7 @@ Promise.resolve().then(resumeAssignPending);
 }
 document.addEventListener('visibilitychange', onAssignVisibilityChange);
 function finish() {
+releaseCurrentAssociateReservation();
 _afaRunning = false;
 try { cbtAssignReleaseUiSessionLock(); } catch(eAssignTurnRelease) {}
 try {
@@ -10304,6 +10460,7 @@ _afaStop
 );
 }
 function nextName(delay) {
+releaseCurrentAssociateReservation();
 nameIndex++;
 scheduleAssignStep(
 stepName,
@@ -10317,6 +10474,7 @@ finish();
 return;
 }
 var associate = names[nameIndex];
+var blocked = Object.create(null);
 var associateCooldown = cbtAssignAssociateProtection(associate);
 if (associateCooldown) {
 var associateCooldownSec = cbtAssignAssociateCooldownSeconds(associate, associateCooldown);
@@ -10337,8 +10495,32 @@ nextName(5);
 return;
 }
 var attemptedForAssociate = 0;
+function ensureAssociateReservation() {
+if (currentAssociateReservationToken &&
+cbtAssignNormText(currentAssociateReservationName).toLowerCase() === cbtAssignNormText(associate).toLowerCase()) {
+return Promise.resolve({ok:true,token:currentAssociateReservationToken,reused:true});
+}
+return cbtAssignAcquireAssociateReservation(associate).then(function(lock){
+if (lock && lock.ok) {
+currentAssociateReservationName = associate;
+currentAssociateReservationToken = lock.token || '';
+}
+return lock;
+});
+}
 function tryEarliest() {
 if (_afaStop) {
+finish();
+return;
+}
+if (syncEnabled() && !cbtAssignUiSessionOwned()) {
+results.push({
+ref: associate,
+skip: true,
+ok: false,
+msg: 'Not Assigned. The Shared Assign Turn Was Lost. The Run Was Stopped To Prevent A Cross-Computer Conflict.'
+});
+cbtAssignProgress(nameIndex + 1, names.length, associate, null, results);
 finish();
 return;
 }
@@ -10440,8 +10622,19 @@ results
 scheduleAssignStep(tryEarliest, 5);
 return;
 }
-cbtAssignAcquireAssociateReservation(associate).then(function(associateLock){
+ensureAssociateReservation().then(function(associateLock){
 if (!associateLock || !associateLock.ok) {
+if (associateLock && (associateLock.error || associateLock.fatal)) {
+results.push({
+ref: associate,
+skip: true,
+ok: false,
+msg: 'Not Assigned. ' + (associateLock.reason || 'Shared Associate Lock Is Unavailable.')
+});
+cbtAssignProgress(nameIndex + 1, names.length, associate, null, results);
+finish();
+return;
+}
 var associateLockRow = associateLock && associateLock.row;
 var associateLockSec = associateLockRow
 ? Math.max(1, Math.ceil((Number(associateLockRow.until) - cbtAssignNowMs()) / 1000))
@@ -10463,7 +10656,6 @@ results
 nextName(5);
 return;
 }
-var associateReservationToken = associateLock.token || '';
 cbtAssignViaUi(
 target.id,
 associate,
@@ -10480,14 +10672,16 @@ targetRef: target.ref
 if (_afaStop) {
 if (result && result.ok) {
 try { cbtAssignProtectAssociate(associate); } catch(eAssociateStopProtect) {}
-} else if (associateReservationToken) {
-cbtAssignReleaseAssociateReservation(associate, associateReservationToken);
+currentAssociateReservationName = '';
+currentAssociateReservationToken = '';
 }
 finish();
 return;
 }
 if (result && result.ok) {
 try { cbtAssignProtectAssociate(associate); } catch(eAssociateProtect) {}
+currentAssociateReservationName = '';
+currentAssociateReservationToken = '';
 claimed[target.key] = true;
 if (taskTypes.partialOnly) {
 cbtForgetForcedPartial(target.key);
@@ -10526,8 +10720,31 @@ results
 nextName(5);
 return;
 }
+if (result && result.fatal) {
+results.push({
+ref: associate,
+id: target.id,
+ok: false,
+msg: 'Not Assigned. ' + (result.reason || 'A Fatal Assignment Error Occurred. The Run Was Stopped To Prevent A Conflict.')
+});
+cbtAssignProgress(nameIndex + 1, names.length, associate, target, results);
+finish();
+return;
+}
+if (result && result.stopAssociate) {
+attemptedForAssociate += result.attempted ? 1 : 0;
+blocked[target.key] = true;
+results.push({
+ref: associate,
+id: target.id,
+ok: false,
+msg: 'Not Assigned. ' + (result.reason || 'The Assignment Could Not Be Safely Confirmed.') + ' Skipping This Associate To Prevent A Duplicate Assignment.'
+});
+cbtAssignProgress(nameIndex + 1, names.length, associate, target, results);
+nextName(5);
+return;
+}
 if (result && result.attempted) {
-if (associateReservationToken) cbtAssignReleaseAssociateReservation(associate, associateReservationToken);
 attemptedForAssociate++;
 blocked[target.key] = true;
 var reachedAttemptLimit = attemptedForAssociate >= CBT_ASSIGN_MAX_ATTEMPTS_PER_ASSOCIATE;
@@ -10562,12 +10779,10 @@ scheduleAssignStep(tryEarliest, 5);
 return;
 }
 if (result && result.retryable) {
-if (associateReservationToken) cbtAssignReleaseAssociateReservation(associate, associateReservationToken);
 blocked[target.key] = true;
 scheduleAssignStep(tryEarliest, 5);
 return;
 }
-if (associateReservationToken) cbtAssignReleaseAssociateReservation(associate, associateReservationToken);
 results.push({
 ref: associate,
 ok: false,
@@ -10976,15 +11191,27 @@ if (!typePartial.checked && !cbtAssignHasSiteTasks()) {
 afaConfirm();
 return;
 }
-cbtAssignRememberRecentNames(selectedNames);
-cbtAssignRun(
-selectedNames.slice(),
-{
+if (b.getAttribute('data-cbt-start-pending') === '1') return;
+var frozenNames = selectedNames.slice();
+var frozenTypes = {
 partialOnly: !!typePartial.checked,
 cart: !typePartial.checked && !!typeCart.checked,
 both: !typePartial.checked && !!typeBoth.checked
+};
+var startOverlay = _afaOverlay;
+b.setAttribute('data-cbt-start-pending','1');
+b.disabled = true;
+cbtAssignRenewUiSessionLock().then(function(lockOk){
+b.removeAttribute('data-cbt-start-pending');
+if (!_afaOverlay || _afaOverlay !== startOverlay || !b.isConnected) return;
+if (!lockOk || (syncEnabled() && !cbtAssignUiSessionOwned())) {
+updateAssignStartState();
+try { cbtAssignRenderGlobalSessionState(); } catch(eRenewRender) {}
+return;
 }
-);
+cbtAssignRememberRecentNames(frozenNames);
+cbtAssignRun(frozenNames, frozenTypes);
+});
 return;
 }
 });
