@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.129
+// @version      23.9.147
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -2300,15 +2300,34 @@
     return times.length ? Math.min.apply(null, times) : null;
   }
 
+
   function sortNow(container) {
     if (_sorting) return;
     var cards = Array.from(container.querySelectorAll(':scope > job-card'));
     if (cards.length < 2) return;
-    var data = cards.map(function (card) { return { card: card, btMs: getBatchTarget(card) }; });
+    var data = cards.map(function (card, index) {
+      return {
+        card: card,
+        btMs: getBatchTarget(card),
+        rowOrder: index
+      };
+    });
+
     data.sort(function (a, b) {
       var hasA = a.btMs != null, hasB = b.btMs != null;
-      if (hasA && hasB) return a.btMs - b.btMs;
-      if (hasA) return -1; if (hasB) return 1; return 0;
+
+      if (hasA && hasB) {
+        if (a.btMs !== b.btMs) return a.btMs - b.btMs;
+
+        /* Same Batch Target: preserve the page's existing row order.
+           Do not use package count to reorder these carts. */
+        return a.rowOrder - b.rowOrder;
+      }
+
+      if (hasA) return -1;
+      if (hasB) return 1;
+
+      return a.rowOrder - b.rowOrder;
     });
     var current = Array.from(container.querySelectorAll(':scope > job-card'));
     if (data.every(function (item, i) { return item.card === current[i]; })) return;
@@ -2513,6 +2532,10 @@
       if (el.textContent !== result.text) el.textContent = result.text;
       if (el.className !== nextClass) el.className = nextClass;
     });
+
+    /* v23.9.142: piggyback on the existing 1-second timer.
+       No second polling loop is created. */
+    cbtAssignRenderProtectionCountdown();
   }
 
   var _timerMutationHosts = new Set();
@@ -2558,6 +2581,8 @@
     var hosts = Array.from(_timerMutationHosts);
     _timerMutationHosts.clear();
     for (var i = 0; i < hosts.length; i++) refreshTimerHost(hosts[i]);
+
+    try { cbtAssignRenderProtectionCountdown(); } catch(eCooldown) {}
   }
 
   var timerWatcher = new MutationObserver(function(mutations) {
@@ -2575,7 +2600,16 @@
       for (var j = 0; j < added.length; j++) queueTimerHost(added[j]);
     }
 
-    if (!foundRelevant || _timerMutationPending) return;
+    if (!foundRelevant) return;
+
+    /* v23.9.145: Angular can replace an entire job-card between 1-second
+       countdown ticks. Reapply protection immediately in this already-existing
+       mutation callback so the highlight does not flash off while waiting for
+       the next tick. */
+    try { cbtAssignRenderProtectionCountdown(); } catch(eCooldown) {}
+
+    if (_timerMutationPending) return;
+
     _timerMutationPending = true;
     var raf = (typeof requestAnimationFrame === 'function')
       ? requestAnimationFrame
@@ -8965,26 +8999,29 @@
   }
 
   function afaScanPartiallyBatched() {
-    var stops = [/^Staged\s+for\s+Pickup/i, /^Problem\s+Solve/i, /^Unassigned/i, /^Assigned/i];
-    var anchors = afaSectionAnchors(/^Partially\s+Batched(\s*\(\d+\))?$/i, stops);
-    var found = [], seen = Object.create(null);
-    for (var i = 0; i < anchors.length; i++) {
-      var a = anchors[i];
-      var ref = (a.textContent || '').trim();
-      if (!ref || ref.length > 24) continue;
-      var id = null;
-      var href = a.getAttribute('href') || '';
-      var m = href.match(/jobId=([^&#]+)/i);
-      if (m) { try { id = decodeURIComponent(m[1]); } catch(e) { id = m[1]; } }
-      if (!id && _afaJobIndex[ref]) id = _afaJobIndex[ref];
-      /* keyed on identity, never on position, so the same cart appearing
-         twice in the markup is counted once */
-      var key = id || ('ref:' + ref);
-      if (seen[key]) continue;
-      seen[key] = true;
-      found.push({ ref: ref, id: id, partial: true });
+    /* v23.9.136: Force Assign and Assign Cart MUST resolve partial carts from
+       the exact same verified Partially Batched DOM identity source.
+
+       Never resolve a visible partial short ref through the shared dashboard
+       short-ref map. After Force Assign, that map may already represent the
+       cart's normal Tasks version while the side-section DOM is still catching
+       up. */
+    try {
+      if (typeof cbtAssignStrictPartialCandidates !== 'function') return [];
+
+      return cbtAssignStrictPartialCandidates().map(function(item){
+        return {
+          ref: item.ref,
+          id: item.id,
+          partial: true,
+          partialSectionVerified: true,
+          explicitPartialId: true
+        };
+      });
+    } catch(e) {
+      /* Fail closed: unreadable Partially Batched means touch nothing. */
+      return [];
     }
-    return found;
   }
 
   function afaScanDashboard() {
@@ -10100,14 +10137,18 @@
 
      Runs ONLY when the user presses Assign.
 
-     Requested attempt rule:
-       - no name + no cart  -> TRY
-       - name + no cart     -> TRY
-       - no name + cart     -> TRY
-       - name + cart        -> SKIP
+     v23.9.147 assignment rule:
+       - Time Left is NEVER used to decide whether a task may be attempted.
+       - Among the task types enabled in the Assign dialog, always try the
+         earliest Batch Target first.
+       - If the selected associate already has another BATCHING task, DO NOT
+         skip them. Still attempt the earliest eligible cart and let Amazon's
+         assignment endpoint make the final decision.
+       - If a tried task is clearly rejected, keep the SAME associate and try
+         the next-earliest eligible Batch Target.
 
-     If a tried task rejects the selected associate, keep that SAME associate
-     and continue to the next earliest Batch Target.
+     Existing 30-second just-assigned cart protection remains in place so the
+     script does not immediately reuse a cart whose assignment is still settling.
      No recurring observer/polling loop is added.
   ══════════════════════════════════════ */
 
@@ -10276,13 +10317,13 @@
     return cbtAssignSiteTaskState().hasTasks;
   }
 
-  var CBT_ASSIGN_PROTECT_MS = 90 * 1000;
+  var CBT_ASSIGN_PROTECT_MS = 30 * 1000;
   var _cbtAssignProtectCache = Object.create(null);
   var _cbtAssignProtectCacheKey = '';
   var _cbtAssignProtectCacheLoaded = false;
 
   function cbtAssignProtectKey() {
-    return 'cbt_assign_protect_v1_' + String(STORE_ID || 'unknown')
+    return 'cbt_assign_protect_v2_' + String(STORE_ID || 'unknown')
       .replace(/[^A-Za-z0-9_.-]/g, '_');
   }
 
@@ -10392,6 +10433,201 @@
     cbtAssignPersistProtection();
   }
 
+  function cbtAssignEnsureProtectionStyle() {
+    if (document.getElementById('cbt-assign-cooldown-style')) return;
+
+    var style = document.createElement('style');
+    style.id = 'cbt-assign-cooldown-style';
+    style.textContent =
+      'job-card.cbt-assign-cooldown{' +
+        'display:block;' +
+        'box-shadow:inset 4px 0 0 #f59e0b,inset 0 0 0 1px rgba(245,158,11,.62) !important;' +
+        'background:rgba(245,158,11,.08) !important;' +
+        'transition:none !important;' +
+        'animation:none !important;' +
+      '}' +
+      'job-card.cbt-assign-cooldown > .row{' +
+        'background:rgba(245,158,11,.06) !important;' +
+        'transition:none !important;' +
+        'animation:none !important;' +
+      '}' +
+
+      /* The countdown is painted on top of the existing Destination cell.
+         It consumes ZERO layout space, so no column or text can move. */
+      '.cbt-assign-cooldown-destination{' +
+        'position:relative !important;' +
+        'overflow:visible !important;' +
+      '}' +
+
+      /* Put 30s / 29s / ... immediately AFTER the centered Destination value.
+         Match the existing Time Left text exactly: 22px / 600 / Helvetica. */
+      '.cbt-assign-cooldown-destination::after{' +
+        'content:attr(data-cbt-cooldown);' +
+        'position:absolute;' +
+        'left:calc(50% + 18px);' +
+        'top:50%;' +
+        'transform:translateY(-50%);' +
+        'display:block;' +
+        'margin:0;' +
+        'padding:0;' +
+        'border:0;' +
+        'background:transparent;' +
+        'color:#d97706;' +
+        'font-size:22px;' +
+        'font-weight:600;' +
+        'font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;' +
+        'font-variant-numeric:tabular-nums;' +
+        'line-height:1;' +
+        'white-space:nowrap;' +
+        'pointer-events:none;' +
+        'z-index:3;' +
+        'transition:none !important;' +
+        'animation:none !important;' +
+      '}';
+
+    (document.head || document.documentElement).appendChild(style);
+  }
+
+
+  function cbtAssignRenderProtectionCountdown() {
+    if (!isDashboardView()) return;
+
+    cbtAssignEnsureProtectionStyle();
+
+    var now = Date.now();
+    var rows = cbtAssignLoadProtection();
+    var byRef = Object.create(null);
+    var changed = false;
+
+    Object.keys(rows).forEach(function(jobId){
+      var p = rows[jobId];
+
+      if (!p || Number(p.until) <= now) {
+        delete rows[jobId];
+        changed = true;
+        return;
+      }
+
+      var ref = cbtAssignNormText(p.ref || '').toLowerCase();
+      if (!ref) return;
+
+      byRef[ref] = {
+        jobId: String(jobId),
+        row: p,
+        seconds: Math.max(
+          1,
+          Math.ceil((Number(p.until) - now) / 1000)
+        )
+      };
+    });
+
+    if (changed) cbtAssignPersistProtection();
+
+    var cards = document.querySelectorAll('job-card');
+
+    for (var i = 0; i < cards.length; i++) {
+      var card = cards[i];
+
+      try {
+        if (isInExcludedSection(card)) {
+          card.classList.remove('cbt-assign-cooldown');
+          card.removeAttribute('data-cbt-protect-ref');
+
+          var excludedCells = card.querySelectorAll(
+            '.cbt-assign-cooldown-destination'
+          );
+
+          for (var ex = 0; ex < excludedCells.length; ex++) {
+            excludedCells[ex].classList.remove(
+              'cbt-assign-cooldown-destination'
+            );
+            excludedCells[ex].removeAttribute('data-cbt-cooldown');
+          }
+
+          continue;
+        }
+      } catch(eExcluded) {}
+
+      var a = null;
+      try { a = card.querySelector('a'); } catch(eA) {}
+
+      var currentRef = a
+        ? cbtAssignNormText(a.textContent || '').toLowerCase()
+        : '';
+
+      /* If Angular briefly rebuilds the row and the anchor text is missing for
+         one tick, keep the existing protected ref instead of flashing the
+         highlight off and back on. */
+      var rememberedRef =
+        cbtAssignNormText(
+          card.getAttribute('data-cbt-protect-ref') || ''
+        ).toLowerCase();
+
+      var ref =
+        (currentRef && byRef[currentRef])
+          ? currentRef
+          : (
+              rememberedRef && byRef[rememberedRef]
+                ? rememberedRef
+                : currentRef
+            );
+
+      var protectedInfo = ref ? byRef[ref] : null;
+
+      /* Find the existing Destination cell. Normal COMO rows are:
+         Id | Destination | Cart/s | Task Assignment | Batch Target | ...
+         The countdown is absolutely painted AFTER the Destination value.
+         It never takes layout space, so nothing shifts when it appears. */
+      var destinationCell = null;
+
+      try {
+        var rowEl = card.querySelector('div.row');
+        var cols = rowEl
+          ? rowEl.querySelectorAll(':scope > div[class*="col-"]')
+          : null;
+
+        if (cols && cols.length > 1) {
+          destinationCell = cols[1];
+        }
+      } catch(eDest) {}
+
+      if (!protectedInfo) {
+        card.classList.remove('cbt-assign-cooldown');
+        card.removeAttribute('data-cbt-protect-ref');
+
+        if (destinationCell) {
+          destinationCell.classList.remove(
+            'cbt-assign-cooldown-destination'
+          );
+          destinationCell.removeAttribute('data-cbt-cooldown');
+        }
+
+        continue;
+      }
+
+      card.classList.add('cbt-assign-cooldown');
+      card.setAttribute('data-cbt-protect-ref', ref);
+
+      if (destinationCell) {
+        destinationCell.classList.add(
+          'cbt-assign-cooldown-destination'
+        );
+
+        var nextText = protectedInfo.seconds + 's';
+
+        if (
+          destinationCell.getAttribute('data-cbt-cooldown') !==
+          nextText
+        ) {
+          destinationCell.setAttribute(
+            'data-cbt-cooldown',
+            nextText
+          );
+        }
+      }
+    }
+  }
+
 
   function cbtAssignReadRows() {
     var map = cbtAssignHeaderMap();
@@ -10481,9 +10717,495 @@
     return out;
   }
 
+  var CBT_FORCED_PARTIAL_PENDING_MS = 10 * 60 * 1000;
+
+  function cbtForcedPartialPendingKey() {
+    return 'cbt_forced_partial_pending_v1_' +
+      String(STORE_ID || 'unknown').trim().toUpperCase();
+  }
+
+  function cbtLoadForcedPartialPending() {
+    var now = Date.now();
+    var list = [];
+
+    try {
+      var raw = sessionStorage.getItem(
+        cbtForcedPartialPendingKey()
+      );
+
+      if (raw) {
+        var parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) list = parsed;
+      }
+    } catch(e0) {
+      list = [];
+    }
+
+    var clean = [];
+
+    for (var i = 0; i < list.length; i++) {
+      var x = list[i] || {};
+      var id = String(x.id || '');
+      var ref = cbtAssignNormText(x.ref || '');
+      var ts = Number(x.ts) || 0;
+
+      if (!id || !ref || !ts) continue;
+      if (now - ts > CBT_FORCED_PARTIAL_PENDING_MS) continue;
+
+      clean.push({
+        id: id,
+        ref: ref,
+        ts: ts
+      });
+    }
+
+    if (clean.length !== list.length) {
+      try {
+        sessionStorage.setItem(
+          cbtForcedPartialPendingKey(),
+          JSON.stringify(clean)
+        );
+      } catch(e1) {}
+    }
+
+    return clean;
+  }
+
+  function cbtSaveForcedPartialPending(list) {
+    try {
+      sessionStorage.setItem(
+        cbtForcedPartialPendingKey(),
+        JSON.stringify(list || [])
+      );
+    } catch(e) {}
+  }
+
+  function cbtRememberForcedPartial(jobId, ref) {
+    var id = String(jobId || '');
+    var shortRef = cbtAssignNormText(ref || '');
+
+    if (!id || !shortRef) return;
+
+    var list = cbtLoadForcedPartialPending().filter(function(x){
+      return String(x.id || '') !== id;
+    });
+
+    list.push({
+      id: id,
+      ref: shortRef,
+      ts: Date.now()
+    });
+
+    cbtSaveForcedPartialPending(list);
+  }
+
+  function cbtForgetForcedPartial(jobId) {
+    var id = String(jobId || '');
+    if (!id) return;
+
+    var list = cbtLoadForcedPartialPending().filter(function(x){
+      return String(x.id || '') !== id;
+    });
+
+    cbtSaveForcedPartialPending(list);
+  }
+
+  function cbtForcedPartialIdentity(jobId, ref) {
+    var id = String(jobId || '');
+    var shortRef = cbtAssignNormText(ref || '').toLowerCase();
+
+    if (!id || !shortRef) return false;
+
+    var list = cbtLoadForcedPartialPending();
+
+    for (var i = 0; i < list.length; i++) {
+      var x = list[i] || {};
+
+      if (String(x.id || '') !== id) continue;
+      if (cbtAssignNormText(x.ref || '').toLowerCase() !== shortRef) continue;
+
+      return true;
+    }
+
+    return false;
+  }
+
+  function cbtForcedPartialRows() {
+    var list = cbtLoadForcedPartialPending();
+    var out = [];
+
+    /* After Force Assign, the same exact partial-origin job may appear in the
+       normal Tasks section. Read ONLY that matching full job ID to borrow its
+       current Batch Target and package count for ordering. This does not let
+       unrelated Tasks carts enter Partial Only. */
+    var taskRows = [];
+
+    try {
+      taskRows = cbtAssignReadRows() || [];
+    } catch(e0) {
+      taskRows = [];
+    }
+
+    var taskById = Object.create(null);
+
+    for (var ti = 0; ti < taskRows.length; ti++) {
+      var tr = taskRows[ti] || {};
+      var tid = String(tr.key || tr.id || '');
+
+      if (!tid || taskById[tid]) continue;
+      taskById[tid] = tr;
+    }
+
+    for (var i = 0; i < list.length; i++) {
+      var item = list[i] || {};
+      var id = String(item.id || '');
+      var ref = cbtAssignNormText(item.ref || '');
+
+      if (!id || !ref) continue;
+
+      var currentTask = taskById[id] || null;
+
+      out.push({
+        key: id,
+        id: id,
+        detailsUrl:
+          COMO_BASE +
+          '/store/' +
+          encodeURIComponent(STORE_ID) +
+          '/jobdetails?jobId=' +
+          encodeURIComponent(id),
+        ref: ref,
+
+        /* This cart is allowed in Partial Only because THIS exact full job ID
+           was successfully Force Assigned from the verified Partially Batched
+           section earlier in this tab. */
+        partial: true,
+        partialSectionVerified: true,
+        explicitPartialId: true,
+        partialOriginForced: true,
+
+        cart: currentTask ? (currentTask.cart || '') : '',
+        cartBlank: currentTask ? !!currentTask.cartBlank : true,
+        cartHasValue: currentTask ? !!currentTask.cartHasValue : false,
+        assignment: currentTask ? (currentTask.assignment || '') : '',
+        assignmentHasName:
+          currentTask ? !!currentTask.assignmentHasName : false,
+        assignable: true,
+
+        /* Keep current Tasks metadata for display/status checks.
+           Assign ordering itself is top-to-bottom and no longer prioritizes
+           package count. */
+        batchRaw:
+          currentTask && currentTask.batchRaw
+            ? currentTask.batchRaw
+            : 'Waiting For Task Timing',
+        batchMs:
+          currentTask && Number.isFinite(Number(currentTask.batchMs))
+            ? Number(currentTask.batchMs)
+            : Number.MAX_SAFE_INTEGER,
+        progressRaw:
+          currentTask ? (currentTask.progressRaw || '') : '',
+        packageCount:
+          currentTask && Number.isFinite(Number(currentTask.packageCount))
+            ? Number(currentTask.packageCount)
+            : 0,
+        rowOrder:
+          currentTask && Number.isFinite(Number(currentTask.rowOrder))
+            ? Number(currentTask.rowOrder)
+            : i
+      });
+    }
+
+    return out;
+  }
+
+  function cbtAssignFindStrictPartialSection() {
+    var sections = [];
+
+    try {
+      /* The current COMO DOM identifies Partially Batched as SIDELINED.
+         Prefer that exact state first. */
+      sections = Array.prototype.slice.call(
+        document.querySelectorAll('dropped-job[state="SIDELINED"]')
+      );
+
+      /* Defensive fallback: still remain inside a dropped-job. Never scan the
+         whole page or the normal Tasks container. */
+      if (!sections.length) {
+        sections = Array.prototype.slice.call(
+          document.querySelectorAll('dropped-job')
+        );
+      }
+    } catch(e) {
+      return null;
+    }
+
+    for (var i = 0; i < sections.length; i++) {
+      var section = sections[i];
+      var headings = [];
+
+      try {
+        headings = section.querySelectorAll('h1,h2,h3,h4');
+      } catch(e2) {
+        headings = [];
+      }
+
+      for (var h = 0; h < headings.length; h++) {
+        var title = cbtAssignNormText(
+          headings[h].textContent || ''
+        );
+
+        if (/^Partially\s+Batched(?:\s*\(\d+\))?$/i.test(title)) {
+          return section;
+        }
+      }
+    }
+
+    return null;
+  }
+
+  function cbtAssignExplicitJobIdFromNode(node) {
+    if (!node) return '';
+
+    var nodes = [node];
+
+    try {
+      var ownerCard = node.closest && node.closest('job-card');
+      if (ownerCard && nodes.indexOf(ownerCard) === -1) nodes.push(ownerCard);
+    } catch(e0) {}
+
+    for (var i = 0; i < nodes.length; i++) {
+      var el = nodes[i];
+      if (!el || !el.getAttribute) continue;
+
+      var attrs = [
+        'href',
+        'ng-href',
+        'data-ng-href',
+        'data-href',
+        'data-job-id',
+        'data-jobid',
+        'job-id',
+        'jobid',
+        'id'
+      ];
+
+      for (var a = 0; a < attrs.length; a++) {
+        var raw = '';
+
+        try { raw = el.getAttribute(attrs[a]) || ''; }
+        catch(eAttr) { raw = ''; }
+
+        if (!raw) continue;
+
+        var m = String(raw).match(/jobId=([^&#"']+)/i);
+
+        if (m) {
+          try { return decodeURIComponent(m[1]); }
+          catch(eDec) { return m[1]; }
+        }
+
+        if (afaLooksLikeJobId(raw)) return String(raw);
+      }
+    }
+
+    var root = nodes.length > 1 ? nodes[1] : node;
+    var descendants = [];
+
+    try {
+      descendants = Array.prototype.slice.call(
+        root.querySelectorAll(
+          '[href*="jobId="],[ng-href*="jobId="],[data-ng-href*="jobId="],' +
+          '[data-job-id],[data-jobid],[job-id],[jobid]'
+        )
+      );
+    } catch(eQ) {
+      descendants = [];
+    }
+
+    for (var d = 0; d < descendants.length; d++) {
+      var got = cbtAssignExplicitJobIdFromNode(descendants[d]);
+      if (got) return got;
+    }
+
+    return '';
+  }
+
+  function cbtAssignMainTaskIdentityConflict(jobId, ref) {
+    var rows = [];
+
+    try { rows = cbtAssignReadRows() || []; }
+    catch(e) { rows = []; }
+
+    var idKey = String(jobId || '');
+    var refKey = cbtAssignNormText(ref || '').toLowerCase();
+
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i] || {};
+
+      if (idKey && String(r.key || '') === idKey) {
+        return true;
+      }
+
+      if (refKey &&
+          cbtAssignNormText(r.ref || '').toLowerCase() === refKey) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  function cbtAssignStrictPartialIdentity(jobId, ref) {
+    var idKey = String(jobId || '');
+    var refKey = cbtAssignNormText(ref || '').toLowerCase();
+
+    if (!idKey || !refKey) return false;
+    if (cbtAssignMainTaskIdentityConflict(idKey, refKey)) return false;
+
+    var rows = cbtAssignStrictPartialCandidates();
+
+    for (var i = 0; i < rows.length; i++) {
+      var r = rows[i] || {};
+
+      if (String(r.id || '') !== idKey) continue;
+      if (cbtAssignNormText(r.ref || '').toLowerCase() !== refKey) continue;
+      if (!r.partialSectionVerified || !r.explicitPartialId) continue;
+
+      return true;
+    }
+
+    return false;
+  }
+
+  function cbtAssignStrictPartialCandidates() {
+    var section = cbtAssignFindStrictPartialSection();
+
+    /* Fail closed. If the exact Partially Batched section cannot be proven,
+       Partial Only assigns NOTHING rather than falling back to normal Tasks. */
+    if (!section) return [];
+
+    var holder = null;
+
+    try {
+      holder =
+        section.querySelector('.job-cards') ||
+        section.querySelector('[class*="job-cards"]');
+    } catch(e0) {}
+
+    if (!holder) return [];
+
+    var found = [];
+    var seen = Object.create(null);
+    var cards = [];
+
+    try {
+      cards = Array.prototype.slice.call(
+        holder.querySelectorAll('job-card')
+      );
+    } catch(e1) {
+      cards = [];
+    }
+
+    function addFromAnchor(a, rowOrder) {
+      if (!a) return;
+
+      /* Extra containment check: the candidate's nearest dropped-job MUST be
+         the exact Partially Batched section we already verified. */
+      try {
+        var owner = a.closest('dropped-job');
+        if (owner !== section) return;
+      } catch(eOwner) {
+        return;
+      }
+
+      var ref = cbtAssignNormText(a.textContent || '');
+      if (!ref || ref.length > 24) return;
+
+      /* Partial Only requires an explicit full job ID from this
+         Partially Batched row/card itself. */
+      var id = cbtAssignExplicitJobIdFromNode(a);
+
+      if (!id) return;
+
+      id = String(id);
+
+      /* If Force Assign moved this cart into normal Tasks, the side-section
+         DOM may be stale for a moment. Block that identity completely. */
+      if (cbtAssignMainTaskIdentityConflict(id, ref)) return;
+
+      var key = id;
+      if (seen[key]) return;
+      seen[key] = true;
+
+      found.push({
+        ref: ref,
+        id: id,
+        partial: true,
+        partialSectionVerified: true,
+        explicitPartialId: true,
+        rowOrder: rowOrder
+      });
+    }
+
+    if (cards.length) {
+      for (var i = 0; i < cards.length; i++) {
+        var card = cards[i];
+        var a = null;
+
+        try {
+          a =
+            card.querySelector('a[href*="jobId="]') ||
+            card.querySelector('a');
+        } catch(eCard) {}
+
+        addFromAnchor(a, i);
+      }
+
+      return found;
+    }
+
+    /* Some COMO builds render the rows without a literal job-card custom
+       element. In that case, anchors are still accepted ONLY inside the
+       verified .job-cards holder of the verified Partially Batched section. */
+    var anchors = [];
+
+    try {
+      anchors = Array.prototype.slice.call(
+        holder.querySelectorAll('a')
+      );
+    } catch(eAnchors) {
+      anchors = [];
+    }
+
+    for (var j = 0; j < anchors.length; j++) {
+      addFromAnchor(anchors[j], j);
+    }
+
+    return found;
+  }
+
+  function cbtAssignReadPartialRows() {
+    /* v23.9.137:
+       "Only Assign Partially Batched Carts" means:
+       ONLY carts successfully Force Assigned by the Partially Batched action
+       in this tab/store.
+
+       Force Assign can legitimately move those exact jobs into normal Tasks.
+       We keep their full job IDs here so Assign Cart still targets the SAME
+       partial-origin carts and can never substitute an unrelated Tasks cart. */
+    return cbtForcedPartialRows();
+  }
+
+  function cbtAssignHasPartialTasks() {
+    return cbtAssignReadPartialRows().length > 0;
+  }
+
+
   function cbtAssignTaskType(r) {
     if (!r) return '';
 
+    if (r.partial) return 'partial';
     if (!r.assignmentHasName && !r.cartHasValue) return 'blank';
     if (r.assignmentHasName && !r.cartHasValue) return 'name';
     if (!r.assignmentHasName && r.cartHasValue) return 'cart';
@@ -10493,19 +11215,30 @@
   function cbtAssignNormalizeTaskTypes(options) {
     options = options || {};
 
+    var partialOnly = !!options.partialOnly;
+
     return {
-      /* No Name + No Cart is intentionally not configurable.
-         It ALWAYS runs first whenever Assign Cart is used. */
-      blank: true,
-      name: !!options.name,
-      cart: !!options.cart,
-      both: !!options.both
+      /* Partial-only is exclusive.
+
+         Normal Assign now ALWAYS checks:
+         1) Associate Name Only
+         2) No Name + No Cart
+
+         Cart Only and Name + Cart remain optional. */
+      partialOnly: partialOnly,
+      partialIds: options.partialIds || null,
+      name: !partialOnly,
+      blank: !partialOnly,
+      cart: !partialOnly && !!options.cart,
+      both: !partialOnly && !!options.both
     };
   }
 
   function cbtAssignTaskTypeAllowed(r, options) {
     var scope = cbtAssignNormalizeTaskTypes(options);
     var type = cbtAssignTaskType(r);
+
+    if (scope.partialOnly) return type === 'partial';
 
     if (type === 'blank') return true;
     if (type === 'name') return scope.name;
@@ -10516,33 +11249,72 @@
   }
 
   function cbtAssignTaskTypePriority(r) {
-    /* Fixed category order requested:
-       1. No Name + No Cart
-       2. Name Only
+    /* Fixed normal Assign category order:
+       1. Associate Name Only
+       2. No Name + No Cart
        3. Cart Only
        4. Name + Cart */
     var type = cbtAssignTaskType(r);
 
-    if (type === 'blank') return 0;
-    if (type === 'name') return 1;
+    if (type === 'name') return 0;
+    if (type === 'blank') return 1;
     if (type === 'cart') return 2;
     if (type === 'both') return 3;
 
     return 99;
   }
 
+  function cbtAssignVisibleRowLooksAccepted(r) {
+    if (!r) return false;
+
+    var progress =
+      cbtAssignNormText(r.progressRaw || '').toUpperCase();
+
+    return /\b(BATCHING|IN_PROGRESS|ACCEPTED|STARTED|COMPLETED|COMPLETE|DONE)\b/.test(progress);
+  }
+
   function cbtAssignRowCanBeTried(r, options) {
-    if (!r || r.batchMs == null) return false;
+    if (!r) return false;
 
-    /* No Name + No Cart always runs.
-       The other three visual task types are optional picker choices.
+    var scope = cbtAssignNormalizeTaskTypes(options);
 
-       Visual columns still are NOT proof that a task is safe to assign.
-       Safety remains handled by:
-       1) the successful-assignment protection window,
-       2) a fresh read-only backend state check,
-       3) Amazon's assignToAssociate API itself. */
-    return cbtAssignTaskTypeAllowed(r, options);
+    /* When checked, Partially Batched is the ONLY source. Normal Tasks never
+       leak into this run. */
+    if (scope.partialOnly) {
+      if (!r.partial ||
+          !r.partialOriginForced ||
+          !r.explicitPartialId ||
+          !cbtForcedPartialIdentity(r.key, r.ref)) {
+        return false;
+      }
+
+      /* Once Assign starts, only the exact full job IDs remembered from the
+         successful Partially Batched Force Assign run may be used. */
+      if (scope.partialIds && !scope.partialIds[String(r.key)]) {
+        return false;
+      }
+
+      return true;
+    }
+
+    if (r.partial || r.batchMs == null) return false;
+
+    var type = cbtAssignTaskType(r);
+
+    /* Name Only is now automatic and FIRST, but only while the task still
+       looks unaccepted. After the 30-second protection expires, a cart the
+       script just assigned can be tried again only if it did NOT transition
+       into BATCHING/accepted state. */
+    if (type === 'name' && cbtAssignVisibleRowLooksAccepted(r)) {
+      return false;
+    }
+
+    /* Safety remains handled by:
+       1) the 30-second successful-assignment protection window,
+       2) this visible accepted-state guard,
+       3) a fresh backend accepted-state check,
+       4) Amazon's assignToAssociate API itself. */
+    return cbtAssignTaskTypeAllowed(r, scope);
   }
 
   function cbtAssignEligibleRows(claimed, blocked, options) {
@@ -10554,7 +11326,11 @@
     var nowMs = Date.now();
     var protectionPruned = false;
 
-    var rows = cbtAssignReadRows()
+    var sourceRows = options.partialOnly
+      ? cbtAssignReadPartialRows()
+      : cbtAssignReadRows();
+
+    var rows = sourceRows
       .filter(function(r){
         var p = protectedRows[r.key];
 
@@ -10574,32 +11350,36 @@
 
     return rows
       .sort(function(a, b){
-        /* Priority:
-           1. Task type:
-              No Name + No Cart -> Name Only -> Cart Only -> Name + Cart
-              (unchecked optional types were already filtered out).
-           2. Within that task type: earliest Batch Target first.
-           3. Same Batch Target: MOST packages first.
-           4. Same time + package count: higher dashboard row first. */
-        var typeDiff =
-          cbtAssignTaskTypePriority(a) -
-          cbtAssignTaskTypePriority(b);
-
-        if (typeDiff) return typeDiff;
-
-        if (a.batchMs !== b.batchMs) return a.batchMs - b.batchMs;
-
-        if (a.packageCount !== b.packageCount) {
-          return b.packageCount - a.packageCount;
+        /* Partial Only now uses STRICT visible top-to-bottom order.
+           Package count and Batch Target are not used by the assigner. */
+        if (options.partialOnly) {
+          return a.rowOrder - b.rowOrder;
         }
 
+        /* v23.9.147 Normal Assign: earliest eligible Batch Target ALWAYS wins.
+           Time Left / overdue status is deliberately ignored. Task-type
+           checkboxes still decide WHICH rows are eligible, but they no longer
+           override chronological order. Package count is not used. */
+        var aBatch = Number(a.batchMs);
+        var bBatch = Number(b.batchMs);
+        var hasA = Number.isFinite(aBatch);
+        var hasB = Number.isFinite(bBatch);
+
+        if (hasA && hasB && aBatch !== bBatch) return aBatch - bBatch;
+        if (hasA && !hasB) return -1;
+        if (!hasA && hasB) return 1;
+
+        /* Same Batch Target (or no readable target): preserve visible order. */
         return a.rowOrder - b.rowOrder;
       });
   }
 
   function cbtAssignCurrentEligible(jobKey, options) {
-    var rows = cbtAssignReadRows();
     options = cbtAssignNormalizeTaskTypes(options);
+
+    var rows = options.partialOnly
+      ? cbtAssignReadPartialRows()
+      : cbtAssignReadRows();
 
     for (var i = 0; i < rows.length; i++) {
       var r = rows[i];
@@ -11168,11 +11948,19 @@
     );
   }
 
-  function cbtAssignBackendPreflight(jobId) {
-    /* Fresh read-only check immediately before the POST. This does not decide
-       from Name/Cart columns. If the backend clearly says the task is already
-       active/accepted, skip it. For an unknown/non-active state, Amazon's
-       assignToAssociate endpoint remains the final authority. */
+  function cbtAssignBackendPreflight(jobId, options) {
+    options = options || {};
+
+    /* Fresh read-only check immediately before the POST.
+       Normal modes keep the accepted/active-state block.
+
+       v23.9.140 behavior:
+       - Name Only is automatic, but accepted/BATCHING Name Only carts are
+         blocked. After the 30-second protection expires, reassignment is only
+         allowed if the task was NOT accepted.
+       - Explicit Partial Only may still let Amazon's assignToAssociate
+         endpoint make the final decision for the remembered forced-partial
+         job. */
     return afaFetchJobInfo(jobId).then(function(info){
       if (!info) {
         return {
@@ -11185,7 +11973,10 @@
 
       var state = cbtAssignOperationStateDeep(info, 0);
 
-      if (cbtAssignStateLooksAccepted(state)) {
+      var allowExplicitReassign =
+        !!options.allowPartialReassign;
+
+      if (cbtAssignStateLooksAccepted(state) && !allowExplicitReassign) {
         return {
           ok: false,
           retryable: true,
@@ -11198,13 +11989,17 @@
       return {
         ok: true,
         verified: true,
-        state: state || null
+        state: state || null,
+        reassignAttempt: !!(
+          allowExplicitReassign &&
+          cbtAssignStateLooksAccepted(state)
+        )
       };
     });
   }
 
-  function cbtAssignFreshPreflight(jobId, guardFn) {
-    /* Protection comes first. A successful script assignment gets 90 seconds
+  function cbtAssignFreshPreflight(jobId, guardFn, options) {
+    /* Protection comes first. A successful script assignment gets 30 seconds
        to be accepted on the scanner before this button may reassign it. */
     var protectedRow = cbtAssignProtection(jobId);
 
@@ -11230,7 +12025,7 @@
       });
     }
 
-    return cbtAssignBackendPreflight(jobId).then(function(check){
+    return cbtAssignBackendPreflight(jobId, options).then(function(check){
       if (!check || !check.ok) {
         return check || {
           ok: false,
@@ -11404,8 +12199,8 @@
     );
   }
 
-  function cbtAssignViaUi(jobId, associate, guardFn, detailsUrl) {
-    /* v23.9.127: despite the historical function name, this no longer opens
+  function cbtAssignViaUi(jobId, associate, guardFn, detailsUrl, assignOptions) {
+    /* v23.9.137: despite the historical function name, this no longer opens
        a task page or iframe. It sends the exact request captured from one
        successful manual COMO assignment:
 
@@ -11424,9 +12219,51 @@
       });
     }
 
+    assignOptions = assignOptions || {};
+
+    /* HARD PARTIAL-ONLY FAIL-CLOSED GATE.
+       If Partial Only is selected, this function is forbidden from POSTing
+       any normal Tasks job under any circumstance. */
+    if (assignOptions.requirePartialOnly) {
+      var partialIds = assignOptions.partialIds || null;
+      var idKey = String(jobId || '');
+
+      if (!partialIds || !partialIds[idKey]) {
+        return Promise.resolve({
+          ok: false,
+          retryable: false,
+          skipped: true,
+          reason: 'blocked: job is not in the frozen Partially Batched whitelist'
+        });
+      }
+
+      if (!guardFn || !guardFn()) {
+        return Promise.resolve({
+          ok: false,
+          retryable: true,
+          skipped: true,
+          reason: 'blocked: forced-partial job is no longer eligible for this run'
+        });
+      }
+
+      if (!assignOptions.partialRef ||
+          !cbtForcedPartialIdentity(
+            jobId,
+            assignOptions.partialRef
+          )) {
+        return Promise.resolve({
+          ok: false,
+          retryable: true,
+          skipped: true,
+          reason: 'blocked: job was not remembered as a successfully Force Assigned partial cart'
+        });
+      }
+    }
+
     return cbtAssignFreshPreflight(
       jobId,
-      guardFn
+      guardFn,
+      assignOptions
     ).then(function(preflight){
       if (!preflight || !preflight.ok) {
         return preflight || {
@@ -11547,9 +12384,98 @@
     });
   }
 
+  function cbtAssignAssociateBatchingTask(associate) {
+    var wanted = cbtAssignNormText(associate || '').toLowerCase();
+    if (!wanted) return null;
+
+    var rows = [];
+
+    try {
+      rows = cbtAssignReadRows() || [];
+    } catch(e) {
+      rows = [];
+    }
+
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i] || {};
+      var assignedTo =
+        cbtAssignNormText(row.assignment || '').toLowerCase();
+      var progress =
+        cbtAssignNormText(row.progressRaw || '').toUpperCase();
+
+      if (assignedTo !== wanted) continue;
+
+      /* Safety rule: an associate already BATCHING a normal Task cannot
+         receive another cart from Assign Cart. */
+      if (/\bBATCHING\b/.test(progress)) {
+        return row;
+      }
+    }
+
+    return null;
+  }
+
+  function cbtAssignAlreadyBatchingMessage(associate, row) {
+    var msg =
+      'Not Assigned. Reason: ' +
+      cbtAssignNormText(associate || 'Associate') +
+      ' Already Has A Batching Task';
+
+    if (row && row.ref) {
+      msg += ' (Task ' + cbtAssignNormText(row.ref) + ')';
+    }
+
+    return msg + '.';
+  }
+
+  function cbtAssignNoEligibleMessage(taskTypes) {
+    if (taskTypes && taskTypes.partialOnly) {
+      var pending = [];
+
+      try {
+        pending = cbtLoadForcedPartialPending() || [];
+      } catch(e0) {
+        pending = [];
+      }
+
+      if (!pending.length) {
+        return (
+          'Not Assigned. Reason: No Forced Partial Cart Is Available. ' +
+          'Use Force Assign On A Partially Batched Cart First, Then Try Again.'
+        );
+      }
+
+      return (
+        'Not Assigned. Reason: No Eligible Forced Partial Cart Is Available. ' +
+        'It May Already Be Assigned, Rejected By Amazon, Or No Longer Ready.'
+      );
+    }
+
+    var state = cbtAssignSiteTaskState();
+
+    if (!state.ready) {
+      return (
+        'Not Assigned. Reason: The Tasks Page Is Still Loading. ' +
+        'Wait A Moment For The Page To Finish Loading, Then Try Again.'
+      );
+    }
+
+    if (!state.hasTasks) {
+      return (
+        'Not Assigned. Reason: No Task Cart Is Available Right Now.'
+      );
+    }
+
+    return (
+      'Not Assigned. Reason: No Eligible Cart Is Available For The Selected ' +
+      'Assign Options. The Available Carts May Already Be Active, Assigned, ' +
+      'Or Temporarily Protected.'
+    );
+  }
+
   function cbtAssignProgressView() {
     afaShell(
-      'Assign — running',
+      'Assign Running',
       '<div id="cbt-afa-lead">' +
         '<span id="cbt-assign-count">' +
           'Starting…' +
@@ -11604,7 +12530,7 @@
         total +
         '</b>' +
         (associate
-          ? ' — ' + afaEsc(associate)
+          ? ': ' + afaEsc(associate)
           : '') +
         (target
           ? ' → task ' +
@@ -11655,7 +12581,7 @@
     }).length;
 
     afaShell(
-      'Assign — finished',
+      'Assign Finished',
       '<div id="cbt-afa-lead">' +
         (stopped ? 'Stopped early. ' : '') +
         '<b>' + okN + '</b> assigned' +
@@ -11713,14 +12639,42 @@
       : [];
 
     /* Freeze the picker choices for this run.
-       No Name + No Cart remains enabled even if no optional box was checked. */
+       Normal mode keeps No Name + No Cart enabled. Partial-only mode is
+       exclusive and reads only the Partially Batched section. */
     taskTypes = cbtAssignNormalizeTaskTypes(taskTypes);
 
     if (!names.length || _afaRunning) return;
 
-    /* Safety gate: Assign Cart is never allowed to start when the normal
-       Tasks section has zero tasks (or is not authoritative yet). */
-    if (!cbtAssignHasSiteTasks()) {
+    /* Source-specific safety gate. Partial Only gets a frozen whitelist built
+       ONLY from the exact Partially Batched dropped-job section. */
+    if (taskTypes.partialOnly) {
+      var forcedPartialRows = cbtAssignReadPartialRows();
+      var forcedPartialIds = Object.create(null);
+
+      for (var spi = 0; spi < forcedPartialRows.length; spi++) {
+        var forcedRow = forcedPartialRows[spi];
+
+        if (!forcedRow ||
+            !forcedRow.partialOriginForced ||
+            !forcedRow.explicitPartialId ||
+            !forcedRow.key ||
+            !cbtForcedPartialIdentity(
+              forcedRow.key,
+              forcedRow.ref
+            )) {
+          continue;
+        }
+
+        forcedPartialIds[String(forcedRow.key)] = true;
+      }
+
+      if (!Object.keys(forcedPartialIds).length) {
+        afaConfirm();
+        return;
+      }
+
+      taskTypes.partialIds = forcedPartialIds;
+    } else if (!cbtAssignHasSiteTasks()) {
       afaConfirm();
       return;
     }
@@ -11767,9 +12721,12 @@
         return;
       }
 
+      /* v23.9.142: API calls remain strictly sequential, but the old visible
+         20-35ms artificial pauses are reduced to a near-immediate handoff.
+         Network/preflight safety is unchanged. */
       assignNextTimer = setTimeout(
         resumeAssignPending,
-        delay == null ? 35 : delay
+        delay == null ? 5 : Math.max(0, delay)
       );
     }
 
@@ -11827,7 +12784,7 @@
 
       scheduleAssignStep(
         stepName,
-        delay == null ? 35 : delay
+        delay == null ? 5 : delay
       );
     }
 
@@ -11847,6 +12804,34 @@
           return;
         }
 
+        /* v23.9.147: do NOT skip an associate just because they already have
+           another BATCHING task. The selected associate is still attempted on
+           the earliest eligible cart; Amazon remains the final authority. */
+
+        if (!taskTypes.partialOnly) {
+          var siteState = cbtAssignSiteTaskState();
+
+          if (!siteState.ready) {
+            results.push({
+              ref: associate,
+              skip: true,
+              ok: false,
+              msg: cbtAssignNoEligibleMessage(taskTypes)
+            });
+
+            cbtAssignProgress(
+              nameIndex + 1,
+              names.length,
+              associate,
+              null,
+              results
+            );
+
+            nextName(5);
+            return;
+          }
+        }
+
         /* Fresh dashboard state for this associate. */
         var eligible =
           cbtAssignEligibleRows(
@@ -11860,13 +12845,7 @@
             ref: associate,
             skip: true,
             ok: false,
-            msg:
-              'No task left to try' +
-              (attemptedForAssociate
-                ? ' after ' + attemptedForAssociate + ' attempt' +
-                  (attemptedForAssociate === 1 ? '' : 's')
-                : '') +
-              ' — no eligible task left in the selected task types; recently assigned carts stay protected for 90 seconds'
+            msg: cbtAssignNoEligibleMessage(taskTypes)
           });
 
           cbtAssignProgress(
@@ -11877,7 +12856,7 @@
             results
           );
 
-          nextName(25);
+          nextName(5);
           return;
         }
 
@@ -11906,7 +12885,52 @@
 
           /* Keep the SAME selected associate and move to the next earliest
              task instead of advancing to the next name. */
-          scheduleAssignStep(tryEarliest, 20);
+          scheduleAssignStep(tryEarliest, 5);
+          return;
+        }
+
+        /* v23.9.147: no second "associate already batching" veto here.
+           We intentionally proceed with the assignment attempt even if the
+           associate became busy after this run started. */
+
+        var targetType = cbtAssignTaskType(target);
+
+        var allowPartialReassign =
+          !!taskTypes.partialOnly &&
+          targetType === 'partial' &&
+          !!target.partialOriginForced &&
+          !!target.explicitPartialId &&
+          cbtForcedPartialIdentity(
+            target.key,
+            target.ref
+          ) &&
+          !!(
+            taskTypes.partialIds &&
+            taskTypes.partialIds[String(target.key)]
+          );
+
+        /* Absolute fail-closed behavior:
+           Partial Only may NEVER fall back to a normal Tasks row. */
+        if (taskTypes.partialOnly && !allowPartialReassign) {
+          blocked[target.key] = true;
+
+          results.push({
+            ref: associate,
+            id: target.id,
+            skip: true,
+            ok: false,
+            msg: 'Not Assigned. Reason: The Cart Could Not Be Verified As A Partially Batched Cart.'
+          });
+
+          cbtAssignProgress(
+            nameIndex + 1,
+            names.length,
+            associate,
+            null,
+            results
+          );
+
+          scheduleAssignStep(tryEarliest, 5);
           return;
         }
 
@@ -11914,7 +12938,15 @@
           target.id,
           associate,
           targetStillEligible,
-          target.detailsUrl
+          target.detailsUrl,
+          {
+            /* Name Only uses the normal backend accepted-state safety check.
+               Partial Only remains the only explicit active-state override. */
+            allowPartialReassign: allowPartialReassign,
+            requirePartialOnly: !!taskTypes.partialOnly,
+            partialIds: taskTypes.partialIds,
+            partialRef: taskTypes.partialOnly ? target.ref : ''
+          }
         ).then(function(result){
           if (_afaStop) {
             finish();
@@ -11926,6 +12958,10 @@
                just-assigned task in this same run. */
             claimed[target.key] = true;
 
+            if (taskTypes.partialOnly) {
+              cbtForgetForcedPartial(target.key);
+            }
+
             /* Keep the existing success timestamp, but attach the visible task
                ref for easier local debugging/history. */
             try {
@@ -11934,6 +12970,10 @@
                 associate,
                 target.ref
               );
+
+              /* Show the 30-second cooldown immediately instead of waiting
+                 for the next 1-second Time Left tick. */
+              cbtAssignRenderProtectionCountdown();
             } catch(eProtectMeta) {}
 
             results.push({
@@ -11941,14 +12981,16 @@
               id: target.id,
               ok: true,
               msg:
-                'Assigned → task ' +
+                'Assigned To Task ' +
                 target.ref +
-                ' — Batch Target ' +
-                (
-                  target.batchRaw ||
-                  'earliest'
-                ) +
-                ' — protected 90s'
+                (taskTypes.partialOnly
+                  ? '. Source: Partially Batched Only'
+                  : '. Batch Target: ' +
+                    (
+                      target.batchRaw ||
+                      'Earliest'
+                    )) +
+                '. Protected For 30 Seconds.'
             });
 
             cbtAssignProgress(
@@ -11959,15 +13001,25 @@
               results
             );
 
-            nextName(35);
+            nextName(5);
             return;
           }
 
           if (result && result.retryable) {
-            /* Direct API rejected this task. Block only this task and keep
-               the SAME selected associate on the next earliest candidate. */
+            /* Direct API rejected this exact task.
+
+               Partial Only:
+               - remove this failed forced-partial handoff;
+               - try ONLY another remembered forced-partial job;
+               - if none remain, the associate stays UNASSIGNED;
+               - NEVER substitute a normal Tasks cart. */
             blocked[target.key] = true;
-            scheduleAssignStep(tryEarliest, 25);
+
+            if (taskTypes.partialOnly) {
+              cbtForgetForcedPartial(target.key);
+            }
+
+            scheduleAssignStep(tryEarliest, 5);
             return;
           }
 
@@ -11978,11 +13030,11 @@
             ref: associate,
             ok: false,
             msg:
-              'Could not safely confirm assignment' +
+              'Not Assigned. Reason: The Assignment Could Not Be Safely Confirmed' +
               (
                 result && result.reason
-                  ? ' — ' + result.reason
-                  : ''
+                  ? '. Details: ' + result.reason
+                  : '.'
               )
           });
 
@@ -11994,7 +13046,7 @@
             results
           );
 
-          nextName(35);
+          nextName(5);
         });
       }
 
@@ -12182,19 +13234,22 @@
       'Assign',
       '<div id="cbt-afa-lead">Search and select one or more associates.</div>' +
       '<div id="cbt-afa-assign-types">' +
-        '<div class="cbt-afa-assign-type-title">Also include</div>' +
+        '<div class="cbt-afa-assign-type-title">Assign Source</div>' +
         '<label class="cbt-afa-opt">' +
-          '<input id="cbt-afa-type-name" type="checkbox">' +
-          '<span><b>Task with Associate Name only</b></span>' +
+          '<input id="cbt-afa-type-partial" type="checkbox">' +
+          '<span><b>Only Assign Partially Batched Carts</b></span>' +
         '</label>' +
+        '<div id="cbt-afa-normal-task-types">' +
+          '<div class="cbt-afa-assign-type-title" style="margin-top:8px;">Normal Tasks · Optional</div>' +
         '<label class="cbt-afa-opt">' +
           '<input id="cbt-afa-type-cart" type="checkbox">' +
-          '<span><b>Task with Cart Number only</b></span>' +
+          '<span><b>Task With Cart Number Only</b></span>' +
         '</label>' +
         '<label class="cbt-afa-opt">' +
           '<input id="cbt-afa-type-both" type="checkbox">' +
-          '<span><b>Task with Associate Name + Cart Number</b></span>' +
+          '<span><b>Task With Associate Name + Cart Number</b></span>' +
         '</label>' +
+        '</div>' +
       '</div>' +
       '<input id="cbt-afa-assign-search" type="text" autocomplete="off" spellcheck="false" ' +
         'placeholder="Search associate name..." aria-label="Search associate name">' +
@@ -12206,7 +13261,7 @@
         '<button id="cbt-afa-assign-clear" type="button" disabled>Clear</button>' +
       '</div>' +
         '<div class="cbt-afa-assign-empty">None selected.</div></div>' +
-      '<div class="cbt-afa-note">No Name + No Cart always runs first. Checked task types are fallback groups. Inside each group: earliest Batch Target → most packages if the time matches → top row if still tied.</div>',
+      '<div class="cbt-afa-note" id="cbt-afa-assign-mode-note">Normal Mode: Earliest eligible Batch Target is always tried first. Time Left and overdue status do not block assignment. A selected associate is still attempted even if they already have another batching task. A recently assigned cart is protected for 30 seconds.</div>',
       '<button class="cbt-afa-act" data-afa="assign-back">Back</button>' +
       '<button class="cbt-afa-act primary" data-afa="assign-start" disabled>Assign</button>'
     );
@@ -12215,7 +13270,9 @@
     var input = document.getElementById('cbt-afa-assign-search');
     var results = document.getElementById('cbt-afa-assign-results');
     var selected = document.getElementById('cbt-afa-assign-selected');
-    var typeName = document.getElementById('cbt-afa-type-name');
+    var typePartial = document.getElementById('cbt-afa-type-partial');
+    var normalTypes = document.getElementById('cbt-afa-normal-task-types');
+    var modeNote = document.getElementById('cbt-afa-assign-mode-note');
     var typeCart = document.getElementById('cbt-afa-type-cart');
     var typeBoth = document.getElementById('cbt-afa-type-both');
 
@@ -12223,7 +13280,9 @@
         !input ||
         !results ||
         !selected ||
-        !typeName ||
+        !typePartial ||
+        !normalTypes ||
+        !modeNote ||
         !typeCart ||
         !typeBoth) return;
 
@@ -12239,9 +13298,44 @@
       return -1;
     }
 
-    function renderSelected() {
+    function updateAssignStartState() {
       var startBtn = card.querySelector('[data-afa="assign-start"]');
-      if (startBtn) startBtn.disabled = selectedNames.length === 0;
+      if (!startBtn) return;
+
+      /* v23.9.144:
+         Partial Only must not gray out the Assign button just because the
+         remembered forced-partial source is temporarily empty/not refreshed.
+         If an associate is selected, let the user press Assign.
+
+         cbtAssignRun() still performs the authoritative source validation and
+         fails closed if no exact forced-partial job is available. */
+      if (typePartial.checked) {
+        startBtn.disabled = selectedNames.length === 0;
+        return;
+      }
+
+      startBtn.disabled =
+        selectedNames.length === 0 ||
+        !cbtAssignHasSiteTasks();
+    }
+
+    function syncPartialOnlyMode() {
+      var partialOnly = !!typePartial.checked;
+
+      typeCart.disabled = partialOnly;
+      typeBoth.disabled = partialOnly;
+
+      normalTypes.style.opacity = partialOnly ? '0.45' : '1';
+
+      modeNote.textContent = partialOnly
+        ? 'Partially Batched Only. Select an associate and press Assign normally. The button stays available. The run can use only exact carts remembered from Partially Batched Force Assign. If none are available, nothing is assigned. Normal Tasks are never used as a fallback.'
+        : 'Normal Mode: Earliest eligible Batch Target is always tried first. Time Left is ignored. Cart Only and Name + Cart remain optional. The selected associate is still attempted even if already batching. A cart assigned by this script is protected for 30 seconds.';
+
+      updateAssignStartState();
+    }
+
+    function renderSelected() {
+      updateAssignStartState();
 
       if (!selectedNames.length) {
         selected.innerHTML =
@@ -12346,6 +13440,10 @@
       renderResults();
     }
 
+    typePartial.addEventListener('change', function(){
+      syncPartialOnlyMode();
+    });
+
     input.addEventListener('input', function(){
       search(input.value);
     });
@@ -12413,9 +13511,10 @@
       if (b.getAttribute('data-afa') === 'assign-start') {
         if (!selectedNames.length || b.disabled) return;
 
-        /* Tasks can disappear while the associate picker is open. Re-check
-           immediately before starting so zero Tasks can never submit. */
-        if (!cbtAssignHasSiteTasks()) {
+        /* Re-check normal Tasks immediately before starting.
+           Partial Only is allowed to start; cbtAssignRun() performs the
+           authoritative fail-closed partial validation. */
+        if (!typePartial.checked && !cbtAssignHasSiteTasks()) {
           afaConfirm();
           return;
         }
@@ -12425,16 +13524,15 @@
            productivity/performance ranking. */
         cbtAssignRememberRecentNames(selectedNames);
 
-        /* Freeze exact user selection order and task-type choices.
-           No Name + No Cart is always enabled by cbtAssignRun().
-           Optional checked fallback groups keep this exact order:
-           Name Only -> Cart Only -> Name + Cart. */
+        /* Freeze exact user selection order and source choice.
+           If Partially Batched is checked, it is exclusive: normal Tasks and
+           their Name/Cart fallback checkboxes are ignored. */
         cbtAssignRun(
           selectedNames.slice(),
           {
-            name: !!typeName.checked,
-            cart: !!typeCart.checked,
-            both: !!typeBoth.checked
+            partialOnly: !!typePartial.checked,
+            cart: !typePartial.checked && !!typeCart.checked,
+            both: !typePartial.checked && !!typeBoth.checked
           }
         );
         return;
@@ -12442,6 +13540,7 @@
     });
 
     renderSelected();
+    syncPartialOnlyMode();
     search('');
     try { input.focus(); } catch(e) {}
   }
@@ -12486,7 +13585,8 @@
     var completeReady = completionCandidates.filter(function(x){ return x.id; });
 
     var assignTaskState = cbtAssignSiteTaskState();
-    var assignDisabled = !assignTaskState.hasTasks;
+    var assignHasPartial = pbReady.length > 0;
+    var assignDisabled = !assignTaskState.hasTasks && !assignHasPartial;
 
     var forceDisabled   = ready.length === 0;
     var partialDisabled = pbReady.length === 0;
@@ -12508,11 +13608,13 @@
       '▶ Assign Cart',
       null,
       assignDisabled,
-      !assignTaskState.ready
-        ? 'Tasks are still loading. Assign Cart is disabled until the normal Tasks section is ready.'
-        : (assignDisabled
-            ? 'No Tasks are available right now. Assign Cart is disabled.'
-            : 'Select associates in order, then assign them to the earliest eligible tasks.')
+      assignDisabled
+        ? (!assignTaskState.ready && !assignHasPartial
+            ? 'Tasks are still loading and no readable Partially Batched carts are available yet.'
+            : 'No normal Tasks or readable Partially Batched carts are available right now.')
+        : (!assignTaskState.hasTasks && assignHasPartial
+            ? 'Partially Batched carts are available. Open Assign Cart and check “Only Assign Partially Batched Carts”.'
+            : 'Select associates in order. Normal Tasks are the default; Partially Batched can be selected exclusively inside Assign Cart.')
     );
 
     var forceBlock = actionBlock(
@@ -12734,10 +13836,12 @@
         return;
       }
 
-      /* v23.9.127: Assign opens associate search/selection only.
-         Do not assign, fetch a task, complete, force, or modify any task. */
+      /* Assign opens associate search/selection only.
+         It may open when either normal Tasks OR readable Partially Batched
+         carts exist; the picker decides which source the user wants. */
       if (action === 'assign') {
-        if (b.disabled || !cbtAssignHasSiteTasks()) {
+        if (b.disabled ||
+            (!cbtAssignHasSiteTasks() && !cbtAssignHasPartialTasks())) {
           afaConfirm();
           return;
         }
@@ -12988,6 +14092,18 @@
         _afaDone[item.id] = true;
         return afaForceAssign(item.id).then(function(r){
           if (r.ok) {
+            if (runMode === 'partial' &&
+                item.partial &&
+                item.id &&
+                item.ref) {
+              /* This exact full job ID is now the ONLY kind of cart that
+                 Partial Only Assign is allowed to consume. */
+              cbtRememberForcedPartial(
+                item.id,
+                item.ref
+              );
+            }
+
             doneResult({ ref: item.ref, id: item.id, ok: true, msg: 'Force Assigned (HTTP ' + r.status + ')' + (noteWhy ? ' \u2014 ' + noteWhy : '') });
           } else {
             var why = r.status ? ('HTTP ' + r.status) : 'no response';
