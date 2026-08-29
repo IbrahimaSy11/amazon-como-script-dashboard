@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.147
+// @version      23.9.149
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -10147,7 +10147,7 @@
        - If a tried task is clearly rejected, keep the SAME associate and try
          the next-earliest eligible Batch Target.
 
-     Existing 30-second just-assigned cart protection remains in place so the
+     Existing 2-minute just-assigned cart protection remains in place so the
      script does not immediately reuse a cart whose assignment is still settling.
      No recurring observer/polling loop is added.
   ══════════════════════════════════════ */
@@ -10317,7 +10317,7 @@
     return cbtAssignSiteTaskState().hasTasks;
   }
 
-  var CBT_ASSIGN_PROTECT_MS = 30 * 1000;
+  var CBT_ASSIGN_PROTECT_MS = 1 * 60 * 1000;
   var _cbtAssignProtectCache = Object.create(null);
   var _cbtAssignProtectCacheKey = '';
   var _cbtAssignProtectCacheLoaded = false;
@@ -11302,7 +11302,7 @@
     var type = cbtAssignTaskType(r);
 
     /* Name Only is now automatic and FIRST, but only while the task still
-       looks unaccepted. After the 30-second protection expires, a cart the
+       looks unaccepted. After the 2-minute protection expires, a cart the
        script just assigned can be tried again only if it did NOT transition
        into BATCHING/accepted state. */
     if (type === 'name' && cbtAssignVisibleRowLooksAccepted(r)) {
@@ -11310,7 +11310,7 @@
     }
 
     /* Safety remains handled by:
-       1) the 30-second successful-assignment protection window,
+       1) the 2-minute successful-assignment protection window,
        2) this visible accepted-state guard,
        3) a fresh backend accepted-state check,
        4) Amazon's assignToAssociate API itself. */
@@ -11956,7 +11956,7 @@
 
        v23.9.140 behavior:
        - Name Only is automatic, but accepted/BATCHING Name Only carts are
-         blocked. After the 30-second protection expires, reassignment is only
+         blocked. After the 2-minute protection expires, reassignment is only
          allowed if the task was NOT accepted.
        - Explicit Partial Only may still let Amazon's assignToAssociate
          endpoint make the final decision for the remembered forced-partial
@@ -11999,7 +11999,7 @@
   }
 
   function cbtAssignFreshPreflight(jobId, guardFn, options) {
-    /* Protection comes first. A successful script assignment gets 30 seconds
+    /* Protection comes first. A successful script assignment gets 1 minute
        to be accepted on the scanner before this button may reassign it. */
     var protectedRow = cbtAssignProtection(jobId);
 
@@ -12971,7 +12971,7 @@
                 target.ref
               );
 
-              /* Show the 30-second cooldown immediately instead of waiting
+              /* Show the 2-minute cooldown immediately instead of waiting
                  for the next 1-second Time Left tick. */
               cbtAssignRenderProtectionCountdown();
             } catch(eProtectMeta) {}
@@ -12990,7 +12990,7 @@
                       target.batchRaw ||
                       'Earliest'
                     )) +
-                '. Protected For 30 Seconds.'
+                '. Protected For 1 Minute.'
             });
 
             cbtAssignProgress(
@@ -13261,7 +13261,7 @@
         '<button id="cbt-afa-assign-clear" type="button" disabled>Clear</button>' +
       '</div>' +
         '<div class="cbt-afa-assign-empty">None selected.</div></div>' +
-      '<div class="cbt-afa-note" id="cbt-afa-assign-mode-note">Normal Mode: Earliest eligible Batch Target is always tried first. Time Left and overdue status do not block assignment. A selected associate is still attempted even if they already have another batching task. A recently assigned cart is protected for 30 seconds.</div>',
+      '<div class="cbt-afa-note" id="cbt-afa-assign-mode-note">Normal Mode: Earliest eligible Batch Target is always tried first. Time Left and overdue status do not block assignment. A selected associate is still attempted even if they already have another batching task. A recently assigned cart is protected for 1 minute.</div>',
       '<button class="cbt-afa-act" data-afa="assign-back">Back</button>' +
       '<button class="cbt-afa-act primary" data-afa="assign-start" disabled>Assign</button>'
     );
@@ -13329,7 +13329,7 @@
 
       modeNote.textContent = partialOnly
         ? 'Partially Batched Only. Select an associate and press Assign normally. The button stays available. The run can use only exact carts remembered from Partially Batched Force Assign. If none are available, nothing is assigned. Normal Tasks are never used as a fallback.'
-        : 'Normal Mode: Earliest eligible Batch Target is always tried first. Time Left is ignored. Cart Only and Name + Cart remain optional. The selected associate is still attempted even if already batching. A cart assigned by this script is protected for 30 seconds.';
+        : 'Normal Mode: Earliest eligible Batch Target is always tried first. Time Left is ignored. Cart Only and Name + Cart remain optional. The selected associate is still attempted even if already batching. A cart assigned by this script is protected for 1 minute.';
 
       updateAssignStartState();
     }
