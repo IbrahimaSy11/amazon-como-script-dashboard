@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.176
+// @version      23.9.177
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -8032,15 +8032,20 @@ run(attempt);
 }
 function cbtAssignReleaseSharedReservation(jobId, token) {
 jobId=String(jobId||''); token=String(token||'');
-if(!jobId||!token||!syncEnabled()) return;
+if(!jobId||!token||!syncEnabled()) return Promise.resolve(true);
+return new Promise(function(resolve){
+var settled = false;
+function finish(ok){ if (settled) return; settled = true; resolve(!!ok); }
 try{
 GM_xmlhttpRequest({
 method:'GET',url:cbtAssignSharedProtectUrl(jobId),headers:{'Content-Type':'application/json','X-Firebase-ETag':'true'},
 timeout:CBT_ASSIGN_LOCK_REQUEST_TIMEOUT_MS,
 onload:function(res){
-var row=null;try{if(res.status>=200&&res.status<300&&res.responseText&&res.responseText!=='null')row=JSON.parse(res.responseText);}catch(e0){}
-if(!row||String(row.token||'')!==token||!row.pending)return;
-var etag=cbtFirebaseEtag(res.responseHeaders);if(!etag)return;
+if(!(res.status>=200&&res.status<300)){ finish(false); return; }
+var row=null;try{if(res.responseText&&res.responseText!=='null')row=JSON.parse(res.responseText);}catch(e0){ finish(false); return; }
+// If the lease is already gone or no longer ours, there is nothing left for this device to release.
+if(!row||String(row.token||'')!==token||!row.pending){ finish(true); return; }
+var etag=cbtFirebaseEtag(res.responseHeaders);if(!etag){ finish(false); return; }
 try{
 GM_xmlhttpRequest({
 method:'DELETE',
@@ -8055,15 +8060,21 @@ delete shared[jobId];
 delete _cbtAssignSharedNodeToJobId[cbtAssignSharedNodeForJob(jobId)];
 cbtAssignCommitSharedProtectionVisual();
 }
+finish(true);
+return;
 }
+// 412 means another writer changed the node; our old lease is no longer safe to delete.
+if(delRes.status===412){ finish(true); return; }
+finish(false);
 },
-onerror:function(){},
-ontimeout:function(){}
+onerror:function(){ finish(false); },
+ontimeout:function(){ finish(false); }
 });
-}catch(e1){}
-},onerror:function(){},ontimeout:function(){}
+}catch(e1){ finish(false); }
+},onerror:function(){ finish(false); },ontimeout:function(){ finish(false); }
 });
-}catch(e){}
+}catch(e){ finish(false); }
+});
 }
 function cbtAssignSharedProtectionCheck(jobId, ignoreToken) {
 jobId = String(jobId || '');
@@ -8543,6 +8554,9 @@ var _cbtAssignUiSessionDeadline = 0;
 var _cbtAssignUiSessionRunHeartbeat = null;
 var _cbtAssignUiSessionAutoBackPending = false;
 var _cbtAssignUiAcquireSeq = 0;
+// Promise for the most recent Firebase release. Summary Back waits for this so
+// it never races the just-released 15-second lease and appears unresponsive.
+var _cbtAssignUiSessionReleasePromise = Promise.resolve(true);
 function cbtAssignUiSessionRow() {
 return cbtAssignProtection(CBT_ASSIGN_UI_SESSION_KEY);
 }
@@ -8740,10 +8754,18 @@ cbtAssignScheduleSharedProtectionSave();
 }
 } catch(eCacheRelease) {}
 }
-if (!token) { try { cbtAssignRenderGlobalSessionState(); } catch(e0) {} return; }
-if (!syncEnabled()) { try { cbtAssignRenderGlobalSessionState(); } catch(e1) {} return; }
-cbtAssignReleaseSharedReservation(CBT_ASSIGN_UI_SESSION_KEY, token);
-try { cbtAssignRenderGlobalSessionState(); } catch(e2) {}
+try { cbtAssignRenderGlobalSessionState(); } catch(eRenderNow) {}
+if (!token || !syncEnabled()) {
+_cbtAssignUiSessionReleasePromise = Promise.resolve(true);
+return _cbtAssignUiSessionReleasePromise;
+}
+_cbtAssignUiSessionReleasePromise = Promise.resolve(
+cbtAssignReleaseSharedReservation(CBT_ASSIGN_UI_SESSION_KEY, token)
+).catch(function(){ return false; }).then(function(ok){
+try { cbtAssignRenderGlobalSessionState(); } catch(eRenderAfter) {}
+return !!ok;
+});
+return _cbtAssignUiSessionReleasePromise;
 }
 function cbtAssignStartUiSessionRunHeartbeat() {
 if (!syncEnabled() || !_cbtAssignUiSessionToken) return;
@@ -8767,22 +8789,27 @@ var card = overlay && overlay.querySelector('#cbt-afa-card');
 if (card) {
 var menuAssign = card.querySelector('[data-afa="assign"]');
 if (menuAssign) {
+var menuAssignBlock = menuAssign.closest ? menuAssign.closest('.cbt-afa-action-block') : null;
 if (other) {
 menuAssign.setAttribute('data-cbt-global-locked','1');
 menuAssign.disabled = true;
 menuAssign.textContent = 'Wait ' + seconds + 's';
 menuAssign.title = 'Another computer is using Assign. ' + seconds + 's remaining.';
+if (menuAssignBlock) menuAssignBlock.classList.add('off');
 var copy = menuAssign.nextElementSibling;
 if (copy && copy.classList && copy.classList.contains('cbt-afa-action-copy')) {
 copy.textContent = 'Another computer is using Assign — wait ' + seconds + 's.';
 }
-} else if (menuAssign.getAttribute('data-cbt-global-locked') === '1') {
+} else {
+if (menuAssign.getAttribute('data-cbt-global-locked') === '1') {
 menuAssign.removeAttribute('data-cbt-global-locked');
 menuAssign.textContent = '▶ Assign Cart';
 menuAssign.title = '';
+}
 var hasNormalNow = cbtAssignHasSiteTasks();
 var hasPartialNow = cbtAssignHasPartialTasks();
 menuAssign.disabled = !hasNormalNow && !hasPartialNow;
+if (menuAssignBlock) menuAssignBlock.classList.toggle('off', !!menuAssign.disabled);
 var restoreCopy = menuAssign.nextElementSibling;
 if (restoreCopy && restoreCopy.classList && restoreCopy.classList.contains('cbt-afa-action-copy')) {
 restoreCopy.textContent = hasNormalNow
@@ -8833,16 +8860,16 @@ function cbtAssignOpenPickerWithGlobalLock() {
 var other = cbtAssignUiSessionOwnedByOther();
 if (other) {
 try { cbtAssignRenderGlobalSessionState(); } catch(e0) {}
-return;
+return Promise.resolve({ok:false,row:other});
 }
 var overlayAtRequest = _afaOverlay;
 var acquireSeq = ++_cbtAssignUiAcquireSeq;
-cbtAssignAcquireUiSessionLock(acquireSeq).then(function(lock){
+return cbtAssignAcquireUiSessionLock(acquireSeq).then(function(lock){
 if (acquireSeq !== _cbtAssignUiAcquireSeq || !_afaOverlay || _afaOverlay !== overlayAtRequest) {
 if (lock && lock.ok && lock.token && syncEnabled()) {
 cbtAssignReleaseSharedReservation(CBT_ASSIGN_UI_SESSION_KEY, lock.token);
 }
-return;
+return {ok:false,cancelled:true};
 }
 if (!lock || !lock.ok) {
 try { cbtAssignRenderGlobalSessionState(); } catch(e1) {}
@@ -8853,11 +8880,14 @@ var sec = Math.max(1, Math.ceil((Number(lock.row.until) - cbtAssignNowMs()) / 10
 btn.disabled = true;
 btn.setAttribute('data-cbt-global-locked','1');
 btn.textContent = 'Wait ' + sec + 's';
+var block = btn.closest ? btn.closest('.cbt-afa-action-block') : null;
+if (block) block.classList.add('off');
 }
-return;
+return lock || {ok:false};
 }
 afaAssignPicker();
 try { cbtAssignRenderGlobalSessionState(); } catch(e2) {}
+return lock;
 });
 }
 function cbtAssignUpdateProtectionMeta(jobId, associate, ref) {
@@ -10336,10 +10366,23 @@ afaClose();
 return;
 }
 if (action === 'assign-summary-back') {
-cbtAssignOpenPickerWithGlobalLock();
+if (b.disabled) return;
+b.disabled = true;
+b.textContent = 'Opening…';
+Promise.resolve(_cbtAssignUiSessionReleasePromise || true)
+.catch(function(){ return false; })
+.then(function(){ return cbtAssignOpenPickerWithGlobalLock(); })
+.then(function(lock){
+if (lock && lock.ok) return;
+// If another computer took the turn, or Firebase is temporarily unavailable,
+// Back must still respond: return to Cart Actions where the live Wait state is visible.
+if (_afaOverlay) afaConfirm();
+})
+.catch(function(){ if (_afaOverlay) afaConfirm(); });
 }
 });
 }
+// v23.9.177: fixes global Assign button visual reset and makes all result-screen Back paths fail-safe.
 // v23.9.176 audit: each associate gets its own 5-cart failure set; shared locks fail closed.
 var CBT_ASSIGN_MAX_ATTEMPTS_PER_ASSOCIATE = 5;
 function cbtAssignRun(names, taskTypes) {
@@ -11540,6 +11583,10 @@ afaClose();
 return;
 }
 if (action === 'back') {
+if (b.disabled) return;
+b.disabled = true;
+b.textContent = 'Opening…';
+try {
 var suppress = {
 force: Object.create(null),
 partial: Object.create(null),
@@ -11556,6 +11603,9 @@ if (r.ref) suppress[bucketName]['ref:' + String(r.ref)] = true;
 var pbNow = afaScanPartiallyBatched();
 var expected = afaSectionCount(/^Partially\s+Batched(\s*\(\d+\))?$/i);
 afaConfirmRender(afaScanDashboard(), pbNow, expected, suppress);
+} catch(eBackRender) {
+try { afaConfirm(); } catch(eBackFallback) {}
+}
 try { afaRefreshJobData(); } catch(e) {}
 return;
 }
