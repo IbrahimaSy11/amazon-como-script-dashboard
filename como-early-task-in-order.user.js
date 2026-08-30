@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.198
+// @version      23.9.200
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -2280,6 +2280,182 @@ return { col: cols[i], idx: i };
 return null;
 }
 var _cbtTimerElements = new Set();
+// v23.9.200: keep Time Left stable across opening a task and returning to the
+// dashboard. Amazon fully destroys/recreates the task list on that navigation,
+// so an in-place DOM grace period alone cannot preserve the injected column.
+// Remember the last valid target by real job id and rehydrate it while the new
+// job-card DOM is being created, before the browser gets a chance to paint it.
+var CBT_TIMER_ROUTE_CACHE_TTL_MS = 10 * 60 * 1000;
+var CBT_TIMER_ROUTE_REHYDRATE_GRACE_MS = 5000;
+var CBT_TIMER_ROUTE_REPAIR_MS = 6500;
+var _cbtTimerTargetCache = new Map();
+var _cbtTimerRouteCacheLoaded = false;
+var _cbtTimerRouteRepairObserver = null;
+var _cbtTimerRouteRepairStopTimer = null;
+function cbtTimerRouteCacheKey() {
+return 'cbt_timer_route_targets_v1_' + String(STORE_ID || 'unknown');
+}
+function cbtTimerIdentityFromRow(row) {
+if (!row) return '';
+var root = row;
+try { root = row.closest('job-card') || row; } catch(e0) {}
+var jobId = '';
+try { jobId = cbtAssignExplicitJobIdFromNode(root) || ''; } catch(e1) { jobId = ''; }
+if (jobId) return 'job:' + String(jobId);
+var link = null;
+try { link = root.querySelector('a[href*="jobId="]'); } catch(e2) {}
+if (link) {
+var href = '';
+try { href = link.getAttribute('href') || ''; } catch(e3) {}
+var m = String(href).match(/jobId=([^&#"']+)/i);
+if (m) {
+try { return 'job:' + decodeURIComponent(m[1]); }
+catch(e4) { return 'job:' + m[1]; }
+}
+}
+return '';
+}
+function cbtTimerPruneRouteCache(now) {
+now = Number(now) || Date.now();
+var stale = [];
+_cbtTimerTargetCache.forEach(function(entry, key){
+if (!entry || !Number(entry.targetMs) || now - Number(entry.at || 0) > CBT_TIMER_ROUTE_CACHE_TTL_MS) stale.push(key);
+});
+for (var i = 0; i < stale.length; i++) _cbtTimerTargetCache.delete(stale[i]);
+while (_cbtTimerTargetCache.size > 300) {
+var first = _cbtTimerTargetCache.keys().next();
+if (!first || first.done) break;
+_cbtTimerTargetCache.delete(first.value);
+}
+}
+function cbtTimerLoadRouteCache() {
+if (_cbtTimerRouteCacheLoaded) return;
+_cbtTimerRouteCacheLoaded = true;
+try {
+var raw = sessionStorage.getItem(cbtTimerRouteCacheKey());
+if (!raw) return;
+var parsed = JSON.parse(raw);
+if (!parsed || typeof parsed !== 'object') return;
+var items = parsed.items || {};
+var now = Date.now();
+Object.keys(items).forEach(function(key){
+var entry = items[key];
+if (!entry || !Number(entry.targetMs)) return;
+if (now - Number(entry.at || 0) > CBT_TIMER_ROUTE_CACHE_TTL_MS) return;
+_cbtTimerTargetCache.set(key, {targetMs:Number(entry.targetMs), at:Number(entry.at)||now});
+});
+cbtTimerPruneRouteCache(now);
+} catch(e) {}
+}
+function cbtTimerPersistRouteCache() {
+try {
+cbtTimerPruneRouteCache(Date.now());
+var items = Object.create(null);
+_cbtTimerTargetCache.forEach(function(entry, key){ items[key] = entry; });
+sessionStorage.setItem(cbtTimerRouteCacheKey(), JSON.stringify({at:Date.now(), items:items}));
+} catch(e) {}
+}
+function cbtTimerRememberTarget(row, targetMs) {
+if (!row || !Number(targetMs)) return;
+cbtTimerLoadRouteCache();
+var key = cbtTimerIdentityFromRow(row);
+if (!key) return;
+_cbtTimerTargetCache.set(key, {targetMs:Number(targetMs), at:Date.now()});
+cbtTimerPruneRouteCache(Date.now());
+}
+function cbtTimerCachedTarget(row) {
+if (!row) return null;
+cbtTimerLoadRouteCache();
+var key = cbtTimerIdentityFromRow(row);
+if (!key) return null;
+var entry = _cbtTimerTargetCache.get(key);
+if (!entry || !Number(entry.targetMs)) return null;
+if (Date.now() - Number(entry.at || 0) > CBT_TIMER_ROUTE_CACHE_TTL_MS) {
+_cbtTimerTargetCache.delete(key);
+return null;
+}
+return Number(entry.targetMs);
+}
+function cbtTimerSnapshotVisibleTargets() {
+cbtTimerLoadRouteCache();
+var els = [];
+try { els = Array.prototype.slice.call(document.querySelectorAll('job-card .etf-timeleft[data-target]')); }
+catch(e0) { els = []; }
+for (var i = 0; i < els.length; i++) {
+var targetMs = parseInt(els[i].dataset.target || '', 10);
+if (!targetMs) continue;
+var row = null;
+try { row = els[i].closest('div.row'); } catch(e1) {}
+if (row) cbtTimerRememberTarget(row, targetMs);
+}
+cbtTimerPersistRouteCache();
+}
+function cbtStopTimerRouteRepair() {
+if (_cbtTimerRouteRepairObserver) {
+try { _cbtTimerRouteRepairObserver.disconnect(); } catch(e0) {}
+_cbtTimerRouteRepairObserver = null;
+}
+if (_cbtTimerRouteRepairStopTimer) {
+try { clearTimeout(_cbtTimerRouteRepairStopTimer); } catch(e1) {}
+_cbtTimerRouteRepairStopTimer = null;
+}
+}
+function cbtTimerQueueRepairFlush() {
+if (_timerMutationPending) return;
+_timerMutationPending = true;
+if (typeof queueMicrotask === 'function') queueMicrotask(flushTimerMutationHosts);
+else Promise.resolve().then(flushTimerMutationHosts);
+}
+function cbtStartTimerRouteRepair() {
+cbtStopTimerRouteRepair();
+if (!isDashboardView()) return;
+cbtTimerLoadRouteCache();
+var stopAt = Date.now() + CBT_TIMER_ROUTE_REPAIR_MS;
+function queueNode(node) {
+if (!node || node.nodeType !== 1) return;
+_timerMutationNodes.add(node);
+}
+function catchCurrentRows() {
+if (!isDashboardView()) return;
+var container = null;
+try { container = getContainer(); } catch(e0) {}
+if (container && container.isConnected) {
+try { cbtRetargetTimerWatcher(container); } catch(e1) {}
+queueNode(container);
+cbtTimerQueueRepairFlush();
+}
+}
+try {
+_cbtTimerRouteRepairObserver = new MutationObserver(function(mutations){
+if (!isDashboardView() || Date.now() >= stopAt) {
+cbtStopTimerRouteRepair();
+return;
+}
+var relevant = false;
+for (var i = 0; i < mutations.length; i++) {
+var m = mutations[i];
+var target = m && m.target;
+if (target && target.nodeType === 1) { queueNode(target); relevant = true; }
+var added = (m && m.addedNodes) || [];
+for (var j = 0; j < added.length; j++) {
+if (added[j] && added[j].nodeType === 1) { queueNode(added[j]); relevant = true; }
+}
+}
+if (relevant) {
+try {
+var c = getContainer();
+if (c && c.isConnected) cbtRetargetTimerWatcher(c);
+} catch(e2) {}
+cbtTimerQueueRepairFlush();
+}
+});
+_cbtTimerRouteRepairObserver.observe(document.documentElement, {childList:true, subtree:true});
+} catch(e3) { _cbtTimerRouteRepairObserver = null; }
+// If Back restored the list from BFCache or Amazon already mounted the first
+// rows before the route callback ran, repair those rows immediately too.
+catchCurrentRows();
+_cbtTimerRouteRepairStopTimer = setTimeout(cbtStopTimerRouteRepair, CBT_TIMER_ROUTE_REPAIR_MS + 50);
+}
 // Keep the last valid Batch Target through Amazon's very short row-rebuild gap.
 // This prevents Time Left from flashing away/into a dash when the source cell is
 // temporarily detached or emptied and then restored a few milliseconds later.
@@ -2320,6 +2496,7 @@ var existingMatch = existingRaw.match(/\d{1,2}:\d{2}\s*(?:AM|PM)/i);
 existingTargetMs = existingMatch ? parseTime(existingMatch[0]) : null;
 }
 if (existingTargetMs) {
+cbtTimerRememberTarget(row, existingTargetMs);
 cbtCancelTimerGraceRetry(row);
 existingTimerEl.removeAttribute('data-cbt-target-missing-since');
 var existingResult = fmtTimeLeft(existingTargetMs);
@@ -2330,19 +2507,28 @@ if (existingTimerEl.className !== existingClass) existingTimerEl.className = exi
 if (existingTimerEl.textContent !== existingResult.text) existingTimerEl.textContent = existingResult.text;
 _cbtTimerElements.add(existingTimerEl);
 } else {
-var previousTargetMs = parseInt(existingTimerEl.dataset.target || '', 10);
+var cachedTargetMs = cbtTimerCachedTarget(row);
+var previousTargetMs = parseInt(existingTimerEl.dataset.target || '', 10) || cachedTargetMs;
 if (previousTargetMs) {
+if (!parseInt(existingTimerEl.dataset.target || '', 10) && cachedTargetMs) {
+existingTimerEl.dataset.target = String(cachedTargetMs);
+var cachedResult = fmtTimeLeft(cachedTargetMs);
+var cachedClass = 'etf-timeleft ' + cachedResult.cls;
+if (existingTimerEl.className !== cachedClass) existingTimerEl.className = cachedClass;
+if (existingTimerEl.textContent !== cachedResult.text) existingTimerEl.textContent = cachedResult.text;
+}
 var missingSince = Number(existingTimerEl.getAttribute('data-cbt-target-missing-since')) || 0;
 if (!missingSince) {
 missingSince = Date.now();
 existingTimerEl.setAttribute('data-cbt-target-missing-since', String(missingSince));
 }
 var missingFor = Date.now() - missingSince;
-if (missingFor < CBT_TIMER_TARGET_GRACE_MS) {
-// Do not blank a good timer during Amazon's transient DOM refresh. The normal
-// second tick keeps the displayed value current while the source cell settles.
+var allowedGrace = cachedTargetMs ? CBT_TIMER_ROUTE_REHYDRATE_GRACE_MS : CBT_TIMER_TARGET_GRACE_MS;
+if (missingFor < allowedGrace) {
+// Do not blank a good timer during Amazon's transient DOM refresh or while a
+// just-returned task row is finishing its asynchronous field hydration.
 _cbtTimerElements.add(existingTimerEl);
-cbtScheduleTimerGraceRetry(row, CBT_TIMER_TARGET_GRACE_MS - missingFor + 25);
+cbtScheduleTimerGraceRetry(row, allowedGrace - missingFor + 25);
 return;
 }
 }
@@ -2365,8 +2551,9 @@ newCol.innerHTML = '<span class="etf-col-header">\u23F1 Time Left</span>';
 } else {
 var btRaw = btCol.textContent.replace(/[^\d:APMapm\s]/g, '').trim();
 var m2 = btRaw.match(/\d{1,2}:\d{2}\s*(?:AM|PM)/i);
-var btMs = m2 ? parseTime(m2[0]) : null;
+var btMs = m2 ? parseTime(m2[0]) : cbtTimerCachedTarget(row);
 if (btMs) {
+cbtTimerRememberTarget(row, btMs);
 var result = fmtTimeLeft(btMs);
 newCol.innerHTML = '<span class="etf-timeleft ' + result.cls + '" data-target="' + btMs + '">' + result.text + '</span>';
 } else {
@@ -9126,6 +9313,15 @@ var _cbtAssignUiSessionRenewInFlight = false;
 var _cbtAssignUiSessionRenewToken = '';
 var _cbtAssignUiSessionAutoBackPending = false;
 var _cbtAssignUiAcquireSeq = 0;
+// v23.9.199: the 15-second picker turn is an INACTIVITY limit, not an absolute
+// countdown from opening Assign. Active typing/clicking keeps the shared lease
+// alive so the picker cannot throw the user back to Cart Actions mid-selection.
+var CBT_ASSIGN_PICKER_IDLE_MS = 15 * 1000;
+var CBT_ASSIGN_PICKER_RENEW_BEFORE_MS = 7 * 1000;
+var _cbtAssignPickerLastActivityAt = 0;
+var _cbtAssignPickerKeepAliveTimer = null;
+var _cbtAssignPickerRenewInFlight = false;
+var _cbtAssignPickerBoundCard = null;
 // Promise for the most recent Firebase release. Summary Back waits for this so
 // it never races the just-released 15-second lease and appears unresponsive.
 var _cbtAssignUiSessionReleasePromise = Promise.resolve(true);
@@ -9149,6 +9345,81 @@ var row = cbtAssignUiSessionRow();
 if (!row) return null;
 if (_cbtAssignUiSessionToken && String(row.token || '') === String(_cbtAssignUiSessionToken)) return null;
 return row;
+}
+function cbtAssignPickerIsOpen() {
+var overlay = _afaOverlay;
+if (!overlay || !overlay.isConnected || _afaRunning) return false;
+var title = overlay.querySelector('#cbt-afa-title');
+return !!(title && /^Assign$/i.test(String(title.textContent || '').trim()));
+}
+function cbtAssignStopPickerKeepAlive() {
+if (_cbtAssignPickerKeepAliveTimer) {
+clearInterval(_cbtAssignPickerKeepAliveTimer);
+_cbtAssignPickerKeepAliveTimer = null;
+}
+_cbtAssignPickerRenewInFlight = false;
+_cbtAssignPickerBoundCard = null;
+}
+function cbtAssignPickerTouch() {
+if (!_cbtAssignUiSessionToken || _afaRunning || !cbtAssignPickerIsOpen()) return;
+_cbtAssignPickerLastActivityAt = cbtAssignNowMs();
+}
+function cbtAssignPickerIdleExpired(now) {
+now = Number(now) || cbtAssignNowMs();
+if (!_cbtAssignPickerLastActivityAt) return false;
+return now - _cbtAssignPickerLastActivityAt >= CBT_ASSIGN_PICKER_IDLE_MS;
+}
+function cbtAssignPickerReturnAfterIdle() {
+if (_cbtAssignUiSessionAutoBackPending || _afaRunning || !cbtAssignPickerIsOpen()) return;
+_cbtAssignUiSessionAutoBackPending = true;
+cbtAssignStopPickerKeepAlive();
+Promise.resolve(cbtAssignReleaseUiSessionLock()).catch(function(){ return false; }).then(function(){
+_cbtAssignUiSessionAutoBackPending = false;
+if (_afaRunning || !cbtAssignPickerIsOpen()) return;
+try { afaConfirm(); } catch(eBack) {}
+});
+}
+function cbtAssignStartPickerKeepAlive(card) {
+cbtAssignStopPickerKeepAlive();
+if (!_cbtAssignUiSessionToken || _afaRunning) return;
+_cbtAssignPickerLastActivityAt = cbtAssignNowMs();
+_cbtAssignPickerBoundCard = card || null;
+if (card && !card.__cbtAssignPickerActivityBound) {
+card.__cbtAssignPickerActivityBound = true;
+var touch = function(){ cbtAssignPickerTouch(); };
+card.addEventListener('pointerdown', touch, {passive:true});
+card.addEventListener('keydown', touch, true);
+card.addEventListener('input', touch, true);
+card.addEventListener('change', touch, true);
+}
+function tickPickerLease() {
+if (_afaRunning || !_cbtAssignUiSessionToken || !cbtAssignPickerIsOpen()) {
+cbtAssignStopPickerKeepAlive();
+return;
+}
+var now = cbtAssignNowMs();
+if (cbtAssignPickerIdleExpired(now)) {
+cbtAssignPickerReturnAfterIdle();
+return;
+}
+var row = cbtAssignUiSessionRow();
+var own = !!(row && String(row.token || '') === String(_cbtAssignUiSessionToken));
+var remaining = own ? (Number(row.until) - now) : 0;
+if (remaining > CBT_ASSIGN_PICKER_RENEW_BEFORE_MS || _cbtAssignPickerRenewInFlight) return;
+_cbtAssignPickerRenewInFlight = true;
+Promise.resolve(cbtAssignRenewUiSessionLock()).then(function(ok){
+_cbtAssignPickerRenewInFlight = false;
+if (!ok && cbtAssignPickerIsOpen() && !cbtAssignPickerIdleExpired(cbtAssignNowMs())) {
+// Pull fresh shared state before deciding the turn was truly lost. This avoids
+// a transient cached/stream gap kicking an active picker back to Cart Actions.
+try { cbtAssignSharedProtectionPull(true); } catch(ePull) {}
+}
+}, function(){
+_cbtAssignPickerRenewInFlight = false;
+});
+}
+_cbtAssignPickerKeepAliveTimer = setInterval(tickPickerLease, 1000);
+tickPickerLease();
 }
 function cbtAssignAcquireUiSessionLock(acquireSeq) {
 acquireSeq = Number(acquireSeq) || 0;
@@ -9305,6 +9576,8 @@ ontimeout:function(){ resolve(false); }
 }
 function cbtAssignReleaseUiSessionLock() {
 _cbtAssignUiAcquireSeq++;
+cbtAssignStopPickerKeepAlive();
+_cbtAssignPickerLastActivityAt = 0;
 var token = String(_cbtAssignUiSessionToken || '');
 _cbtAssignUiSessionToken = '';
 _cbtAssignUiSessionDeadline = 0;
@@ -9340,6 +9613,7 @@ return !!ok;
 return _cbtAssignUiSessionReleasePromise;
 }
 function cbtAssignStartUiSessionRunHeartbeat() {
+cbtAssignStopPickerKeepAlive();
 if (!syncEnabled() || !_cbtAssignUiSessionToken) return;
 if (_cbtAssignUiSessionRunHeartbeat) clearInterval(_cbtAssignUiSessionRunHeartbeat);
 function renewRunLease() {
@@ -9406,8 +9680,8 @@ restoreCopy.textContent = hasNormalNow
 }
 var turn = card.querySelector('#cbt-afa-assign-turn');
 if (turn) {
-if (own) {
-turn.textContent = _afaRunning ? 'Assign In Use · protected across all computers' : 'Your Assign Turn · ' + seconds + 's remaining';
+if (own || (_cbtAssignUiSessionToken && !_afaRunning && cbtAssignPickerIsOpen() && !other)) {
+turn.textContent = _afaRunning ? 'Assign In Use · protected across all computers' : 'Your Assign Turn · stays active while you use Assign';
 turn.className = 'cbt-afa-note cbt-afa-assign-turn-own';
 } else if (other) {
 turn.textContent = 'Wait ' + seconds + 's · another computer is using Assign';
@@ -9416,27 +9690,21 @@ turn.className = 'cbt-afa-note cbt-afa-assign-turn-wait';
 turn.textContent = 'Assign turn expired.';
 }
 var start = card.querySelector('[data-afa="assign-start"]');
-if (start && !own && syncEnabled()) start.disabled = true;
+if (start && !own && syncEnabled() && !(
+_cbtAssignUiSessionToken && !_afaRunning && cbtAssignPickerIsOpen() && !other
+)) start.disabled = true;
 }
 }
-// If this computer held the 15-second picker turn but did not start a run,
-// automatically move it back to the Assign menu when its lease expires/lost.
-if (_cbtAssignUiSessionToken && !_afaRunning) {
-var stillOwn = own && Number(row.until) > now;
-if (!stillOwn && !_cbtAssignUiSessionAutoBackPending) {
-_cbtAssignUiSessionAutoBackPending = true;
-var staleToken = _cbtAssignUiSessionToken;
-_cbtAssignUiSessionToken = '';
-_cbtAssignUiSessionDeadline = 0;
-setTimeout(function(){
-_cbtAssignUiSessionAutoBackPending = false;
-if (_afaRunning) return;
-var title = document.getElementById('cbt-afa-title');
-if (title && /^Assign$/i.test(String(title.textContent || '').trim())) {
-try { afaConfirm(); } catch(eBack) {}
-}
-if (staleToken && syncEnabled()) cbtAssignReleaseSharedReservation(CBT_ASSIGN_UI_SESSION_KEY, staleToken);
-}, 0);
+// v23.9.199: do not eject an ACTIVE picker just because the original 15-second
+// lease reached its first deadline. Activity keeps the lease renewed. Only real
+// 15-second inactivity (or another computer actually owning the lease) returns
+// this picker to Cart Actions.
+if (_cbtAssignUiSessionToken && !_afaRunning && cbtAssignPickerIsOpen()) {
+if (cbtAssignPickerIdleExpired(now)) {
+cbtAssignPickerReturnAfterIdle();
+} else if (other && !_cbtAssignUiSessionAutoBackPending) {
+// The atomic Firebase lock was genuinely taken elsewhere; fail closed.
+cbtAssignPickerReturnAfterIdle();
 }
 }
 }
@@ -9542,6 +9810,7 @@ style.textContent =
 (document.head || document.documentElement).appendChild(style);
 }
 // v23.9.197: stabilized Time Left through transient Amazon row rebuilds, restores removed timer columns before paint, coalesces fast protection renders for changed task rows, and reduces Firebase fallback sync latency without adding heavy DOM polling.
+// v23.9.200: preserves Time Left across task-detail Back navigation with per-job route caching and a short before-paint remount repair observer; v23.9.199 multi-computer Assign lease behavior is preserved.
 // v23.9.194 dashboard performance-only: coalesced table/search renders, removed redundant weekly sanitization, avoided cloned DOM search-count scans, cached Names sorting, and skipped unchanged summary DOM writes.
 // v23.9.191 performance-only: removed duplicate timer work, reduced redundant half-second heartbeats, suppressed self-induced sort/observer churn, and cached stable Destination text measurements. Assignment/data rules are unchanged.
 // v23.9.190: fixed gray-CREATED self-lock: the Assign run's own pending associate reservation no longer masquerades as a cooldown and disqualifies the cart before submit.
@@ -11889,7 +12158,7 @@ var showingSuggestions = true;
 afaShell(
 'Assign',
 '<div id="cbt-afa-lead">Search and select one or more associates.</div>' +
-'<div id="cbt-afa-assign-turn" class="cbt-afa-note">Your Assign Turn · 15s remaining</div>' +
+'<div id="cbt-afa-assign-turn" class="cbt-afa-note">Your Assign Turn · stays active while you use Assign</div>' +
 '<div id="cbt-afa-assign-types">' +
 '<div class="cbt-afa-assign-type-title">Assign Source</div>' +
 '<label class="cbt-afa-opt">' +
@@ -12163,6 +12432,7 @@ cbtAssignRefreshPartialCheckboxState();
 renderSelected();
 syncPartialOnlyMode();
 search('');
+try { cbtAssignStartPickerKeepAlive(card); } catch(ePickerKeepAlive) {}
 try { input.focus(); } catch(e) {}
 }
 function afaConfirmRender(list, pbAll, pbExpected, suppress, scanContext) {
@@ -13320,10 +13590,18 @@ location.reload();
 return;
 }
 var nowDashboard = isDashboardView();
+var leavingDashboard = !nowDashboard && wasDashboard;
 var returnedToDashboard = nowDashboard && !wasDashboard;
+if (leavingDashboard) {
+try { cbtTimerSnapshotVisibleTargets(); } catch(eTimerSnapshot) {}
+}
 wasDashboard = nowDashboard;
-if (!nowDashboard) detachMainPanel();
+if (!nowDashboard) {
+try { cbtStopTimerRouteRepair(); } catch(eTimerRepairStop) {}
+detachMainPanel();
+}
 if (returnedToDashboard) {
+try { cbtStartTimerRouteRepair(); } catch(eTimerRepairStart) {}
 _cbtLiveDashboardSyncPending = true;
 _cbtStaleLiveZeroTaskPolls = 0;
 requestLiveRender();
@@ -13338,17 +13616,23 @@ try { fetchAndUpdate(); } catch(e2) {}
 }
 var _push = history.pushState, _repl = history.replaceState;
 history.pushState = function () {
+try { if (isDashboardView()) cbtTimerSnapshotVisibleTargets(); } catch(eTimerPushSnapshot) {}
 var r = _push.apply(this, arguments);
 onRoute();
 return r;
 };
 history.replaceState = function () {
+try { if (isDashboardView()) cbtTimerSnapshotVisibleTargets(); } catch(eTimerReplaceSnapshot) {}
 var r = _repl.apply(this, arguments);
 onRoute();
 return r;
 };
 window.addEventListener('popstate', onRoute);
 window.addEventListener('hashchange', onRoute);
+window.addEventListener('pageshow', function(){
+if (!isDashboardView()) return;
+try { cbtStartTimerRouteRepair(); } catch(eTimerPageShow) {}
+});
 var lastPath = location.pathname + location.hash;
 var hbBoot = Date.now();
 var hbLastLive = hbBoot, hbLastSecond = hbBoot, hbLastHealth = hbBoot, hbLastTimers = hbBoot;
@@ -13415,8 +13699,10 @@ _fastMountUntil = Date.now() + 60000;
 // Mount the visible panel and start fresh data immediately. Keep expensive DOM
 // scans/observers in separate short idle slices so Amazon's own render is never
 // competing with every COMO feature in one long JavaScript task.
+try { cbtTimerLoadRouteCache(); } catch(eTimerCacheLoad) {}
 try { if (isDashboardView()) injectPanel(); } catch(e7) {}
 installRouteHealth();
+try { if (isDashboardView()) cbtStartTimerRouteRepair(); } catch(eTimerBootRepair) {}
 try { cbtAssignSharedProtectionPull(true); } catch(eFastProtect) {}
 try { cbtAssignStartSharedProtectionLive(); } catch(eFastProtectLive) {}
 try { cbtStartTodayBoundaryClock(); } catch(e10) {}
