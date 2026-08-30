@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.191
+// @version      23.9.196
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -1953,6 +1953,46 @@ setTimeout(function(){ try { fn(); } catch(e) {} }, delay);
 });
 });
 }
+// v23.9.196 deep audit: preserve behavior while fixing hidden lock scope/race,
+// stale timer, hung backend request, repeated listener, and avoidable DOM-work bugs.
+// v23.9.195: keep non-urgent COMO work out of active scroll frames.
+var _cbtScrollActiveUntil = 0;
+var _cbtScrollIdleTimer = 0;
+var _cbtScrollIdleJobs = Object.create(null);
+function cbtIsActivelyScrolling() {
+return Date.now() < _cbtScrollActiveUntil;
+}
+function cbtFlushScrollIdleJobs() {
+if (cbtIsActivelyScrolling()) {
+clearTimeout(_cbtScrollIdleTimer);
+_cbtScrollIdleTimer = setTimeout(cbtFlushScrollIdleJobs, 90);
+return;
+}
+_cbtScrollIdleTimer = 0;
+var jobs = _cbtScrollIdleJobs;
+_cbtScrollIdleJobs = Object.create(null);
+Object.keys(jobs).forEach(function(key){
+try { jobs[key](); } catch(e) {}
+});
+}
+function cbtRunAfterScroll(key, fn) {
+if (!key || typeof fn !== 'function') return;
+_cbtScrollIdleJobs[key] = fn;
+if (!cbtIsActivelyScrolling()) {
+cbtFlushScrollIdleJobs();
+return;
+}
+if (!_cbtScrollIdleTimer) _cbtScrollIdleTimer = setTimeout(cbtFlushScrollIdleJobs, 90);
+}
+function cbtNoteScrollActivity() {
+_cbtScrollActiveUntil = Date.now() + 140;
+if (!_cbtScrollIdleTimer) _cbtScrollIdleTimer = setTimeout(cbtFlushScrollIdleJobs, 150);
+}
+try {
+window.addEventListener('scroll', cbtNoteScrollActivity, { capture:true, passive:true });
+} catch(eScrollPassive) {
+window.addEventListener('scroll', cbtNoteScrollActivity, true);
+}
 var CBT_OWN_UI_SELECTOR =
 '#cbt-panel,#cbt-qr-overlay,#cbt-afa-overlay,#cbt-ac-drop,.etf-col-cell,.cbt-missing-probe-frame,.cbt-assign-probe-frame';
 function cbtIsOwnUiNode(node) {
@@ -2144,18 +2184,42 @@ container.appendChild(frag);
 try { if (_sortObserver) _sortObserver.takeRecords(); } catch(eSortRecords) {}
 _sorting = false;
 }
+var _sortSchedulePending = false;
+var _sortScheduledContainer = null;
+function cbtScheduleSort(container) {
+if (!container || !container.isConnected) return;
+_sortScheduledContainer = container;
+if (_sortSchedulePending) return;
+_sortSchedulePending = true;
+function runScheduledSort() {
+if (cbtIsActivelyScrolling()) {
+cbtRunAfterScroll('task-sort', runScheduledSort);
+return;
+}
+_sortSchedulePending = false;
+var target = _sortScheduledContainer;
+_sortScheduledContainer = null;
+if (!target || !target.isConnected || target !== _attached) return;
+var raf = (typeof requestAnimationFrame === 'function')
+? requestAnimationFrame
+: function(cb){ return setTimeout(cb, 16); };
+raf(function(){ try { sortNow(target); } catch(eSort) {} });
+}
+runScheduledSort();
+}
 function attach(container) {
 if (_attached === container) return;
 if (_sortObserver) _sortObserver.disconnect();
 _attached = container;
 cbtMarkRelevantDomChanged();
-sortNow(container);
+if (cbtIsActivelyScrolling()) cbtScheduleSort(container);
+else sortNow(container);
 _sortObserver = new MutationObserver(function (mutations) {
 if (_sorting) return;
 for (var i = 0; i < mutations.length; i++) {
 if (mutations[i].type === 'childList') {
 cbtMarkRelevantDomChanged();
-sortNow(container);
+cbtScheduleSort(container);
 return;
 }
 }
@@ -2217,16 +2281,36 @@ return null;
 }
 var _cbtTimerElements = new Set();
 function injectRowTimer(row) {
-var existingTimerCol = row.querySelector('.etf-col-cell');
-if (existingTimerCol) {
-try {
-var existingTimerEl = existingTimerCol.querySelector('.etf-timeleft[data-target]');
-if (existingTimerEl) _cbtTimerElements.add(existingTimerEl);
-} catch(eExistingTimer) {}
-return;
-}
 var isHeader = row.classList.contains('job-card-header');
 var found = findBatchTargetCol(row);
+var existingTimerCol = row.querySelector('.etf-col-cell');
+if (existingTimerCol) {
+if (isHeader) return;
+var existingTimerEl = null;
+try { existingTimerEl = existingTimerCol.querySelector('.etf-timeleft'); } catch(eExistingTimer) {}
+if (!existingTimerEl) return;
+var existingTargetMs = null;
+if (found && found.col) {
+var existingRaw = found.col.textContent.replace(/[^\d:APMapm\s]/g, '').trim();
+var existingMatch = existingRaw.match(/\d{1,2}:\d{2}\s*(?:AM|PM)/i);
+existingTargetMs = existingMatch ? parseTime(existingMatch[0]) : null;
+}
+if (existingTargetMs) {
+var existingResult = fmtTimeLeft(existingTargetMs);
+var targetText = String(existingTargetMs);
+if (existingTimerEl.dataset.target !== targetText) existingTimerEl.dataset.target = targetText;
+var existingClass = 'etf-timeleft ' + existingResult.cls;
+if (existingTimerEl.className !== existingClass) existingTimerEl.className = existingClass;
+if (existingTimerEl.textContent !== existingResult.text) existingTimerEl.textContent = existingResult.text;
+_cbtTimerElements.add(existingTimerEl);
+} else {
+_cbtTimerElements.delete(existingTimerEl);
+existingTimerEl.removeAttribute('data-target');
+if (existingTimerEl.className !== 'etf-timeleft ok') existingTimerEl.className = 'etf-timeleft ok';
+if (existingTimerEl.textContent !== '—') existingTimerEl.textContent = '—';
+}
+return;
+}
 if (!found) return;
 var btCol = found.col;
 var newCol = document.createElement('div');
@@ -2242,7 +2326,7 @@ if (btMs) {
 var result = fmtTimeLeft(btMs);
 newCol.innerHTML = '<span class="etf-timeleft ' + result.cls + '" data-target="' + btMs + '">' + result.text + '</span>';
 } else {
-newCol.innerHTML = '<span class="etf-timeleft ok">\u2014</span>';
+newCol.innerHTML = '<span class="etf-timeleft ok">—</span>';
 }
 }
 btCol.parentNode.insertBefore(newCol, btCol.nextSibling);
@@ -2260,10 +2344,15 @@ function cbtSchedulePartialCheckboxRefresh() {
 var box = document.getElementById('cbt-afa-type-partial');
 if (!box || _cbtPartialCheckboxRefreshPending) return;
 _cbtPartialCheckboxRefreshPending = true;
-setTimeout(function(){
+function runPartialRefresh() {
+if (cbtIsActivelyScrolling()) {
+cbtRunAfterScroll('partial-checkbox-refresh', runPartialRefresh);
+return;
+}
 _cbtPartialCheckboxRefreshPending = false;
 try { cbtAssignRefreshPartialCheckboxState(); } catch(e) {}
-}, 60);
+}
+setTimeout(runPartialRefresh, 60);
 }
 function cbtMarkRelevantDomChanged() {
 _cbtRelevantDomVersion++;
@@ -2349,10 +2438,16 @@ var nextClass = 'etf-timeleft ' + result.cls;
 if (el.textContent !== result.text) el.textContent = result.text;
 if (el.className !== nextClass) el.className = nextClass;
 });
+if (cbtIsActivelyScrolling()) {
+cbtRunAfterScroll('assign-protection-render', function(){
+try { cbtAssignRenderProtectionCountdown(); } catch(eCooldownScroll) {}
+});
+} else {
 cbtAssignRenderProtectionCountdown();
-try { cbtAssignRenderGlobalSessionState(); } catch(eGlobalAssignTick) {}
+}
 }
 var _timerMutationHosts = new Set();
+var _timerMutationNodes = new Set();
 var _timerMutationPending = false;
 function queueTimerHost(node) {
 if (!node || node.nodeType !== 1) return;
@@ -2396,8 +2491,19 @@ try { row = host.querySelector('div.row'); } catch(e2) {}
 if (row) injectRowTimer(row);
 }
 function flushTimerMutationHosts() {
+if (cbtIsActivelyScrolling()) {
+cbtRunAfterScroll('timer-mutation-flush', flushTimerMutationHosts);
+return;
+}
 _timerMutationPending = false;
-if (!isDashboardView()) { _timerMutationHosts.clear(); return; }
+if (!isDashboardView()) {
+_timerMutationNodes.clear();
+_timerMutationHosts.clear();
+return;
+}
+var pendingNodes = Array.from(_timerMutationNodes);
+_timerMutationNodes.clear();
+for (var n = 0; n < pendingNodes.length; n++) queueTimerHost(pendingNodes[n]);
 var hosts = Array.from(_timerMutationHosts);
 _timerMutationHosts.clear();
 for (var i = 0; i < hosts.length; i++) refreshTimerHost(hosts[i]);
@@ -2418,14 +2524,21 @@ var foundRelevant = false;
 for (var i = 0; i < mutations.length; i++) {
 if (cbtMutationIsOnlyOwnUi(mutations[i])) continue;
 foundRelevant = true;
-queueTimerHost(mutations[i].target);
+var target = mutations[i].target;
+if (target && target.nodeType === 1) _timerMutationNodes.add(target);
 var added = mutations[i].addedNodes || [];
-for (var j = 0; j < added.length; j++) queueTimerHost(added[j]);
+for (var j = 0; j < added.length; j++) {
+if (added[j] && added[j].nodeType === 1) _timerMutationNodes.add(added[j]);
+}
 }
 if (!foundRelevant) return;
 cbtMarkRelevantDomChanged();
 if (_timerMutationPending) return;
 _timerMutationPending = true;
+if (cbtIsActivelyScrolling()) {
+cbtRunAfterScroll('timer-mutation-flush', flushTimerMutationHosts);
+return;
+}
 var raf = (typeof requestAnimationFrame === 'function')
 ? requestAnimationFrame
 : function(cb){ return setTimeout(cb, 16); };
@@ -2602,9 +2715,11 @@ return el && el.tagName && el.tagName.toLowerCase() === 'job-card';
 }
 var refs = new Set();
 var ids = new Set();
+var mainCount = 0;
 for (var i = 0; i < cards.length; i++) {
 var card = cards[i];
 try { if (isInExcludedSection(card)) continue; } catch(e3) {}
+mainCount++;
 var a = null;
 try { a = card.querySelector('a[href*="jobdetails"], a'); } catch(e4) {}
 if (!a) continue;
@@ -2618,10 +2733,7 @@ catch(e5) { ids.add(m[1]); }
 }
 }
 var snapshot = {
-count: cards.filter(function(card){
-try { return !isInExcludedSection(card); }
-catch(e6) { return true; }
-}).length,
+count: mainCount,
 refs: refs,
 ids: ids
 };
@@ -3142,19 +3254,36 @@ if (_statsFetchInFlight || document.hidden || !isDashboardView()) return;
 _statsFetchInFlight = true;
 _statsLastRequestAt = Date.now();
 removeFromHeader();
-_origFetch(COMO_BASE + '/api/store/' + STORE_ID + '/activeJobSummary?_cbt=' + Date.now(), {
+var ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
+var timeoutId = ctrl ? setTimeout(function(){ try { ctrl.abort(); } catch(eAbort) {} }, CBT_BACKEND_FETCH_TIMEOUT_MS) : 0;
+var fetchOptions = {
 cache: 'no-store',
 credentials: 'include'
+};
+if (ctrl) fetchOptions.signal = ctrl.signal;
+_origFetch(COMO_BASE + '/api/store/' + STORE_ID + '/activeJobSummary?_cbt=' + Date.now(), fetchOptions)
+.then(function (r) {
+if (!r || !r.ok) throw new Error('activeJobSummary HTTP ' + (r ? r.status : 0));
+return r.json();
 })
-.then(function (r) { return r.json(); })
 .then(function (data) {
-if (!Array.isArray(data)) data = [];
+if (!Array.isArray(data)) throw new Error('activeJobSummary returned a non-array payload');
 _statsLastSummaryData = data;
+if (cbtIsActivelyScrolling()) {
+cbtRunAfterScroll('stats-apply', function(){
+try { cbtApplyStatsData(_statsLastSummaryData || []); } catch(eStatsApply) {}
+});
+} else {
 cbtApplyStatsData(data);
+}
 })
 .catch(function () {})
-.then(function(){ _statsFetchInFlight = false; });
+.then(function(){
+if (timeoutId) clearTimeout(timeoutId);
+_statsFetchInFlight = false;
+});
 }
+var CBT_BACKEND_FETCH_TIMEOUT_MS = 15000;
 var POLL_MS = 2000, TICK_MS = 500;
 var WARN_ELAPSED_MIN = 15, ALERT_ELAPSED_MIN = 25;
 var WARN_RATE = 2.1, ALERT_RATE = 1.5;
@@ -3753,7 +3882,15 @@ _cbtDataNameSetAt = 0;
 function cbtScheduleEventRender() {
 cbtInvalidateEventViews();
 if (_cbtBatchEventRenderTimer) return;
-_cbtBatchEventRenderTimer = setTimeout(function(){
+function runEventRender() {
+if (cbtIsActivelyScrolling()) {
+cbtRunAfterScroll('history-event-render', runEventRender);
+return;
+}
+var raf = (typeof requestAnimationFrame === 'function')
+? requestAnimationFrame
+: function(cb){ return setTimeout(cb, 16); };
+_cbtBatchEventRenderTimer = raf(function(){
 _cbtBatchEventRenderTimer = null;
 try {
 if (activeTab === 'history') renderHistory();
@@ -3761,7 +3898,10 @@ else if (activeTab === 'weekly') renderWeekly();
 else if (activeTab === 'hof') renderHallOfFame();
 } catch(e) {}
 try { requestUnifiedSearchCount(); } catch(e2) {}
-}, 0);
+});
+}
+_cbtBatchEventRenderTimer = true;
+runEventRender();
 }
 function cbtSaveLocalBatchEvent(event) {
 event = cbtSanitizeBatchEvent(event, event && event.eventId);
@@ -4143,6 +4283,11 @@ if (activeTab !== 'live') return;
 if (!document.getElementById('cbt-tbody')) return;
 if (_liveRenderPending) return;
 _liveRenderPending = true;
+function runLiveRender() {
+if (cbtIsActivelyScrolling()) {
+cbtRunAfterScroll('live-dashboard-render', runLiveRender);
+return;
+}
 var raf = (typeof requestAnimationFrame === 'function')
 ? requestAnimationFrame
 : function(cb){ return setTimeout(cb, 16); };
@@ -4152,6 +4297,8 @@ if (activeTab === 'live' && document.getElementById('cbt-tbody')) {
 try { renderLive(); } catch(e) {}
 }
 });
+}
+runLiveRender();
 }
 var weeklySortKey = 'bestRate', weeklySortAsc = false, weeklySearchTerm = '';
 var liveSortKey = 'rate', liveSortAsc = false, liveSearchTerm = '';
@@ -4997,7 +5144,7 @@ addSearchOnly(kk, oo.assoc || rr.assoc || kk,
 (oo.runs || 0) + (rr.runs || 0),
 (oo.pkgs || 0) + (rr.pkgs || 0), 3);
 }
-var weeklySearchData = sanitizeWeekly(getDisplayWeekly()), weeklyAgg = Object.create(null);
+var weeklySearchData = getDisplayWeekly(), weeklyAgg = Object.create(null);
 for (var wday in weeklySearchData) {
 for (var wa in weeklySearchData[wday]) {
 var wd = weeklySearchData[wday][wa] || {};
@@ -5328,7 +5475,10 @@ this._cbtUrl = url;
 return _xhrOpen.apply(this, arguments);
 };
 XMLHttpRequest.prototype.send = function() {
-this.addEventListener('load', function(){
+// Use loadend rather than load so the one-shot listener is removed even when a
+// request is aborted or errors. Reused XHR objects must never accumulate stale
+// passive-ingestion listeners across sends.
+this.addEventListener('loadend', function(){
 var xhr = this;
 try {
 if (!(xhr.getResponseHeader('content-type') || '').includes('json')) return;
@@ -5349,7 +5499,7 @@ try { requestAnimationFrame(applyXhrLive); } catch(eFastXhr) { setTimeout(applyX
 cbtIdle(applyXhrLive, 700);
 }
 } catch(e2) {}
-});
+}, { once:true });
 return _xhrSend.apply(this, arguments);
 };
 function cbtLiveCachedCount() {
@@ -5476,12 +5626,16 @@ var _cbtPollInFlight = false;
 async function pollActiveTasks() {
 if (_cbtPollInFlight || document.hidden) return;
 _cbtPollInFlight = true;
+var pollCtrl = (typeof AbortController === 'function') ? new AbortController() : null;
+var pollTimeoutId = pollCtrl ? setTimeout(function(){ try { pollCtrl.abort(); } catch(eAbort) {} }, CBT_BACKEND_FETCH_TIMEOUT_MS) : 0;
 try {
 var liveUrl = COMO_BASE + '/store/' + STORE_ID + '/activeJobsWithSiteSummary?_cbt=' + Date.now();
 var requestPerf = cbtPerfNow();
-var res = await _origFetch(liveUrl, {
+var liveFetchOptions = {
 credentials:'include', cache:'no-store', headers:{Accept:'application/json'}
-});
+};
+if (pollCtrl) liveFetchOptions.signal = pollCtrl.signal;
+var res = await _origFetch(liveUrl, liveFetchOptions);
 if (res.ok) {
 cbtCalibrateServerClock(res, requestPerf);
 var freshData = await res.json();
@@ -5555,6 +5709,7 @@ try { cbtMaybeReloadStaleLive(); } catch(eStaleLive) {}
 }
 } catch(e) {}
 finally {
+if (pollTimeoutId) clearTimeout(pollTimeoutId);
 _cbtPollInFlight = false;
 requestLiveRender();
 }
@@ -5808,29 +5963,61 @@ return { item:item, idx:idx, score:score };
 }
 var _unifiedCountTimer = null;
 function requestUnifiedSearchCount() {
-clearTimeout(_unifiedCountTimer);
-_unifiedCountTimer = setTimeout(updateUnifiedSearchCount, 0);
+if (_unifiedCountTimer) return;
+var raf = (typeof requestAnimationFrame === 'function')
+? requestAnimationFrame
+: function(cb){ return setTimeout(cb, 16); };
+_unifiedCountTimer = raf(function(){
+_unifiedCountTimer = null;
+updateUnifiedSearchCount();
+});
+}
+function cbtDashboardNameText(node) {
+if (!node) return '';
+var out = '';
+var children = node.childNodes || [];
+for (var i = 0; i < children.length; i++) {
+var ch = children[i];
+if (ch.nodeType === 3) {
+out += ch.nodeValue || '';
+continue;
+}
+if (ch.nodeType !== 1) continue;
+var cl = ch.classList;
+if (cl && (cl.contains('cbt-rank') ||
+cl.contains('cbt-slow-alert') ||
+cl.contains('cbt-copied-tag') ||
+cl.contains('cbt-live-status-slot'))) continue;
+out += cbtDashboardNameText(ch);
+}
+return out;
 }
 function updateUnifiedSearchCount() {
 var badge = document.getElementById('cbt-unified-search-count');
 if (!badge) return;
 var term = (dashboardSearchTerm || '').trim();
-if (!term) { badge.textContent = ''; badge.style.display = 'none'; return; }
+if (!term) {
+if (badge.textContent) badge.textContent = '';
+if (badge.style.display !== 'none') badge.style.display = 'none';
+return;
+}
 var ids = { live:'cbt-live-view', history:'cbt-history-view', weekly:'cbt-weekly-view', hof:'cbt-hof-view', names:'cbt-names-view' };
 var view = document.getElementById(ids[activeTab] || 'cbt-live-view');
-if (!view) { badge.textContent = ''; badge.style.display = 'none'; return; }
+if (!view) {
+if (badge.textContent) badge.textContent = '';
+if (badge.style.display !== 'none') badge.style.display = 'none';
+return;
+}
 var seen = Object.create(null);
 var nodes = view.querySelectorAll('.cbt-assoc, .cbt-search-row-name, .cbt-name-cell');
 for (var i=0; i<nodes.length; i++) {
-var clone = nodes[i].cloneNode(true);
-var junk = clone.querySelectorAll('.cbt-rank, .cbt-slow-alert, .cbt-copied-tag');
-for (var j=0; j<junk.length; j++) junk[j].remove();
-var name = (clone.textContent || '').trim().toLowerCase();
+var name = cbtDashboardNameText(nodes[i]).trim().toLowerCase();
 if (name && name !== '—') seen[name] = true;
 }
 var count = Object.keys(seen).length;
-badge.textContent = count + ' found';
-badge.style.display = 'block';
+var nextText = count + ' found';
+if (badge.textContent !== nextText) badge.textContent = nextText;
+if (badge.style.display !== 'block') badge.style.display = 'block';
 }
 function renderActiveSearchTab() {
 if (activeTab === 'live') { renderLive(); renderLiveSearch(dashboardSearchTerm); }
@@ -5839,6 +6026,25 @@ else if (activeTab === 'weekly') renderWeekly();
 else if (activeTab === 'names') renderNames();
 else if (activeTab === 'hof') renderHallOfFame();
 requestUnifiedSearchCount();
+}
+var _dashboardSearchRenderRAF = 0;
+function requestDashboardSearchRender() {
+if (_dashboardSearchRenderRAF) return;
+function runDashboardSearchRender() {
+if (cbtIsActivelyScrolling()) {
+cbtRunAfterScroll('dashboard-search-render', runDashboardSearchRender);
+return;
+}
+var raf = (typeof requestAnimationFrame === 'function')
+? requestAnimationFrame
+: function(cb){ return setTimeout(cb, 16); };
+_dashboardSearchRenderRAF = raf(function(){
+_dashboardSearchRenderRAF = 0;
+try { renderActiveSearchTab(); } catch(e) {}
+});
+}
+_dashboardSearchRenderRAF = true;
+runDashboardSearchRender();
 }
 function attachPanelEvents(panel2) {
 var unifiedSearch = panel2.querySelector('#cbt-unified-search-input');
@@ -5953,31 +6159,58 @@ var scaleResetB = panel2.querySelector('#cbt-scale-reset');
 if (fontIncBtn) fontIncBtn.addEventListener('click', function(){ stepUiScale(1); });
 if (fontDecBtn) fontDecBtn.addEventListener('click', function(){ stepUiScale(-1); });
 if (scaleResetB) scaleResetB.addEventListener('click', function(){ resetUiScale(); });
-var isDragging = false, dragStartY = 0, dragStartH = 350;
-panel2.querySelector('#cbt-drag-bottom').addEventListener('mousedown', function(e) {
-isDragging = true;
-dragStartY = e.clientY;
-var body = panel2.querySelector('#cbt-body');
-dragStartH = body ? body.offsetHeight : 270;
-e.preventDefault();
-e.stopPropagation();
-});
-document.addEventListener('mousemove', function(e) {
-if (!isDragging) return;
+var isDragging = false, dragStartY = 0, dragStartH = 350, dragContentH = 9999;
+var dragLatestY = 0, dragFrame = 0;
+function applyDragFrame() {
+dragFrame = 0;
 var body = panel2.querySelector('#cbt-body');
 var tabs = panel2.querySelector('#cbt-tabs');
 if (!body) return;
-var contentH = body.scrollHeight || 9999;
-var newH = Math.min(contentH, Math.max(350, dragStartH + (e.clientY - dragStartY)));
+var newH = Math.min(dragContentH, Math.max(350, dragStartH + (dragLatestY - dragStartY)));
 body.style.height = newH + 'px';
 body.style.maxHeight = newH + 'px';
 body.style.minHeight = newH + 'px';
 if (tabs) tabs.style.display = '';
 var searchBar2 = panel2.querySelector('#cbt-unified-search');
 if (searchBar2) searchBar2.style.display = '';
-try { localStorage.setItem('cbt_body_h', newH); } catch(ex) {}
+}
+function persistDragHeight() {
+var body = panel2.querySelector('#cbt-body');
+if (!body) return;
+var h = parseInt(body.style.height || body.offsetHeight || 0, 10);
+if (!isFinite(h) || h <= 0) return;
+try { localStorage.setItem('cbt_body_h', String(h)); } catch(ex) {}
+}
+panel2.querySelector('#cbt-drag-bottom').addEventListener('mousedown', function(e) {
+isDragging = true;
+dragStartY = e.clientY;
+dragLatestY = e.clientY;
+var body = panel2.querySelector('#cbt-body');
+dragStartH = body ? body.offsetHeight : 270;
+dragContentH = body ? (body.scrollHeight || 9999) : 9999;
+e.preventDefault();
+e.stopPropagation();
 });
-document.addEventListener('mouseup', function() { isDragging = false; });
+document.addEventListener('mousemove', function(e) {
+if (!isDragging) return;
+dragLatestY = e.clientY;
+if (dragFrame) return;
+var rafDrag = (typeof requestAnimationFrame === 'function') ? requestAnimationFrame : function(cb){ return setTimeout(cb,16); };
+dragFrame = rafDrag(applyDragFrame);
+});
+document.addEventListener('mouseup', function() {
+if (!isDragging) return;
+isDragging = false;
+if (dragFrame) {
+try {
+var cancelDrag = (typeof cancelAnimationFrame === 'function') ? cancelAnimationFrame : clearTimeout;
+cancelDrag(dragFrame);
+} catch(eCancelDrag) {}
+dragFrame = 0;
+}
+applyDragFrame();
+persistDragHeight();
+});
 try {
 var savedH = localStorage.getItem('cbt_body_h');
 if (savedH) {
@@ -6022,7 +6255,7 @@ copyWithFeedback(nameCell, nm, e);
 document.addEventListener('input', function(e) {
 if (e.target.id === 'cbt-unified-search-input') {
 setDashboardSearchTerm(e.target.value);
-renderActiveSearchTab();
+requestDashboardSearchRender();
 }
 });
 document.addEventListener('click', function(e) {
@@ -6050,7 +6283,7 @@ renderHistory();
 function renderLiveSearch(term) {
 var resultsEl = document.getElementById('cbt-live-results');
 if (!resultsEl) return;
-if (!term || term.trim() === '') { resultsEl.innerHTML = ''; requestUnifiedSearchCount(); return; }
+if (!term || term.trim() === '') { setHTML(resultsEl, ''); requestUnifiedSearchCount(); return; }
 term = term.toLowerCase().trim();
 var html = '';
 var shown = new Set();
@@ -6066,7 +6299,7 @@ html += '<div class="cbt-search-row"><span class="cbt-search-row-name">' + cbtEs
 '<span class="cbt-search-row-rate"><span class="cbt-hist-rate ' + rateCls + '">' + e.avgRate.toFixed(1) + '</span></span></div>';
 });
 }
-var weekly = sanitizeWeekly(getDisplayWeekly()), agg = {};
+var weekly = getDisplayWeekly(), agg = {};
 for (var dk of Object.keys(weekly)) {
 for (var a of Object.keys(weekly[dk])) {
 if (a.toLowerCase().indexOf(term) === -1) continue;
@@ -6317,7 +6550,7 @@ function renderHistory() {
 var tbody=document.querySelector('#cbt-hist-tbody'),empty=document.querySelector('#cbt-hist-empty'),summary=document.querySelector('#cbt-hist-summary');
 if(!tbody||!empty) return;
 var history=getDisplayHistory(),entries=Object.values(history);
-if(entries.length===0){setHTML(tbody,'');empty.style.display='block';if(summary)summary.innerHTML='';
+if(entries.length===0){setHTML(tbody,'');empty.style.display='block';if(summary)setHTML(summary,'');
 if(historySearchTerm) renderHistoryCrossSearch(historySearchTerm);
 return;}
 empty.style.display='none';
@@ -6327,9 +6560,9 @@ var oR=tS>0?entries.reduce(function(s,e){return s+e.totalPkgs;},0)/(tS/60):0;
 var tMissing=entries.reduce(function(s,e){return s+(e.totalMissing||0);},0);
 var tExpected=entries.reduce(function(s,e){return s+(e.totalExpected||0);},0);
 var avgMissPct=tExpected>0?(tMissing/tExpected*100):0;
-summary.innerHTML='<div class="cbt-ws-stat"><span class="cbt-ws-val">'+tA+'</span><span class="cbt-ws-label">Batchers</span></div>'+
+setHTML(summary,'<div class="cbt-ws-stat"><span class="cbt-ws-val">'+tA+'</span><span class="cbt-ws-label">Batchers</span></div>'+
 '<div class="cbt-ws-stat"><span class="cbt-ws-val">'+oR.toFixed(1)+'</span><span class="cbt-ws-label">Avg Rate</span></div>'+
-'<div class="cbt-ws-stat"><span class="cbt-ws-val">'+avgMissPct.toFixed(1)+'%</span><span class="cbt-ws-label">Avg Miss %</span></div>';
+'<div class="cbt-ws-stat"><span class="cbt-ws-val">'+avgMissPct.toFixed(1)+'%</span><span class="cbt-ws-label">Avg Miss %</span></div>');
 }
 var ranked=entries.slice();
 ranked.sort(function(a,b){
@@ -6361,16 +6594,16 @@ setHTML(tbody, html);
 if(historySearchTerm) renderHistoryCrossSearch(historySearchTerm);
 else {
 var cross = document.getElementById('cbt-hist-cross');
-if(cross) cross.innerHTML='';
+if(cross) setHTML(cross,'');
 }
 requestUnifiedSearchCount();
 }
 function renderHistoryCrossSearch(term) {
 var crossEl = document.getElementById('cbt-hist-cross');
 if(!crossEl) return;
-if(!term){ crossEl.innerHTML=''; return; }
+if(!term){ setHTML(crossEl,''); return; }
 term = term.toLowerCase();
-var weekly = sanitizeWeekly(getDisplayWeekly()), agg = {};
+var weekly = getDisplayWeekly(), agg = {};
 for(var dk of Object.keys(weekly)){
 for(var a of Object.keys(weekly[dk])){
 if(a.toLowerCase().indexOf(term)===-1) continue;
@@ -6429,7 +6662,7 @@ return clean;
 function renderWeekly() {
 var tbody=document.querySelector('#cbt-weekly-tbody'),empty=document.querySelector('#cbt-weekly-empty'),summary=document.querySelector('#cbt-weekly-summary');
 if(!tbody||!empty) return;
-var weekly=sanitizeWeekly(getDisplayWeekly()),agg={};
+var weekly=getDisplayWeekly(),agg={};
 for(var dayKey of Object.keys(weekly)){
 for(var assoc of Object.keys(weekly[dayKey])){
 var d3=weekly[dayKey][assoc];
@@ -6450,19 +6683,19 @@ bestRate:Number(a.bestRate)>0?Number(a.bestRate):null,
 lastRate:Number(a.lastRate)>0?Number(a.lastRate):null,lastAt:Number(a.lastAt)||0,
 hrs:sec,missPct:a.totalExpected>0?(a.totalMissing/a.totalExpected*100):0};
 });
-if(all.length===0){setHTML(tbody,'');empty.style.display='block';if(summary)summary.innerHTML='';
+if(all.length===0){setHTML(tbody,'');empty.style.display='block';if(summary)setHTML(summary,'');
 if(weeklySearchTerm) renderWeeklyCrossSearch(weeklySearchTerm);
 return;}
 empty.style.display='none';
 if(summary){
 var tA=all.length,tS=all.reduce(function(s,e){return s+e.totalSec;},0);
 var oR=tS>0?all.reduce(function(s,e){return s+e.totalPkgs;},0)/(tS/60):0;
-var weeklyRaw=sanitizeWeekly(getDisplayWeekly()),tMissing=0,tExpected=0;
+var weeklyRaw=weekly,tMissing=0,tExpected=0;
 for(var md in weeklyRaw){for(var ma in weeklyRaw[md]){tMissing+=Number(weeklyRaw[md][ma].totalMissing)||0;tExpected+=Number(weeklyRaw[md][ma].totalExpected)||0;}}
 var tM=tExpected>0?(tMissing/tExpected*100):0;
-summary.innerHTML='<div class="cbt-ws-stat"><span class="cbt-ws-val">'+tA+'</span><span class="cbt-ws-label">Batchers</span></div>'+
+setHTML(summary,'<div class="cbt-ws-stat"><span class="cbt-ws-val">'+tA+'</span><span class="cbt-ws-label">Batchers</span></div>'+
 '<div class="cbt-ws-stat"><span class="cbt-ws-val">'+oR.toFixed(1)+'</span><span class="cbt-ws-label">Avg Rate</span></div>'+
-'<div class="cbt-ws-stat"><span class="cbt-ws-val">'+tM.toFixed(1)+'%</span><span class="cbt-ws-label">Avg Miss %</span></div>';
+'<div class="cbt-ws-stat"><span class="cbt-ws-val">'+tM.toFixed(1)+'%</span><span class="cbt-ws-label">Avg Miss %</span></div>');
 }
 var ranked=all.slice();
 ranked.sort(function(a,b){
@@ -6496,7 +6729,7 @@ setHTML(tbody, html);
 if(weeklySearchTerm) renderWeeklyCrossSearch(weeklySearchTerm);
 else {
 var cross2 = document.getElementById('cbt-weekly-cross');
-if(cross2) cross2.innerHTML='';
+if(cross2) setHTML(cross2,'');
 }
 requestUnifiedSearchCount();
 }
@@ -6524,6 +6757,22 @@ if (matches.length > 50) html += '<div style="text-align:center;color:#888;paddi
 return html;
 }
 var _namesScanLast = 0;
+var _cbtSortedNamesCache = null;
+var _cbtSortedNamesCacheSignature = '';
+function cbtSortedSavedNames(all) {
+var keys = Object.keys(all || {});
+var signature = keys.length + '|' + keys.map(function(k){ return k + ':' + String(all[k] || ''); }).join('\u001f');
+if (_cbtSortedNamesCache && _cbtSortedNamesCacheSignature === signature) {
+return _cbtSortedNamesCache.slice();
+}
+var names = keys
+.map(function(k){ return all[k]; })
+.filter(function(n){ return !!cbtAssignNormText(n); });
+names.sort(function(a,b){ return a.toLowerCase().localeCompare(b.toLowerCase()); });
+_cbtSortedNamesCache = names;
+_cbtSortedNamesCacheSignature = signature;
+return names.slice();
+}
 function renderNames() {
 var tbody = document.getElementById('cbt-names-tbody');
 if (!tbody) return;
@@ -6534,11 +6783,8 @@ scanLocalStorageForNames();
 syncNamesFromAllTabs();
 }
 var all = loadAllNames();
-var names = Object.keys(all)
-.map(function(k){ return all[k]; })
-.filter(function(n){ return !!cbtAssignNormText(n); });
+var names = cbtSortedSavedNames(all);
 var totalCount = names.length;
-names.sort(function(a,b){ return a.toLowerCase().localeCompare(b.toLowerCase()); });
 var term = (namesSearchTerm||'').toLowerCase().trim();
 if (term) {
 names = names.filter(function(n){ return n.toLowerCase().indexOf(term) !== -1; });
@@ -6546,9 +6792,12 @@ names = prioritizeNameMatches(names, term, function(n){ return n; });
 }
 var countEl = document.getElementById('cbt-names-count');
 if (countEl) {
-countEl.textContent = totalCount + ' names saved';
-var isDarkMode = document.getElementById('cbt-panel') && document.getElementById('cbt-panel').classList.contains('dark');
-countEl.style.color = isDarkMode ? '#8faac0' : '#5a7a96';
+var countText = totalCount + ' names saved';
+if (countEl.textContent !== countText) countEl.textContent = countText;
+var namesPanel = document.getElementById('cbt-panel');
+var isDarkMode = !!(namesPanel && namesPanel.classList.contains('dark'));
+var countColor = isDarkMode ? '#8faac0' : '#5a7a96';
+if (countEl.style.color !== countColor) countEl.style.color = countColor;
 }
 var emptyEl = document.getElementById('cbt-names-empty');
 if (!names.length) {
@@ -6567,7 +6816,7 @@ requestUnifiedSearchCount();
 function renderWeeklyCrossSearch(term) {
 var crossEl = document.getElementById('cbt-weekly-cross');
 if(!crossEl) return;
-if(!term){ crossEl.innerHTML=''; return; }
+if(!term){ setHTML(crossEl,''); return; }
 term = term.toLowerCase().trim();
 var history = getDisplayHistory();
 var entries = Object.values(history).filter(function(e){ return e.assoc.toLowerCase().indexOf(term)!==-1; });
@@ -6583,7 +6832,7 @@ html+='<div class="cbt-search-row"><span class="cbt-search-row-name">'+cbtEscHtm
 '<span class="cbt-search-row-rate"><span class="cbt-hist-rate '+rateCls+'">'+e.avgRate.toFixed(1)+'</span></span></div>';
 });
 }
-var weekly = sanitizeWeekly(getDisplayWeekly()), agg={};
+var weekly = getDisplayWeekly(), agg={};
 for(var dk in weekly){
 for(var a in weekly[dk]){
 var d=weekly[dk][a]||{}, display=d.assoc||a;
@@ -6654,6 +6903,7 @@ try { injectPanel(); } catch(eFastPanel) {}
 _panelMutationRun();
 }
 if (!_acMutationRun) return;
+if (!acWatchRelevant() && !_acDrop) return;
 for (var i = 0; i < mutations.length; i++) {
 var m = mutations[i];
 if (cbtMutationIsOnlyOwnUi(m)) continue;
@@ -8042,6 +8292,11 @@ var _cbtAssignLiveStreamBuffer = '';
 var _cbtAssignLiveStreamRetryTimer = null;
 var _cbtAssignSharedProtectSaveTimer = null;
 var _cbtAssignSharedProtectLastSavedJson = '';
+// v23.9.196: shared run-state used by gray-CREATED eligibility. These must be
+// outside cbtAssignRun so the gray eligibility helper can distinguish this
+// run's own pending associate reservation from a real associate cooldown.
+var _cbtAssignCurrentAssociateReservationName = '';
+var _cbtAssignCurrentAssociateReservationToken = '';
 function cbtAssignNowMs() {
 try { return typeof cbtNowMs === 'function' ? cbtNowMs() : Date.now(); }
 catch(e) { return Date.now(); }
@@ -8717,6 +8972,8 @@ var CBT_ASSIGN_UI_SESSION_MS = 15 * 1000;
 var _cbtAssignUiSessionToken = '';
 var _cbtAssignUiSessionDeadline = 0;
 var _cbtAssignUiSessionRunHeartbeat = null;
+var _cbtAssignUiSessionRenewInFlight = false;
+var _cbtAssignUiSessionRenewToken = '';
 var _cbtAssignUiSessionAutoBackPending = false;
 var _cbtAssignUiAcquireSeq = 0;
 // Promise for the most recent Firebase release. Summary Back waits for this so
@@ -8935,13 +9192,25 @@ return _cbtAssignUiSessionReleasePromise;
 function cbtAssignStartUiSessionRunHeartbeat() {
 if (!syncEnabled() || !_cbtAssignUiSessionToken) return;
 if (_cbtAssignUiSessionRunHeartbeat) clearInterval(_cbtAssignUiSessionRunHeartbeat);
-cbtAssignRenewUiSessionLock().then(function(ok){ if (!ok && _afaRunning) _afaStop = true; });
-_cbtAssignUiSessionRunHeartbeat = setInterval(function(){
-if (!_afaRunning || !_cbtAssignUiSessionToken) return;
-cbtAssignRenewUiSessionLock().then(function(ok){
-if (!ok && _afaRunning) _afaStop = true;
+function renewRunLease() {
+var tokenAtStart = String(_cbtAssignUiSessionToken || '');
+if (!_afaRunning || !tokenAtStart) return;
+if (_cbtAssignUiSessionRenewInFlight && _cbtAssignUiSessionRenewToken === tokenAtStart) return;
+_cbtAssignUiSessionRenewInFlight = true;
+_cbtAssignUiSessionRenewToken = tokenAtStart;
+Promise.resolve(cbtAssignRenewUiSessionLock()).then(function(ok){
+if (!ok && _afaRunning && String(_cbtAssignUiSessionToken || '') === tokenAtStart) _afaStop = true;
+}, function(){
+if (_afaRunning && String(_cbtAssignUiSessionToken || '') === tokenAtStart) _afaStop = true;
+}).then(function(){
+if (_cbtAssignUiSessionRenewToken === tokenAtStart) {
+_cbtAssignUiSessionRenewInFlight = false;
+_cbtAssignUiSessionRenewToken = '';
+}
 });
-}, 3000);
+}
+renewRunLease();
+_cbtAssignUiSessionRunHeartbeat = setInterval(renewRunLease, 3000);
 }
 function cbtAssignRenderGlobalSessionState() {
 var row = cbtAssignUiSessionRow();
@@ -9122,6 +9391,7 @@ style.textContent =
 '}';
 (document.head || document.documentElement).appendChild(style);
 }
+// v23.9.194 dashboard performance-only: coalesced table/search renders, removed redundant weekly sanitization, avoided cloned DOM search-count scans, cached Names sorting, and skipped unchanged summary DOM writes.
 // v23.9.191 performance-only: removed duplicate timer work, reduced redundant half-second heartbeats, suppressed self-induced sort/observer churn, and cached stable Destination text measurements. Assignment/data rules are unchanged.
 // v23.9.190: fixed gray-CREATED self-lock: the Assign run's own pending associate reservation no longer masquerades as a cooldown and disqualifies the cart before submit.
 // v23.9.189: gray CREATED rows are true open normal-Assign carts after the gray-name cooldown ends; they no longer require the selected associate to match the old gray name.
@@ -9152,18 +9422,24 @@ return cbtAssignNormText(cell.textContent || '');
 function cbtAssignStyleLooksGray(el) {
 if (!el || el.nodeType !== 1) return false;
 var hint = String(el.className || '') + ' ' + String(el.getAttribute && el.getAttribute('style') || '');
-if (/\b(?:text[-_ ]?muted|muted|secondary|gray|grey|disabled|inactive)\b/i.test(hint)) return true;
 var cs = null;
 try { cs = window.getComputedStyle(el); } catch(e0) { cs = null; }
-if (!cs) return false;
+if (cs) {
 var m = String(cs.color || '').match(/rgba?\(\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)/i);
-if (!m) return false;
+if (m) {
 var r = Number(m[1]), g = Number(m[2]), b = Number(m[3]);
-if (![r,g,b].every(Number.isFinite)) return false;
+if ([r,g,b].every(Number.isFinite)) {
 var max = Math.max(r,g,b), min = Math.min(r,g,b), avg = (r+g+b)/3;
-// Amazon pending assignment gray is #999999 (153/153/153). Keep a neutral
-// medium-gray range while excluding normal dark/black accepted names.
+// Amazon pending assignment gray is #999999 (153/153/153). The computed
+// color is authoritative when available so a generic "secondary" class cannot
+// falsely mark a dark/accepted name as pending.
 return (max - min) <= 32 && avg >= 88 && avg <= 210;
+}
+}
+}
+// Class/style naming is only a fallback for environments where computed color
+// cannot be read or parsed.
+return /\b(?:text[-_ ]?muted|muted|secondary|gray|grey|disabled|inactive)\b/i.test(hint);
 }
 function cbtAssignAssignmentCellLooksGray(cell, assignmentText) {
 if (!cell || !cell.isConnected) return false;
@@ -9214,14 +9490,18 @@ var grayLock = cbtAssignAssociateProtection(grayAssociate);
 if (grayLock) {
 var ownReservation = !!(
 grayLock.pending &&
-currentAssociateReservationToken &&
-String(grayLock.token || '') === String(currentAssociateReservationToken) &&
-cbtAssignNormText(currentAssociateReservationName || '').toLowerCase() ===
+_cbtAssignCurrentAssociateReservationToken &&
+String(grayLock.token || '') === String(_cbtAssignCurrentAssociateReservationToken) &&
+cbtAssignNormText(_cbtAssignCurrentAssociateReservationName || '').toLowerCase() ===
 grayAssociate.toLowerCase()
 );
 if (!ownReservation) return false;
 }
-} catch(eCooldown) {}
+} catch(eCooldown) {
+// Cooldown safety is fail-closed: an unexpected read/scope/storage failure must
+// never make a gray cart look available.
+return false;
+}
 return true;
 }
 function cbtAssignRowIsGrayCreatedPending(r, associate) {
@@ -10812,13 +11092,13 @@ afaSetBtn('⏹ Stop', true);
 var results = [];
 var claimed = Object.create(null);
 var nameIndex = 0;
-var currentAssociateReservationName = '';
-var currentAssociateReservationToken = '';
+_cbtAssignCurrentAssociateReservationName = '';
+_cbtAssignCurrentAssociateReservationToken = '';
 function releaseCurrentAssociateReservation() {
-var name = currentAssociateReservationName;
-var token = currentAssociateReservationToken;
-currentAssociateReservationName = '';
-currentAssociateReservationToken = '';
+var name = _cbtAssignCurrentAssociateReservationName;
+var token = _cbtAssignCurrentAssociateReservationToken;
+_cbtAssignCurrentAssociateReservationName = '';
+_cbtAssignCurrentAssociateReservationToken = '';
 if (name && token) {
 try { cbtAssignReleaseAssociateReservation(name, token); } catch(eReleaseAssociate) {}
 }
@@ -10923,14 +11203,14 @@ return;
 }
 var attemptedForAssociate = 0;
 function ensureAssociateReservation() {
-if (currentAssociateReservationToken &&
-cbtAssignNormText(currentAssociateReservationName).toLowerCase() === cbtAssignNormText(associate).toLowerCase()) {
-return Promise.resolve({ok:true,token:currentAssociateReservationToken,reused:true});
+if (_cbtAssignCurrentAssociateReservationToken &&
+cbtAssignNormText(_cbtAssignCurrentAssociateReservationName).toLowerCase() === cbtAssignNormText(associate).toLowerCase()) {
+return Promise.resolve({ok:true,token:_cbtAssignCurrentAssociateReservationToken,reused:true});
 }
 return cbtAssignAcquireAssociateReservation(associate).then(function(lock){
 if (lock && lock.ok) {
-currentAssociateReservationName = associate;
-currentAssociateReservationToken = lock.token || '';
+_cbtAssignCurrentAssociateReservationName = associate;
+_cbtAssignCurrentAssociateReservationToken = lock.token || '';
 }
 return lock;
 });
@@ -11104,16 +11384,16 @@ targetRef: target.ref
 if (_afaStop) {
 if (result && result.ok) {
 try { cbtAssignProtectAssociate(associate); } catch(eAssociateStopProtect) {}
-currentAssociateReservationName = '';
-currentAssociateReservationToken = '';
+_cbtAssignCurrentAssociateReservationName = '';
+_cbtAssignCurrentAssociateReservationToken = '';
 }
 finish();
 return;
 }
 if (result && result.ok) {
 try { cbtAssignProtectAssociate(associate); } catch(eAssociateProtect) {}
-currentAssociateReservationName = '';
-currentAssociateReservationToken = '';
+_cbtAssignCurrentAssociateReservationName = '';
+_cbtAssignCurrentAssociateReservationToken = '';
 claimed[target.key] = true;
 if (taskTypes.partialOnly) {
 cbtForgetForcedPartial(target.key);
@@ -12657,7 +12937,24 @@ try { applyUiScale(); } catch(e) {}
 try { _cbtAssignDestinationMeasureCache = (typeof WeakMap === 'function' ? new WeakMap() : null); } catch(eMeasureReset) {}
 });
 window.addEventListener('resize', function(){ if (_acDrop) acPlace(); });
-window.addEventListener('scroll', function(){ if (_acDrop) acPlace(); }, true);
+var _acScrollPlaceRAF = 0;
+function cbtAutocompleteScrollPlace() {
+if (!_acDrop || _acScrollPlaceRAF) return;
+var raf = (typeof requestAnimationFrame === 'function')
+? requestAnimationFrame
+: function(cb){ return setTimeout(cb, 16); };
+_acScrollPlaceRAF = raf(function(){
+_acScrollPlaceRAF = 0;
+if (_acDrop) {
+try { acPlace(); } catch(e) {}
+}
+});
+}
+try {
+window.addEventListener('scroll', cbtAutocompleteScrollPlace, { capture:true, passive:true });
+} catch(eAcScrollPassive) {
+window.addEventListener('scroll', cbtAutocompleteScrollPlace, true);
+}
 function acWatchRelevant() {
 if (isOutboundSite() || isTaskDetailPage()) return true;
 return !!document.querySelector('kat-modal, [role="dialog"], .modal');
@@ -12852,7 +13149,13 @@ try { fetchAndUpdate(); } catch(eStats) {}
 if (nowMs - hbLastTimers >= 15000) {
 hbLastTimers = nowMs;
 if (isComoSite() && !document.hidden && isDashboardView()) {
+if (cbtIsActivelyScrolling()) {
+cbtRunAfterScroll('timer-safety-scan', function(){
 try { injectAllTimers(); } catch(eTimerScan) {}
+});
+} else {
+try { injectAllTimers(); } catch(eTimerScan) {}
+}
 }
 }
 if (Date.now() < _fastMountUntil && !document.hidden && isDashboardView()) {
