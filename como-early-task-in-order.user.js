@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.202
+// @version      23.9.206
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -6358,6 +6358,17 @@ try { cbtBatchEventsPull(); } catch(e2) {}
 });
 });
 var afaBtn = panel2.querySelector('#cbt-afa-btn');
+if (afaBtn) {
+// v23.9.205: quietly prepare the Cart Actions snapshot while the pointer is
+// approaching Run.  This does no network action and never changes assignment
+// state; it only removes menu-open latency on the common desktop path.
+afaBtn.addEventListener('mouseenter', function(){
+try { afaWarmCartActionsSnapshot(); } catch(eWarmRunHover) {}
+}, { passive: true });
+afaBtn.addEventListener('focus', function(){
+try { afaWarmCartActionsSnapshot(); } catch(eWarmRunFocus) {}
+}, { passive: true });
+}
 if (afaBtn) afaBtn.addEventListener('click', function(e){
 e.stopPropagation();
 if (_afaRunning) {
@@ -7636,6 +7647,13 @@ var _afaConfirmOpenSeq = 0;
 var _afaConfirmLoading = false;
 var _afaMissingMenuInfo = null;
 var _afaMissingMenuCheckSeq = 0;
+// v23.9.205: tiny in-memory Cart Actions snapshot.  It is never trusted for
+// the actual force/partial/complete operation (runFresh still re-reads Amazon);
+// it only lets the menu paint immediately instead of showing a loading screen.
+var _afaMenuSnapshotCache = null;
+var _afaMenuSnapshotInFlight = false;
+var _afaMenuSnapshotWarmSeq = 0;
+var AFA_MENU_SNAPSHOT_TTL_MS = 1800;
 function afaLooksLikeJobId(v) {
 if (typeof v !== 'string' || v.length < 30 || v.indexOf('_') === -1) return false;
 return STORE_ID ? v.indexOf(STORE_ID) === 0 : true;
@@ -7842,7 +7860,7 @@ var cards = cardsSnapshot || document.querySelectorAll('job-card');
 for (var i = 0; i < cards.length; i++) {
 var card = cards[i];
 try { if (isInExcludedSection(card)) continue; } catch(e) {}
-var txt = card.innerText || card.textContent || '';
+var txt = card.textContent || card.innerText || '';
 if (!/UNASSIGNABLE/i.test(txt)) continue;
 var a = card.querySelector('a');
 var ref = a ? (a.textContent || '').trim() : '';
@@ -8056,7 +8074,7 @@ if (isInExcludedSection(card)) continue;
 var a = card.querySelector('a');
 var item = afaMissingCandidateFromAnchor(a, 'Tasks', i, 0);
 if (!item) continue;
-var txt = afaMissingText(card.innerText || card.textContent || '');
+var txt = afaMissingText(card.textContent || card.innerText || '');
 if (!afaHasMissingPackageSignal(card)) continue;
 item.alertScore += 20;
 if (/\b(?:MISSING|DAMAGED)\b/i.test(txt)) item.alertScore += 30;
@@ -8411,7 +8429,7 @@ var cards = cardsSnapshot || document.querySelectorAll('job-card');
 for (var i = 0; i < cards.length; i++) {
 var card = cards[i];
 try { if (isInExcludedSection(card)) continue; } catch(e) {}
-var txt = card.innerText || card.textContent || '';
+var txt = card.textContent || card.innerText || '';
 if (/problem\s*solve|\bproblem\b/i.test(txt)) continue;
 var a = card.querySelector('a');
 var ref = a ? (a.textContent || '').trim() : '';
@@ -8609,6 +8627,21 @@ hasTasks: count > 0
 function cbtAssignHasSiteTasks() {
 return cbtAssignSiteTaskState().hasTasks;
 }
+// v23.9.203: Amazon can briefly report an empty cached task snapshot while
+// remounting the task list.  Assign must never use that transient state as a
+// reason to navigate back to Cart Actions.  At the actual assignment boundary,
+// fall back to the live rows before deciding that normal tasks are unavailable.
+function cbtAssignHasNormalTasksNow() {
+if (cbtAssignHasSiteTasks()) return true;
+try {
+var rows = cbtAssignReadRows();
+for (var i = 0; i < rows.length; i++) {
+var r = rows[i];
+if (r && !r.partial && r.batchMs != null) return true;
+}
+} catch(e) {}
+return false;
+}
 var CBT_ASSIGN_PROTECT_MS = 1 * 60 * 1000;
 var CBT_ASSIGN_LOCK_REQUEST_TIMEOUT_MS = 4000;
 var CBT_ASSIGN_SHARED_PROTECT_ROOT = '/como_assign_protect_v1/' + CBT_HISTORY_STORE_SCOPE;
@@ -8768,8 +8801,11 @@ return;
 if(putRes.status>=200&&putRes.status<300){
 cbtAssignLoadSharedProtection()[jobId] = row;
 _cbtAssignSharedNodeToJobId[cbtAssignSharedNodeForJob(jobId)] = jobId;
-cbtAssignSaveSharedProtection();
-try { cbtAssignRenderProtectionCountdown(); } catch(eRenderPending) {}
+// v23.9.206: the Firebase write above is the conflict-critical step. Do not
+// block the assignment promise on localStorage serialization or a full DOM
+// highlight scan. Persist/render on the next turn instead.
+try { cbtAssignScheduleSharedProtectionSave(); } catch(eSavePending) {}
+try { cbtAssignScheduleProtectionRenderFast(); } catch(eRenderPending) {}
 resolve({ok:true,token:token,row:row});
 return;
 }
@@ -10169,6 +10205,27 @@ holder.querySelectorAll('job-card')
 } catch(e1) {
 cards = [];
 }
+// v23.9.205: build the main-task identity index once.  The old code called
+// cbtAssignReadRows() again for every Partially Batched candidate, which could
+// turn one Run click into many full task-table scans.  This is the same
+// conflict rule, only cached for this one scan.
+var mainTaskIds = Object.create(null);
+var mainTaskRefs = Object.create(null);
+try {
+var mainTaskRows = cbtAssignReadRows() || [];
+for (var mr = 0; mr < mainTaskRows.length; mr++) {
+var mainRow = mainTaskRows[mr] || {};
+var mainId = String(mainRow.key || mainRow.id || '');
+var mainRef = cbtAssignNormText(mainRow.ref || '').toLowerCase();
+if (mainId) mainTaskIds[mainId] = true;
+if (mainRef) mainTaskRefs[mainRef] = true;
+}
+} catch(eMainIndex) {}
+function mainTaskIdentityConflictFast(jobId, ref) {
+var idKey = String(jobId || '');
+var refKey = cbtAssignNormText(ref || '').toLowerCase();
+return !!((idKey && mainTaskIds[idKey]) || (refKey && mainTaskRefs[refKey]));
+}
 function addFromAnchor(a, rowOrder) {
 if (!a) return;
 try {
@@ -10182,7 +10239,7 @@ if (!ref || ref.length > 24) return;
 var id = cbtAssignExplicitJobIdFromNode(a);
 if (!id) return;
 id = String(id);
-if (cbtAssignMainTaskIdentityConflict(id, ref)) return;
+if (mainTaskIdentityConflictFast(id, ref)) return;
 var key = id;
 if (seen[key]) return;
 seen[key] = true;
@@ -10590,14 +10647,43 @@ var localProtected = cbtAssignProtection(jobId);
 if (localProtected && (!options.sharedReservationToken || localProtected.token !== options.sharedReservationToken)) {
 return Promise.resolve({ok:false,retryable:true,protected:true,reason:'recently assigned'+(localProtected.associate?' to '+localProtected.associate:'')+' — protected for '+cbtAssignProtectionSeconds(jobId,localProtected)+'s more'});
 }
-return cbtAssignSharedProtectionCheck(jobId, options.sharedReservationToken || '').then(function(sharedProtected){
-if (sharedProtected) return {ok:false,retryable:true,protected:true,reason:'recently assigned'+(sharedProtected.associate?' to '+sharedProtected.associate:'')+' — protected for '+cbtAssignProtectionSeconds(jobId,sharedProtected)+'s more'};
-if (guardFn && !guardFn()) return {ok:false,retryable:true,reason:'task changed before assignment'};
-return cbtAssignBackendPreflight(jobId, options).then(function(check){
+var reservationToken = String(options.sharedReservationToken || '');
+var ownAtomicReservation = false;
+if (reservationToken) {
+try {
+var cachedReservation = cbtAssignLoadSharedProtection()[String(jobId || '')];
+ownAtomicReservation = !!(
+cachedReservation &&
+cachedReservation.pending &&
+String(cachedReservation.token || '') === reservationToken
+);
+} catch(eOwnReservation) {}
+}
+function runBackendCheck() {
+if (guardFn && !guardFn()) return Promise.resolve({ok:false,retryable:true,reason:'task changed before assignment'});
+var prefetched = options.prefetchedBackendCheck || null;
+var prefetchedAt = Number(options.prefetchedBackendCompletedAt) || 0;
+var prefetchFresh = !!(
+prefetched &&
+prefetchedAt &&
+(Date.now() - prefetchedAt) <= 1500
+);
+var backendPromise = prefetchFresh
+? Promise.resolve(prefetched)
+: cbtAssignBackendPreflight(jobId, options);
+return backendPromise.then(function(check){
 if(!check||!check.ok)return check||{ok:false,retryable:true,reason:'backend pre-check failed'};
 if(guardFn){try{if(!guardFn())return{ok:false,retryable:true,reason:'task changed during backend pre-check'};}catch(eGuard){return{ok:false,retryable:true,reason:'task changed during backend pre-check'};}}
 return check;
 });
+}
+// v23.9.206: once this device has just won the atomic Firebase cart
+// reservation, another same-version computer cannot own that node at the same
+// time. Avoid an immediate redundant GET of the exact node we just wrote.
+if (ownAtomicReservation) return runBackendCheck();
+return cbtAssignSharedProtectionCheck(jobId, reservationToken).then(function(sharedProtected){
+if (sharedProtected) return {ok:false,retryable:true,protected:true,reason:'recently assigned'+(sharedProtected.associate?' to '+sharedProtected.associate:'')+' — protected for '+cbtAssignProtectionSeconds(jobId,sharedProtected)+'s more'};
+return runBackendCheck();
 });
 }
 function cbtAssignVerifyAssociate(jobId, login) {
@@ -10734,6 +10820,12 @@ reason: 'blocked: job was not remembered as a successfully Force Assigned partia
 });
 }
 }
+// v23.9.206: start the read-only Amazon backend pre-check at the same time as
+// the atomic Firebase cart reservation. The final DOM guard still runs after
+// the cart lock is owned, and stale prefetched checks are discarded below.
+var prefetchedBackendPromise = cbtAssignBackendPreflight(jobId, assignOptions).then(function(check){
+return { check: check, completedAt: Date.now() };
+});
 return cbtAssignAcquireSharedReservation(jobId, associate, 0, assignOptions.targetRef || '').then(function(lock){
 if (!lock || !lock.ok) {
 if (lock && (lock.error || lock.fatal)) {
@@ -10791,15 +10883,21 @@ reason:(label || 'Assignment response was ambiguous') +
 };
 });
 }
-var preflightOptions = Object.assign({}, assignOptions, { sharedReservationToken: reservationToken });
 var reservedGuardFn = guardFn
 ? function(){ return guardFn(reservationToken); }
 : null;
+return prefetchedBackendPromise.then(function(prefetchedBackend){
+var preflightOptions = Object.assign({}, assignOptions, {
+sharedReservationToken: reservationToken,
+prefetchedBackendCheck: prefetchedBackend && prefetchedBackend.check,
+prefetchedBackendCompletedAt: prefetchedBackend && prefetchedBackend.completedAt
+});
 return cbtAssignFreshPreflight(
 jobId,
 reservedGuardFn,
 preflightOptions
-).then(function(preflight){
+);
+}).then(function(preflight){
 if (!preflight || !preflight.ok) {
 releaseReservation();
 return preflight || { ok:false, retryable:false, reason:'pre-check failed' };
@@ -10985,7 +11083,7 @@ var c = document.getElementById(
 'cbt-assign-count'
 );
 if (c) {
-c.innerHTML =
+var countHtml =
 'Assigning <b>' +
 Math.min(done, total) +
 '</b> of <b>' +
@@ -11003,25 +11101,32 @@ target.batchRaw || 'earliest'
 ) +
 ')'
 : '');
+if (c.__cbtAssignHtml !== countHtml) {
+c.__cbtAssignHtml = countHtml;
+c.innerHTML = countHtml;
+}
 }
 var fill = document.getElementById(
 'cbt-afa-fill'
 );
 if (fill) {
-fill.style.width =
-Math.round(
+var nextWidth = Math.round(
 (
 Math.max(0, done - 1) /
 Math.max(1, total)
 ) * 100
 ) + '%';
+if (fill.style.width !== nextWidth) fill.style.width = nextWidth;
 }
 var live = document.getElementById(
 'cbt-afa-live'
 );
 if (live && results.length) {
-live.innerHTML =
-afaRowsHtml(results.slice(-8));
+var liveHtml = afaRowsHtml(results.slice(-8));
+if (live.__cbtAssignHtml !== liveHtml) {
+live.__cbtAssignHtml = liveHtml;
+live.innerHTML = liveHtml;
+}
 }
 }
 function cbtAssignSummary(results, stopped) {
@@ -11086,6 +11191,26 @@ catch(eBackAssign) { if (_afaOverlay) afaConfirm(); }
 // v23.9.177: fixes global Assign button visual reset and makes all result-screen Back paths fail-safe.
 // v23.9.176 audit: each associate gets its own 5-cart failure set; shared locks fail closed.
 var CBT_ASSIGN_MAX_ATTEMPTS_PER_ASSOCIATE = 5;
+// v23.9.203: Assign never auto-navigates to Cart Actions.  Only the explicit
+// Back button may do that.  If Amazon is temporarily rebuilding task data, keep
+// the current picker and make it usable again instead of replacing the screen.
+function cbtAssignStayOnPicker(message) {
+var overlay = _afaOverlay;
+if (!overlay || !overlay.isConnected) return;
+var title = overlay.querySelector('#cbt-afa-title');
+if (!title || !/^Assign$/i.test(String(title.textContent || '').trim())) return;
+var note = overlay.querySelector('#cbt-afa-assign-mode-note');
+if (note && message) note.textContent = String(message);
+var card = overlay.querySelector('#cbt-afa-card');
+if (!card) return;
+var startBtn = card.querySelector('[data-afa="assign-start"]');
+if (startBtn) startBtn.removeAttribute('data-cbt-start-pending');
+try {
+if (typeof card.__cbtAssignRefreshStartState === 'function') {
+card.__cbtAssignRefreshStartState();
+}
+} catch(eRefresh) {}
+}
 function cbtAssignRun(names, taskTypes) {
 names = Array.isArray(names)
 ? names.map(cbtAssignNormText).filter(Boolean)
@@ -11110,12 +11235,13 @@ continue;
 forcedPartialIds[String(forcedRow.key)] = true;
 }
 if (!Object.keys(forcedPartialIds).length) {
-afaConfirm();
+cbtAssignStayOnPicker('Partially Batched carts are still refreshing or no verified Partially Batched cart is available yet. You are still in Assign.');
 return;
 }
 taskTypes.partialIds = forcedPartialIds;
-} else if (!cbtAssignHasSiteTasks()) {
-afaConfirm();
+} else if (!cbtAssignHasNormalTasksNow()) {
+cbtAssignStayOnPicker('Tasks are refreshing. You are still in Assign — wait a moment and press Assign again.');
+try { afaRefreshJobData(); } catch(eAssignWarmTasks) {}
 return;
 }
 _afaRunning = true;
@@ -11185,19 +11311,17 @@ assignNextTimer = 0;
 }
 assignNextResume = null;
 afaSetBtn('▶ Run', false);
-try {
-pollActiveTasks();
-} catch(eLive) {}
-try {
-fetchAndUpdate();
-} catch(eStats) {}
-try {
-afaRefreshJobData();
-} catch(eJobs) {}
+// v23.9.206: show the result immediately. Live/stats/job refreshes are useful
+// after the assignment, but they must not delay the user's finished screen.
 cbtAssignSummary(
 results,
 _afaStop
 );
+cbtAfterFirstPaint(function(){
+try { pollActiveTasks(); } catch(eLive) {}
+try { fetchAndUpdate(); } catch(eStats) {}
+try { afaRefreshJobData(); } catch(eJobs) {}
+}, 0);
 }
 function nextName(delay) {
 releaseCurrentAssociateReservation();
@@ -11595,55 +11719,135 @@ return '<div class="cbt-afa-row ' + cls + '">' +
 '</div>';
 }).join('') + '</div>';
 }
-function afaConfirm() {
-if (_afaRunning) { afaProgressView(); return; }
-// Ignore a double-click while the same menu is already being prepared. This
-// prevents two identical full DOM scans and two overlapping menu renders.
-if (_afaConfirmLoading && _afaOverlay && _afaOverlay.isConnected) return;
-try { cbtAssignReleaseUiSessionLock(); } catch(eAssignUiRelease) {}
-_afaConfirmLoading = true;
-var openSeq = ++_afaConfirmOpenSeq;
-afaShell(
-'Cart Actions',
-'<div id="cbt-afa-lead">Loading cart actions…</div>' +
-'<div class="cbt-afa-note">Reading the current task groups.</div>',
-'<button class="cbt-afa-act" data-afa="close">Close</button>'
-);
-var loadingOverlay = _afaOverlay;
-var loadingCard = loadingOverlay && loadingOverlay.querySelector('#cbt-afa-card');
-if (loadingCard) {
-loadingCard.addEventListener('click', function(e){
-var b = e.target.closest('[data-afa="close"]');
-if (b) afaClose();
-});
-}
-var raf = (typeof requestAnimationFrame === 'function')
-? requestAnimationFrame
-: function(cb){ return setTimeout(cb, 16); };
-// Let the overlay reach the screen first. The expensive scans then run outside
-// the click handler, so clicking Run never has to wait for the whole page scan
-// before there is visible feedback.
-raf(function(){
-setTimeout(function(){
-if (openSeq !== _afaConfirmOpenSeq || !_afaOverlay || _afaOverlay !== loadingOverlay) return;
-try {
-var cardsSnapshot = document.querySelectorAll('job-card');
+function afaCollectMenuSnapshot() {
+var cardsSnapshot = [];
+try { cardsSnapshot = Array.prototype.slice.call(document.querySelectorAll('job-card')); } catch(eCards) {}
 var pbNow = afaScanPartiallyBatched();
 var expected = afaSectionCount(/^Partially\s+Batched(\s*\(\d+\))?$/i);
 var forceRows = afaScanDashboard(cardsSnapshot);
-if (openSeq !== _afaConfirmOpenSeq || !_afaOverlay || _afaOverlay !== loadingOverlay) return;
-afaConfirmRender(forceRows, pbNow, expected, null, { cards: cardsSnapshot });
-} catch(eConfirmScan) {
-_afaConfirmLoading = false;
-if (openSeq !== _afaConfirmOpenSeq || !_afaOverlay || _afaOverlay !== loadingOverlay) return;
+var completionCandidates = afaScanCompletionCandidates(cardsSnapshot);
+var missingCandidates = afaScanMissingCandidates(cardsSnapshot);
+var assignTaskState = cbtAssignSiteTaskState();
+return {
+at: Date.now(),
+cards: cardsSnapshot,
+forceRows: forceRows,
+pbAll: pbNow,
+pbExpected: expected,
+completionCandidates: completionCandidates,
+missingCandidates: missingCandidates,
+assignTaskState: assignTaskState
+};
+}
+function afaWarmCartActionsSnapshot() {
+if (_afaRunning || _afaMenuSnapshotInFlight) return;
+var cached = _afaMenuSnapshotCache;
+if (cached && (Date.now() - Number(cached.at || 0)) < AFA_MENU_SNAPSHOT_TTL_MS) return;
+_afaMenuSnapshotInFlight = true;
+var warmSeq = ++_afaMenuSnapshotWarmSeq;
+cbtIdle(function(){
+if (warmSeq !== _afaMenuSnapshotWarmSeq) return;
+try { _afaMenuSnapshotCache = afaCollectMenuSnapshot(); }
+catch(eWarmMenu) {}
+if (warmSeq === _afaMenuSnapshotWarmSeq) _afaMenuSnapshotInFlight = false;
+}, 500);
+}
+function afaConfirmInstantShell() {
+// Paint the real Cart Actions structure immediately.  Only actions that require
+// a current scan remain disabled for this very short verification window;
+// Assign Cart is safe to open immediately and revalidates at assignment time.
 afaShell(
 'Cart Actions',
-'<div id="cbt-afa-lead">Cart actions could not be read yet.</div>' +
-'<div class="cbt-afa-note">The Amazon task list may still be updating. Close and press Run again.</div>',
+'<div id="cbt-afa-lead">Choose an action. Each button performs <b>only the action shown</b>.</div>' +
+'<div class="cbt-afa-action-block off"><button type="button" class="cbt-afa-act cbt-afa-action-btn" disabled>▶ Force Assign (…)</button><span class="cbt-afa-action-copy">Checking current carts…</span></div>' +
+'<div class="cbt-afa-action-block off"><button type="button" class="cbt-afa-act cbt-afa-action-btn" disabled>▶ Partially Batched (…)</button><span class="cbt-afa-action-copy">Checking current carts…</span></div>' +
+'<div class="cbt-afa-action-block off"><button type="button" class="cbt-afa-act cbt-afa-action-btn" disabled><span class="cbt-afa-missing-triangle">▲</span>Checking…</button><span class="cbt-afa-action-copy">Checking Missing/Damaged packages…</span></div>' +
+'<div class="cbt-afa-action-block"><button type="button" class="cbt-afa-act go cbt-afa-action-btn" data-afa="assign">▶ Assign Cart</button><span class="cbt-afa-action-copy">Select associates in order. Normal Tasks are the default; Partially Batched can be selected exclusively inside Assign Cart.</span></div>' +
+'<div class="cbt-afa-action-block off"><button type="button" class="cbt-afa-act cbt-afa-action-btn" disabled>▶ Auto Complete (…)</button><span class="cbt-afa-action-copy">Checking current tasks…</span></div>' +
+'<div class="cbt-afa-note">Each action only affects its own cart group. Problem Solve is never touched. Missing Package QR is read-only.</div>',
 '<button class="cbt-afa-act" data-afa="close">Close</button>'
 );
-var errCard = _afaOverlay && _afaOverlay.querySelector('#cbt-afa-card');
-if (errCard) errCard.addEventListener('click', function(e){ if (e.target.closest('[data-afa="close"]')) afaClose(); });
+var quickCard = _afaOverlay && _afaOverlay.querySelector('#cbt-afa-card');
+if (!quickCard) return;
+quickCard.addEventListener('click', function(e){
+var b = e.target.closest('[data-afa]');
+if (!b) return;
+var action = b.getAttribute('data-afa');
+if (action === 'close') { afaClose(); return; }
+if (action === 'assign') { afaAssignPicker(); }
+});
+}
+function afaConfirm() {
+if (_afaRunning) { afaProgressView(); return; }
+// Ignore a double-click while the same menu is already being verified.
+if (_afaConfirmLoading && _afaOverlay && _afaOverlay.isConnected) return;
+try { cbtAssignReleaseUiSessionLock(); } catch(eAssignUiRelease) {}
+// Cancel a hover warm-up that has not started yet so the click never launches
+// two copies of the same DOM scan.
+_afaMenuSnapshotWarmSeq++;
+_afaMenuSnapshotInFlight = false;
+_afaConfirmLoading = true;
+var openSeq = ++_afaConfirmOpenSeq;
+
+// If the user hovered Run a moment before clicking, use that very fresh
+// snapshot immediately.  Every destructive action still performs its own
+// fresh read before running, so this cache cannot create an assignment conflict.
+var cached = _afaMenuSnapshotCache;
+var cacheFresh = !!(
+cached &&
+(Date.now() - Number(cached.at || 0)) < AFA_MENU_SNAPSHOT_TTL_MS
+);
+if (cacheFresh) {
+try {
+afaConfirmRender(
+cached.forceRows || [],
+cached.pbAll || [],
+cached.pbExpected,
+null,
+{
+cards: cached.cards || [],
+completionCandidates: cached.completionCandidates || [],
+missingCandidates: cached.missingCandidates || [],
+assignTaskState: cached.assignTaskState || null
+}
+);
+} catch(eCachedMenu) {
+cacheFresh = false;
+}
+}
+
+// On a cold click there is no "Loading cart actions…" screen anymore.  The
+// complete Cart Actions shell paints now, and only the current counts/states
+// are verified in the following frame.
+if (!cacheFresh) afaConfirmInstantShell();
+var menuOverlay = _afaOverlay;
+
+var raf = (typeof requestAnimationFrame === 'function')
+? requestAnimationFrame
+: function(cb){ return setTimeout(cb, 16); };
+raf(function(){
+setTimeout(function(){
+if (openSeq !== _afaConfirmOpenSeq || !_afaOverlay || _afaOverlay !== menuOverlay) return;
+try {
+var snapshot = afaCollectMenuSnapshot();
+_afaMenuSnapshotCache = snapshot;
+if (openSeq !== _afaConfirmOpenSeq || !_afaOverlay || _afaOverlay !== menuOverlay) return;
+afaConfirmRender(
+snapshot.forceRows || [],
+snapshot.pbAll || [],
+snapshot.pbExpected,
+null,
+{
+cards: snapshot.cards || [],
+completionCandidates: snapshot.completionCandidates || [],
+missingCandidates: snapshot.missingCandidates || [],
+assignTaskState: snapshot.assignTaskState || null
+}
+);
+} catch(eConfirmScan) {
+_afaConfirmLoading = false;
+// Keep the already-visible Cart Actions shell instead of replacing it with an
+// error/loading page.  Assign remains usable and every actual action rechecks.
 }
 }, 0);
 });
@@ -11723,6 +11927,12 @@ out.push(name);
 return out;
 }
 function afaAssignPicker(options) {
+// v23.9.203: the Cart Actions shell performs delayed scans on the same overlay.
+// Invalidate those pending renders before drawing Assign so an older menu scan
+// can never overwrite this picker and look like an automatic Back action.
+_afaConfirmOpenSeq++;
+_afaConfirmLoading = false;
+_afaMissingMenuCheckSeq++;
 options = options || {};
 var lockPending = false;
 var selectedNames = [];
@@ -11804,9 +12014,10 @@ selectedNames.length === 0 ||
 !cbtAssignPartialCheckboxAvailable();
 return;
 }
-startBtn.disabled =
-selectedNames.length === 0 ||
-!cbtAssignHasSiteTasks();
+// v23.9.203: selecting an associate keeps the button usable even while
+// Amazon is briefly refreshing the task snapshot.  The click path performs the
+// real live-row check and stays on this screen if data is not ready.
+startBtn.disabled = selectedNames.length === 0;
 }
 function syncPartialOnlyMode() {
 var partialOnly = !!typePartial.checked;
@@ -11971,8 +12182,9 @@ cbtAssignRefreshPartialCheckboxState();
 syncPartialOnlyMode();
 return;
 }
-if (!typePartial.checked && !cbtAssignHasSiteTasks()) {
-afaConfirm();
+if (!typePartial.checked && !cbtAssignHasNormalTasksNow()) {
+cbtAssignStayOnPicker('Tasks are refreshing. Stay here — COMO will not return to Cart Actions. Try Assign again in a moment.');
+try { afaRefreshJobData(); } catch(eAssignClickWarm) {}
 return;
 }
 if (b.getAttribute('data-cbt-start-pending') === '1') return;
@@ -12027,12 +12239,21 @@ var pbReady = pbAll.filter(function(x){ return x.id; });
 var pbFound = (pbExpected != null) ? Math.max(pbExpected, pbAll.length) : pbAll.length;
 var pbUnresolved = Math.max(0, pbFound - pbReady.length);
 var sharedCards = scanContext && scanContext.cards ? scanContext.cards : null;
-var completionCandidates = afaScanCompletionCandidates(sharedCards)
+var completionCandidates =
+scanContext && Array.isArray(scanContext.completionCandidates)
+? scanContext.completionCandidates.slice()
+: afaScanCompletionCandidates(sharedCards);
+completionCandidates = completionCandidates
 .filter(function(x){ return !isSuppressed('complete', x); });
 var completeReady = completionCandidates.filter(function(x){ return x.id; });
-var assignTaskState = cbtAssignSiteTaskState();
+var assignTaskState =
+scanContext && scanContext.assignTaskState
+? scanContext.assignTaskState
+: cbtAssignSiteTaskState();
 var assignHasPartial = pbReady.length > 0;
-var assignDisabled = !assignTaskState.hasTasks && !assignHasPartial;
+// v23.9.203: never disable the entrance to Assign because Amazon may be in
+// a transient task-list remount.  Actual assignment remains fail-closed.
+var assignDisabled = false;
 var forceDisabled = ready.length === 0;
 var partialDisabled = pbReady.length === 0;
 var completeDisabled = !AFA_COMPLETE_PATH || completeReady.length === 0;
@@ -12089,7 +12310,10 @@ completeDisabled,
 ? 'No regular tasks are available to Auto Complete right now.'
 : 'Runs Complete Task only. It never Force Assigns and never includes Partially Batched.')
 );
-var missingCandidates = afaScanMissingCandidates(sharedCards);
+var missingCandidates =
+scanContext && Array.isArray(scanContext.missingCandidates)
+? scanContext.missingCandidates.slice()
+: afaScanMissingCandidates(sharedCards);
 _afaMissingMenuInfo = null;
 var missingBlock =
 '<div class="cbt-afa-action-block off" id="cbt-afa-missing-block">' +
@@ -12239,11 +12463,9 @@ afaClose();
 return;
 }
 if (action === 'assign') {
-if (b.disabled ||
-(!cbtAssignHasSiteTasks() && !cbtAssignHasPartialTasks())) {
-afaConfirm();
-return;
-}
+// v23.9.203: opening Assign is unconditional.  A stale/empty task snapshot
+// must never bounce the user back to Cart Actions.
+if (b.disabled) b.disabled = false;
 afaAssignPicker();
 return;
 }
@@ -13242,6 +13464,93 @@ try { panelHealthCheck(); } catch(eFast) {}
 }
 }, 1000);
 }
+
+// v23.9.204 — reload-smooth startup only.
+// Keep every feature/result the same, but never make Amazon's first visible
+// reload frame compete with warm-cache ingestion, full timer scans, sorting,
+// Firebase startup, stats startup, and history/name storage work at once.
+function cbtStartupNextFrame(fn) {
+var raf = (typeof requestAnimationFrame === 'function')
+? requestAnimationFrame
+: function(cb){ return setTimeout(cb, 16); };
+raf(function(){
+setTimeout(function(){ try { fn(); } catch(e) {} }, 0);
+});
+}
+function cbtLiveWarmHydrateStartupBatched(done) {
+var p = null;
+try { p = cbtLiveWarmRead(); } catch(e0) {}
+if (!p || !Array.isArray(p.items) || !p.items.length) {
+if (typeof done === 'function') cbtStartupNextFrame(done);
+return;
+}
+var i = 0;
+var count = 0;
+var perFrame = 6;
+function step() {
+var end = Math.min(p.items.length, i + perFrame);
+for (; i < end; i++) {
+var item = p.items[i];
+if (!item || item.shortClientRef == null || !cbtIsLiveBatch(item)) continue;
+var ref = String(item.shortClientRef);
+try {
+if (ingestItem(item, false)) {
+_cbtWarmLiveRefs.add(ref);
+count++;
+}
+} catch(e1) {}
+}
+if (i < p.items.length) {
+cbtStartupNextFrame(step);
+return;
+}
+try { if (count && activeTab === 'live') requestLiveRender(); } catch(e2) {}
+if (typeof done === 'function') cbtStartupNextFrame(done);
+}
+cbtStartupNextFrame(step);
+}
+function cbtInjectAllTimersStartupBatched() {
+if (!isDashboardView()) return;
+var cards = [];
+var headers = [];
+try { cards = Array.prototype.slice.call(document.querySelectorAll('job-card')); } catch(e0) {}
+try { headers = Array.prototype.slice.call(document.querySelectorAll('div.row.job-card-header')); } catch(e1) {}
+var ci = 0;
+var hi = 0;
+var perFrame = 6;
+function step() {
+var budget = perFrame;
+while (ci < cards.length && budget > 0) {
+var card = cards[ci++];
+budget--;
+if (!card || !card.isConnected) continue;
+if (isInExcludedSection(card)) {
+try { card.querySelectorAll('.etf-col-cell').forEach(function(col){ col.remove(); }); } catch(e2) {}
+continue;
+}
+var row = null;
+try { row = card.querySelector('div.row'); } catch(e3) {}
+if (row) {
+try { injectRowTimer(row); } catch(e4) {}
+}
+}
+while (ci >= cards.length && hi < headers.length && budget > 0) {
+var header = headers[hi++];
+budget--;
+if (!header || !header.isConnected) continue;
+var insideCard = null;
+try { insideCard = header.closest('job-card'); } catch(e5) {}
+if (insideCard) continue;
+if (isInExcludedSection(header)) {
+try { header.querySelectorAll('.etf-col-cell').forEach(function(col){ col.remove(); }); } catch(e6) {}
+continue;
+}
+try { injectRowTimer(header); } catch(e7) {}
+}
+if (ci < cards.length || hi < headers.length) cbtStartupNextFrame(step);
+}
+cbtStartupNextFrame(step);
+}
 function startCoreFeatures() {
 try {
 if (!style.isConnected) document.head.appendChild(style);
@@ -13254,72 +13563,92 @@ _uiScale = UI_SCALE_DEFAULT;
 }
 _fastMountUntil = Date.now() + 60000;
 
-// Mount the visible panel and start fresh data immediately. Keep expensive DOM
-// scans/observers in separate short idle slices so Amazon's own render is never
-// competing with every COMO feature in one long JavaScript task.
+// Reload-smooth rule: first mount only the visible dashboard shell. Everything
+// else starts in later frames/idle turns so the page never gets one large COMO
+// startup task while Amazon is painting its own dashboard.
 try { cbtTimerLoadRouteCache(); } catch(eTimerCacheLoad) {}
 try { if (isDashboardView()) injectPanel(); } catch(e7) {}
-installRouteHealth();
-try { if (isDashboardView()) cbtStartTimerRouteRepair(); } catch(eTimerBootRepair) {}
-try { cbtAssignSharedProtectionPull(true); } catch(eFastProtect) {}
-try { cbtAssignStartSharedProtectionLive(); } catch(eFastProtectLive) {}
-try { cbtStartTodayBoundaryClock(); } catch(e10) {}
-if (isComoSite()) {
-try { pollActiveTasks(); } catch(eLiveStart) {}
-if (!_statsLastRequestAt || (Date.now() - _statsLastRequestAt) > 700) {
-try { fetchAndUpdate(); } catch(eStatsStart) {}
-}
-}
 
 window.addEventListener('load', function(){
-cbtIdle(function(){ try { panelHealthCheck(); } catch(e4) {} }, 500);
+cbtIdle(function(){ try { panelHealthCheck(); } catch(e4) {} }, 900);
 }, { once:true });
 
-// Sorting is unchanged; it simply starts in its own idle slice instead of the
-// same synchronous block as panel construction and network startup.
+// Route/timer repair starts in its own frame.
+cbtStartupNextFrame(function(){
+try { installRouteHealth(); } catch(eRoute) {}
+try { if (isDashboardView()) cbtStartTimerRouteRepair(); } catch(eTimerBootRepair) {}
+try { cbtStartTodayBoundaryClock(); } catch(e10) {}
+});
+
+// Shared assignment protection starts separately so Firebase startup cannot
+// share the same main-thread turn as panel construction.
+cbtStartupNextFrame(function(){
+try { cbtAssignSharedProtectionPull(true); } catch(eFastProtect) {}
+try { cbtAssignStartSharedProtectionLive(); } catch(eFastProtectLive) {}
+});
+
+// Cached Live rows are ingested in tiny frame-sized batches. Fresh backend Live
+// starts after that cache is finished, preserving the existing "fresh wins"
+// behavior without a synchronous reload spike.
+cbtLiveWarmHydrateStartupBatched(function(){
+if (isComoSite()) {
+try { pollActiveTasks(); } catch(eLiveStart) {}
+}
+});
+
+// Fresh staffing stats begin after the visible panel has had a paint opportunity.
+cbtStartupNextFrame(function(){
+if (isComoSite() && (!_statsLastRequestAt || (Date.now() - _statsLastRequestAt) > 700)) {
+try { fetchAndUpdate(); } catch(eStatsStart) {}
+}
+});
+
+// Sorting behavior is unchanged; only startup timing is isolated.
 cbtIdle(function(){
 try { ensureSortAttachment(); } catch(e6) {}
-}, 320);
+}, 850);
 
-// Timer injection is still observer-driven afterward. This one initial scan is
-// separated from sorting so neither forces the other to share a long frame.
+// Preserve the exact Time Left logic, but split the one initial full scan over
+// small frames. The normal MutationObserver/ticker behavior is unchanged after.
 cbtIdle(function(){
 try {
 cbtRetargetTimerWatcher((_attached && _attached.isConnected) ? _attached : getContainer());
-injectAllTimers();
+cbtInjectAllTimersStartupBatched();
 } catch(e12) {}
-}, 420);
+}, 1000);
 
-// The document-wide watcher/autocomplete fallback are safety nets, not needed
-// to block initial data. Attach them after the first visible dashboard work.
+// Safety-net observers are last because they do not need to block first paint.
 cbtIdle(function(){
 try {
 panelWatcher.observe(document.body || document.documentElement, { childList: true, subtree: true });
 } catch(e5) {}
 try { startAutocompleteWatch(); } catch(e9) {}
-}, 520);
+}, 1250);
 }
+
 function startBackgroundFeatures() {
-// Spread non-critical storage/history/name work across separate idle slices.
-// Live tasks, stats and shared assignment protection already started in core.
+// Non-critical reload work is intentionally serialized. These functions keep
+// the same data/side effects; they simply no longer compete in the same reload
+// window and cause a visible main-thread pause.
 cbtIdle(function(){
 try { cbtResetTodayWeeklyV2(); } catch(eReset) {}
+}, 1800);
+setTimeout(function(){ cbtIdle(function(){
 try { cbtTrustedRateMigration(); } catch(e0) {}
-}, 700);
+}, 1800); }, 350);
 setTimeout(function(){ cbtIdle(function(){
 try { cbtBatchEventsPull(); } catch(eEvents) {}
-}, 700); }, 80);
+}, 1800); }, 750);
 setTimeout(function(){ cbtIdle(function(){
 try { syncPull(function(){ syncPush(); }); } catch(e2) {}
-}, 700); }, 180);
+}, 1800); }, 1200);
 setTimeout(function(){ cbtIdle(function(){
 try { syncNamesFromAllTabs(); } catch(e3) {}
-}, 700); }, 320);
-// Full localStorage discovery is the most expensive name fallback. It is not
-// needed for Live/Today/Weekly rendering, so keep it out of the reload frame.
+}, 1800); }, 1700);
+// Full localStorage discovery remains the last startup fallback.
 setTimeout(function(){ cbtIdle(function(){
 try { scanLocalStorageForNames(); } catch(e4) {}
-}, 1200); }, 3500);
+}, 2500); }, 5000);
 
 setInterval(function(){
 if (document.hidden) return;
@@ -13397,15 +13726,14 @@ if (_cbtStartupDone) return;
 _cbtStartupDone = true;
 MY_DEVICE_ID = getDeviceId();
 _statsStartupGraceUntil = Date.now() + 2500;
+// The tiny staffing warm cache is safe to prime synchronously. Live-cache
+// ingestion and fresh requests are deliberately deferred to post-paint startup
+// frames so document-start cannot freeze Amazon's reload.
 try { cbtStatsPrimeStartupWarm(); } catch(eWarmPrime) {}
-try { cbtLiveWarmHydrate(); } catch(eWarmLivePrime) {}
-if (isComoSite() && isDashboardView() && !document.hidden) {
-try { fetchAndUpdate(); } catch(eStatsWarm) {}
-}
-cbtAfterFirstPaint(startCoreFeatures, 120);
+cbtAfterFirstPaint(startCoreFeatures, 40);
 cbtAfterFirstPaint(function(){
-cbtIdle(startBackgroundFeatures, 900);
-}, 650);
+cbtIdle(startBackgroundFeatures, 1600);
+}, 900);
 }
 if (document.readyState === 'loading') {
 document.addEventListener('DOMContentLoaded', start);
