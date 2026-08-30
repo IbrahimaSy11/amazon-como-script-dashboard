@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.200
+// @version      23.9.201
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -9708,13 +9708,32 @@ cbtAssignPickerReturnAfterIdle();
 }
 }
 }
+// v23.9.201: paint the Assign picker immediately, then complete the atomic
+// Firebase turn acquisition in the background. The picker may be searched while
+// the lock is pending, but the real Assign button stays disabled until ownership
+// is confirmed. This removes network latency from the visible picker-open path
+// without weakening the one-computer-at-a-time safety rule.
 function cbtAssignOpenPickerWithGlobalLock() {
 var other = cbtAssignUiSessionOwnedByOther();
 if (other) {
 try { cbtAssignRenderGlobalSessionState(); } catch(e0) {}
 return Promise.resolve({ok:false,row:other});
 }
+afaAssignPicker({ lockPending: !!syncEnabled() });
 var overlayAtRequest = _afaOverlay;
+var cardAtRequest = overlayAtRequest && overlayAtRequest.querySelector('#cbt-afa-card');
+var noteAtRequest = cardAtRequest && cardAtRequest.querySelector('#cbt-afa-assign-turn');
+var startAtRequest = cardAtRequest && cardAtRequest.querySelector('[data-afa="assign-start"]');
+if (syncEnabled()) {
+if (noteAtRequest) {
+noteAtRequest.textContent = 'Checking shared Assign turn…';
+noteAtRequest.className = 'cbt-afa-note';
+}
+if (startAtRequest) {
+startAtRequest.disabled = true;
+startAtRequest.setAttribute('data-cbt-lock-pending','1');
+}
+}
 var acquireSeq = ++_cbtAssignUiAcquireSeq;
 return cbtAssignAcquireUiSessionLock(acquireSeq).then(function(lock){
 if (acquireSeq !== _cbtAssignUiAcquireSeq || !_afaOverlay || _afaOverlay !== overlayAtRequest) {
@@ -9723,21 +9742,33 @@ cbtAssignReleaseSharedReservation(CBT_ASSIGN_UI_SESSION_KEY, lock.token);
 }
 return {ok:false,cancelled:true};
 }
-if (!lock || !lock.ok) {
-try { cbtAssignRenderGlobalSessionState(); } catch(e1) {}
 var card = _afaOverlay && _afaOverlay.querySelector('#cbt-afa-card');
-var btn = card && card.querySelector('[data-afa="assign"]');
-if (btn && lock && lock.row) {
+var note = card && card.querySelector('#cbt-afa-assign-turn');
+var start = card && card.querySelector('[data-afa="assign-start"]');
+if (!lock || !lock.ok) {
+if (start) {
+start.disabled = true;
+start.removeAttribute('data-cbt-lock-pending');
+}
+if (lock && lock.row) {
 var sec = Math.max(1, Math.ceil((Number(lock.row.until) - cbtAssignNowMs()) / 1000));
-btn.disabled = true;
-btn.setAttribute('data-cbt-global-locked','1');
-btn.textContent = 'Wait ' + sec + 's';
-var block = btn.closest ? btn.closest('.cbt-afa-action-block') : null;
-if (block) block.classList.add('off');
+if (note) {
+note.textContent = 'Wait ' + sec + 's · another computer is using Assign';
+note.className = 'cbt-afa-note cbt-afa-assign-turn-wait';
+}
+} else if (note) {
+note.textContent = (lock && lock.reason) ? lock.reason : 'Shared Assign turn could not be verified.';
+note.className = 'cbt-afa-note';
 }
 return lock || {ok:false};
 }
-afaAssignPicker();
+if (start) start.removeAttribute('data-cbt-lock-pending');
+try {
+if (card && typeof card.__cbtAssignRefreshStartState === 'function') {
+card.__cbtAssignRefreshStartState();
+}
+} catch(eRefreshStart) {}
+try { cbtAssignStartPickerKeepAlive(card); } catch(eKeepAlive) {}
 try { cbtAssignRenderGlobalSessionState(); } catch(e2) {}
 return lock;
 });
@@ -12150,7 +12181,9 @@ out.push(name);
 }
 return out;
 }
-function afaAssignPicker() {
+function afaAssignPicker(options) {
+options = options || {};
+var lockPending = !!options.lockPending;
 var selectedNames = [];
 var activeIndex = -1;
 var currentRows = [];
@@ -12158,7 +12191,9 @@ var showingSuggestions = true;
 afaShell(
 'Assign',
 '<div id="cbt-afa-lead">Search and select one or more associates.</div>' +
-'<div id="cbt-afa-assign-turn" class="cbt-afa-note">Your Assign Turn · stays active while you use Assign</div>' +
+'<div id="cbt-afa-assign-turn" class="cbt-afa-note">' +
+(lockPending ? 'Checking shared Assign turn…' : 'Your Assign Turn · stays active while you use Assign') +
+'</div>' +
 '<div id="cbt-afa-assign-types">' +
 '<div class="cbt-afa-assign-type-title">Assign Source</div>' +
 '<label class="cbt-afa-opt">' +
@@ -12335,6 +12370,9 @@ currentRows = (res && res.rows) ? res.rows.slice() : [];
 activeIndex = currentRows.length ? 0 : -1;
 renderResults();
 }
+// Allow the async atomic-lock completion path to enable the real Assign
+// button without rebuilding the picker.
+card.__cbtAssignRefreshStartState = updateAssignStartState;
 typePartial.addEventListener('change', function(){
 syncPartialOnlyMode();
 });
@@ -12428,11 +12466,23 @@ cbtAssignRun(frozenNames, frozenTypes);
 return;
 }
 });
-cbtAssignRefreshPartialCheckboxState();
+// Paint/search first. The strict Partially Batched eligibility scan can be
+// comparatively expensive, so refresh that checkbox just after the picker is
+// already visible rather than blocking its first paint.
+typePartial.disabled = true;
+var partialLabel = typePartial.closest ? typePartial.closest('label.cbt-afa-opt') : null;
+if (partialLabel) partialLabel.style.opacity = '0.45';
 renderSelected();
 syncPartialOnlyMode();
 search('');
+cbtAfterFirstPaint(function(){
+if (!_afaOverlay || !_afaOverlay.isConnected || !card.isConnected) return;
+try { cbtAssignRefreshPartialCheckboxState(); } catch(ePartialWarm) {}
+try { syncPartialOnlyMode(); } catch(ePartialSync) {}
+}, 0);
+if (!lockPending) {
 try { cbtAssignStartPickerKeepAlive(card); } catch(ePickerKeepAlive) {}
+}
 try { input.focus(); } catch(e) {}
 }
 function afaConfirmRender(list, pbAll, pbExpected, suppress, scanContext) {
