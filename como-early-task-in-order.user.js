@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.178
+// @version      23.9.191
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -869,7 +869,8 @@ style.textContent = `
 
     /* ── UI polish (v21.10) ── */
     @keyframes cbtFadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
-    #cbt-panel { animation: cbtFadeIn 0.28s ease-out; }
+    /* v23.9.179: keep other popup fades, but never animate the main dashboard on reload/remount. */
+    #cbt-panel { animation: none !important; }
 
     /* row hover: left accent bar, no layout shift */
     #cbt-table tbody tr:hover td:first-child, #cbt-hist-table tbody tr:hover td:first-child,
@@ -2137,6 +2138,10 @@ _sorting = true;
 var frag = document.createDocumentFragment();
 data.forEach(function (item) { frag.appendChild(item.card); });
 container.appendChild(frag);
+// The reorder above queues a childList record on our own sort observer. Drop
+// only those already-queued self records before releasing _sorting; Amazon's
+// later mutations are still observed normally.
+try { if (_sortObserver) _sortObserver.takeRecords(); } catch(eSortRecords) {}
 _sorting = false;
 }
 function attach(container) {
@@ -2302,22 +2307,32 @@ value: excluded
 return excluded;
 }
 function injectAllTimers() {
-var nodes = document.querySelectorAll('div.row.job-card-header, job-card');
-for (var i = 0; i < nodes.length; i++) {
-var el = nodes[i];
-if (isInExcludedSection(el)) {
-try {
-el.querySelectorAll('.etf-col-cell').forEach(function(col){ col.remove(); });
-} catch(e0) {}
+// Process each job-card once. The old combined selector returned both the
+// job-card and its nested header row, so the same row was inspected twice.
+var cards = document.querySelectorAll('job-card');
+for (var i = 0; i < cards.length; i++) {
+var card = cards[i];
+if (isInExcludedSection(card)) {
+try { card.querySelectorAll('.etf-col-cell').forEach(function(col){ col.remove(); }); } catch(e0) {}
 continue;
 }
-if (el.matches && el.matches('div.row.job-card-header')) {
-injectRowTimer(el);
-} else {
 var row = null;
-try { row = el.querySelector('div.row'); } catch(e1) {}
+try { row = card.querySelector('div.row'); } catch(e1) {}
 if (row) injectRowTimer(row);
 }
+// Keep support for any standalone header row Amazon may render outside a
+// job-card, without re-processing headers already covered above.
+var headers = document.querySelectorAll('div.row.job-card-header');
+for (var j = 0; j < headers.length; j++) {
+var header = headers[j];
+var insideCard = null;
+try { insideCard = header.closest('job-card'); } catch(e2) {}
+if (insideCard) continue;
+if (isInExcludedSection(header)) {
+try { header.querySelectorAll('.etf-col-cell').forEach(function(col){ col.remove(); }); } catch(e3) {}
+continue;
+}
+injectRowTimer(header);
 }
 }
 function tickTimers() {
@@ -2341,15 +2356,29 @@ var _timerMutationHosts = new Set();
 var _timerMutationPending = false;
 function queueTimerHost(node) {
 if (!node || node.nodeType !== 1) return;
+function addHost(candidate) {
+if (!candidate || candidate.nodeType !== 1) return;
+var normalized = candidate;
+try {
+if (!(candidate.matches && candidate.matches('job-card'))) {
+normalized = candidate.closest ? (candidate.closest('job-card') || candidate) : candidate;
+}
+} catch(eNorm) { normalized = candidate; }
+if (normalized) _timerMutationHosts.add(normalized);
+}
 var host = null;
 try {
-if (node.matches && node.matches('job-card, div.row.job-card-header')) host = node;
-else if (node.closest) host = node.closest('job-card, div.row.job-card-header');
+if (node.matches && node.matches('job-card')) host = node;
+else if (node.matches && node.matches('div.row.job-card-header')) host = node.closest('job-card') || node;
+else if (node.closest) host = node.closest('job-card') || node.closest('div.row.job-card-header');
 } catch(e) {}
-if (host) _timerMutationHosts.add(host);
+if (host) addHost(host);
 try {
-node.querySelectorAll('job-card, div.row.job-card-header').forEach(function(h){
-_timerMutationHosts.add(h);
+node.querySelectorAll('job-card').forEach(addHost);
+node.querySelectorAll('div.row.job-card-header').forEach(function(h){
+var parentCard = null;
+try { parentCard = h.closest('job-card'); } catch(eHeader) {}
+if (!parentCard) addHost(h);
 });
 } catch(e2) {}
 }
@@ -3036,6 +3065,7 @@ if (provisional) {
 warm = cbtStatsPrimeStartupWarm() || cbtStatsLoadWarm(false);
 if (warm) {
 inProgress = warm.inProgress;
+remaining = warm.remaining;
 recommended = warm.recommended;
 }
 }
@@ -4053,6 +4083,58 @@ _cbtEventFastestStatsCache = stats;
 return _cbtEventFastestStatsCache;
 }
 var taskCache = new Map();
+
+// v23.9.179 — instant, stable Live reload.
+// Keep only a very short snapshot of the last authoritative Live rows so a
+// normal reload does not show an empty table while the first API request is in
+// flight. Fresh backend data always wins, and provisional rows missing from the
+// first successful backend response are removed immediately.
+var CBT_LIVE_WARM_MAX_AGE_MS = 30000;
+var _cbtWarmLiveRefs = new Set();
+function cbtLiveWarmCacheKey() {
+return 'cbt_live_warm_v1_' + String(STORE_ID || 'unknown');
+}
+function cbtLiveWarmRead() {
+var raw = '';
+try { raw = sessionStorage.getItem(cbtLiveWarmCacheKey()) || ''; } catch(e0) {}
+if (!raw) { try { raw = localStorage.getItem(cbtLiveWarmCacheKey()) || ''; } catch(e1) {} }
+if (!raw) return null;
+try {
+var p = JSON.parse(raw);
+var age = Date.now() - Number(p && p.ts);
+if (!p || !Array.isArray(p.items) || !isFinite(age) || age < 0 || age > CBT_LIVE_WARM_MAX_AGE_MS) return null;
+return p;
+} catch(e2) { return null; }
+}
+function cbtLiveWarmHydrate() {
+var p = cbtLiveWarmRead();
+if (!p) return 0;
+var count = 0;
+for (var i = 0; i < p.items.length; i++) {
+var item = p.items[i];
+if (!item || item.shortClientRef == null || !cbtIsLiveBatch(item)) continue;
+var ref = String(item.shortClientRef);
+try {
+if (ingestItem(item, false)) {
+_cbtWarmLiveRefs.add(ref);
+count++;
+}
+} catch(e) {}
+}
+return count;
+}
+function cbtLiveWarmSave(bestByRef) {
+var items = [];
+try {
+Object.keys(bestByRef || {}).forEach(function(ref){
+var row = bestByRef[ref] && bestByRef[ref].data;
+if (row && row.shortClientRef != null && cbtIsLiveBatch(row)) items.push(row);
+});
+var raw = JSON.stringify({ ts:Date.now(), items:items });
+try { sessionStorage.setItem(cbtLiveWarmCacheKey(), raw); } catch(e0) {}
+try { localStorage.setItem(cbtLiveWarmCacheKey(), raw); } catch(e1) {}
+} catch(e2) {}
+}
 var activeTab = 'live';
 var _cbtLiveDashboardSyncPending = false;
 var _liveRenderPending = false;
@@ -5218,15 +5300,23 @@ return typeof raw === 'string' && CBT_PASSIVE_JSON_RE.test(raw);
 var _origFetch = window.fetch;
 window.fetch = async function() {
 var resp;
+var reqUrl = '';
+try {
+var req0 = arguments[0];
+reqUrl = String(req0 && req0.url ? req0.url : (req0 || ''));
+} catch(eUrl) {}
 try { resp = await _origFetch.apply(this, arguments); }
 catch(e) { throw e; }
 try {
 if ((resp.headers.get('content-type') || '').includes('json')) {
 resp.clone().text().then(function(raw){
 if (!raw || !cbtPassiveJsonMayMatter(raw)) return;
-cbtIdle(function(){
-try { ingestData(JSON.parse(raw)); } catch(e2) {}
-}, 700);
+var apply = function(){ try { ingestData(JSON.parse(raw)); } catch(e2) {} };
+if (/activeJobsWithSiteSummary/i.test(reqUrl)) {
+try { requestAnimationFrame(apply); } catch(eFast) { setTimeout(apply, 0); }
+} else {
+cbtIdle(apply, 700);
+}
 }).catch(function(){});
 }
 } catch(e3) {}
@@ -5247,12 +5337,17 @@ try {
 payload = xhr.responseType === 'json' ? xhr.response : xhr.responseText;
 } catch(e0) { return; }
 if (typeof payload === 'string' && !cbtPassiveJsonMayMatter(payload)) return;
-cbtIdle(function(){
+var applyXhrLive = function(){
 try {
 var d = (typeof payload === 'string') ? JSON.parse(payload) : payload;
 if (d) ingestData(d);
 } catch(e1) {}
-}, 700);
+};
+if (/activeJobsWithSiteSummary/i.test(String(xhr._cbtUrl || ''))) {
+try { requestAnimationFrame(applyXhrLive); } catch(eFastXhr) { setTimeout(applyXhrLive, 0); }
+} else {
+cbtIdle(applyXhrLive, 700);
+}
 } catch(e2) {}
 });
 return _xhrSend.apply(this, arguments);
@@ -5411,6 +5506,7 @@ cbtObserveAuthoritativeLive(bestByRef[ref].data);
 });
 activeRefs.forEach(function(ref) {
 _cbtMissingPollsByRef[ref] = 0;
+try { _cbtWarmLiveRefs.delete(String(ref)); } catch(eWarmSeen) {}
 var locked = _cbtLiveStartByRef[ref];
 if (locked) {
 locked.lastSeen = cbtNowMs();
@@ -5421,6 +5517,15 @@ taskCache.forEach(function(val, key) {
 key = String(key);
 if (activeRefs.has(key)) {
 _cbtMissingPollsByRef[key] = 0;
+return;
+}
+// A cached-on-reload Live row is provisional. The first successful
+// authoritative response is enough to remove it if it is no longer active.
+if (_cbtWarmLiveRefs.has(key)) {
+_cbtWarmLiveRefs.delete(key);
+taskCache.delete(key);
+try { delete _cbtMissingPollsByRef[key]; } catch(eWarmMiss) {}
+cbtForgetLiveStart(key);
 return;
 }
 cbtMarkLiveMissing(key);
@@ -5436,9 +5541,10 @@ cbtForgetLiveStart(key);
 });
 ingestData(freshData, true);
 Object.keys(bestByRef).forEach(function(ref) {
+// ingestItem(..., true) already performs cbtObserveAuthoritativeLive.
 ingestItem(bestByRef[ref].data, true);
-cbtObserveAuthoritativeLive(bestByRef[ref].data);
 });
+try { cbtLiveWarmSave(bestByRef); } catch(eWarmSave) {}
 cbtPruneOldLiveStarts();
 if (isDashboardView() && _cbtLiveDashboardSyncPending) {
 try {
@@ -6531,8 +6637,15 @@ if (!mp || !mp.isConnected) injectPanel();
 }, 50);
 var _acMutationRun = null;
 var panelWatcher = new MutationObserver(function(mutations) {
-var dashboard = isDashboardView();
+var allOwnUi = !!(mutations && mutations.length);
+for (var oi = 0; oi < mutations.length; oi++) {
+if (!cbtMutationIsOnlyOwnUi(mutations[oi])) { allOwnUi = false; break; }
+}
 var livePanel = document.getElementById('cbt-panel');
+// Own dashboard/overlay updates are not a reason to re-run route/panel health.
+// If the panel itself was removed, livePanel is disconnected and normal recovery continues.
+if (allOwnUi && livePanel && livePanel.isConnected) return;
+var dashboard = isDashboardView();
 if (dashboard) {
 if (!livePanel || !livePanel.isConnected) {
 try { injectPanel(); } catch(eFastPanel) {}
@@ -8983,12 +9096,12 @@ style.textContent =
 '.cbt-assign-cooldown-destination::after{' +
 'content:attr(data-cbt-cooldown);' +
 'position:absolute;' +
-'left:var(--cbt-accept-gap-x,50%);' +
+'left:calc(var(--cbt-destination-text-end,0px) + 1ch);' +
 'right:auto;' +
 'max-width:none;' +
 'overflow:visible;' +
 'top:50%;' +
-'transform:translate(-50%,-50%);' +
+'transform:translateY(-50%);' +
 'text-align:center;' +
 'display:block;' +
 'margin:0;' +
@@ -9009,9 +9122,161 @@ style.textContent =
 '}';
 (document.head || document.documentElement).appendChild(style);
 }
+// v23.9.191 performance-only: removed duplicate timer work, reduced redundant half-second heartbeats, suppressed self-induced sort/observer churn, and cached stable Destination text measurements. Assignment/data rules are unchanged.
+// v23.9.190: fixed gray-CREATED self-lock: the Assign run's own pending associate reservation no longer masquerades as a cooldown and disqualifies the cart before submit.
+// v23.9.189: gray CREATED rows are true open normal-Assign carts after the gray-name cooldown ends; they no longer require the selected associate to match the old gray name.
+// v23.9.188: use Amazon's exact Task Assignment associate-name element as the
+// authoritative visual signal for a pending, not-yet-accepted assignment.
+// In the live grid Amazon renders that name in:
+//   [data-dtk-test-id="job-grid-card-job-associate-id"]
+// and uses muted gray (for example #999999) while the job is still CREATED.
+// v23.9.187: gray CREATED normal-Assign retry survives unrelated backend operation
+// states and accepts any non-false 2xx response from the normal assign endpoint.
+function cbtAssignAssignmentNameElement(cell) {
+if (!cell || !cell.isConnected) return null;
+try {
+var exact = cell.querySelector('[data-dtk-test-id="job-grid-card-job-associate-id"]');
+if (exact && exact.isConnected) return exact;
+} catch(e0) {}
+return null;
+}
+function cbtAssignAssignmentText(cell) {
+if (!cell) return '';
+var exact = cbtAssignAssignmentNameElement(cell);
+if (exact) {
+var exactText = cbtAssignNormText(exact.textContent || '');
+if (exactText) return exactText;
+}
+return cbtAssignNormText(cell.textContent || '');
+}
+function cbtAssignStyleLooksGray(el) {
+if (!el || el.nodeType !== 1) return false;
+var hint = String(el.className || '') + ' ' + String(el.getAttribute && el.getAttribute('style') || '');
+if (/\b(?:text[-_ ]?muted|muted|secondary|gray|grey|disabled|inactive)\b/i.test(hint)) return true;
+var cs = null;
+try { cs = window.getComputedStyle(el); } catch(e0) { cs = null; }
+if (!cs) return false;
+var m = String(cs.color || '').match(/rgba?\(\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)/i);
+if (!m) return false;
+var r = Number(m[1]), g = Number(m[2]), b = Number(m[3]);
+if (![r,g,b].every(Number.isFinite)) return false;
+var max = Math.max(r,g,b), min = Math.min(r,g,b), avg = (r+g+b)/3;
+// Amazon pending assignment gray is #999999 (153/153/153). Keep a neutral
+// medium-gray range while excluding normal dark/black accepted names.
+return (max - min) <= 32 && avg >= 88 && avg <= 210;
+}
+function cbtAssignAssignmentCellLooksGray(cell, assignmentText) {
+if (!cell || !cell.isConnected) return false;
+var exact = cbtAssignAssignmentNameElement(cell);
+if (exact) {
+var exactName = cbtAssignNormText(exact.textContent || '').toLowerCase();
+var wantedExact = cbtAssignNormText(assignmentText || '').toLowerCase();
+if (!exactName) return false;
+if (wantedExact && exactName !== wantedExact) return false;
+return cbtAssignStyleLooksGray(exact);
+}
+var wanted = cbtAssignNormText(assignmentText || '').toLowerCase();
+if (!wanted) return false;
+try {
+var walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT, null);
+var node = null;
+while ((node = walker.nextNode())) {
+var raw = cbtAssignNormText(node.nodeValue || '');
+if (!raw) continue;
+var low = raw.toLowerCase();
+if (low !== wanted && wanted.indexOf(low) === -1 && low.indexOf(wanted) === -1) continue;
+var el = node.parentElement || cell;
+if (cbtAssignStyleLooksGray(el)) return true;
+}
+} catch(e1) {}
+return cbtAssignStyleLooksGray(cell);
+}
+function cbtAssignProgressIsCreatedOnly(progressRaw) {
+var progress = cbtAssignNormText(progressRaw || '').toUpperCase();
+if (!/\bCREATED\b/.test(progress)) return false;
+return !/\b(BATCHING|IN_PROGRESS|ACCEPTED|STARTED|ACTIVE|COMPLETED|COMPLETE|DONE)\b/.test(progress);
+}
+function cbtAssignRowIsGrayCreated(r) {
+if (!r || !r.assignmentHasName || !r.assignmentGray) return false;
+return cbtAssignProgressIsCreatedOnly(r.progressRaw);
+}
+function cbtAssignRowIsGrayCreatedAvailable(r) {
+if (!cbtAssignRowIsGrayCreated(r)) return false;
+// A gray Task Assignment name means the cart is still waiting for acceptance.
+// Once the CURRENT gray assignee's real cooldown is over, treat this row as an
+// open normal-Assign cart. During the Assign run, do NOT mistake this browser's
+// own temporary associate reservation for a cooldown; that self-lock previously
+// made a valid gray retry become ineligible immediately before the request.
+var grayAssociate = cbtAssignNormText(r.assignment || '');
+if (!grayAssociate) return false;
+try {
+var grayLock = cbtAssignAssociateProtection(grayAssociate);
+if (grayLock) {
+var ownReservation = !!(
+grayLock.pending &&
+currentAssociateReservationToken &&
+String(grayLock.token || '') === String(currentAssociateReservationToken) &&
+cbtAssignNormText(currentAssociateReservationName || '').toLowerCase() ===
+grayAssociate.toLowerCase()
+);
+if (!ownReservation) return false;
+}
+} catch(eCooldown) {}
+return true;
+}
+function cbtAssignRowIsGrayCreatedPending(r, associate) {
+if (!cbtAssignRowIsGrayCreatedAvailable(r)) return false;
+var wanted = cbtAssignNormText(associate || '').toLowerCase();
+if (!wanted) return true;
+return cbtAssignNormText(r.assignment || '').toLowerCase() === wanted;
+}
+function cbtAssignEntryIsGrayCreatedPending(entry, protectionRow) {
+if (!entry || !entry.card || !entry.card.isConnected) return false;
+var assignmentCell = entry.assignmentCell;
+var progressCell = entry.progressCell;
+if (!assignmentCell || !progressCell || !assignmentCell.isConnected || !progressCell.isConnected) return false;
+var assignment = cbtAssignAssignmentText(assignmentCell);
+if (!assignment || /^(?:ASSIGNABLE|UNASSIGNABLE)$/i.test(assignment)) return false;
+if (!cbtAssignProgressIsCreatedOnly(progressCell.textContent || '')) return false;
+var expected = protectionRow ? cbtAssignNormText(protectionRow.associate || '').toLowerCase() : '';
+if (expected && assignment.toLowerCase() !== expected) return false;
+return cbtAssignAssignmentCellLooksGray(assignmentCell, assignment);
+}
 var _cbtAssignCardIndexVersion = -1;
 var _cbtAssignCardIndex = null;
 var _cbtAssignHighlightedCards = new Set();
+var _cbtAssignDestinationMeasureCache = (typeof WeakMap === 'function' ? new WeakMap() : null);
+function cbtAssignMeasureDestinationTextEnd(cell) {
+if (!cell || !cell.isConnected) return 0;
+var textSig = cbtAssignNormText(cell.textContent || '');
+if (_cbtAssignDestinationMeasureCache) {
+var cached = _cbtAssignDestinationMeasureCache.get(cell);
+if (cached && cached.text === textSig && isFinite(cached.end)) return cached.end;
+}
+var textEndLocal = 0;
+try {
+var destRect = cell.getBoundingClientRect();
+var walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT, null);
+var node = null, best = null;
+while ((node = walker.nextNode())) {
+if (!node || !String(node.nodeValue || '').trim()) continue;
+var parent = node.parentElement;
+if (!parent) continue;
+var tag = String(parent.tagName || '').toUpperCase();
+if (tag === 'SCRIPT' || tag === 'STYLE') continue;
+var range = document.createRange();
+range.selectNodeContents(node);
+var rr = range.getBoundingClientRect();
+if (!rr || rr.width <= 0) continue;
+if (!best || rr.right > best.right) best = rr;
+}
+textEndLocal = best ? Math.max(0, best.right - destRect.left) : 0;
+} catch(eMeasure) { textEndLocal = 0; }
+if (_cbtAssignDestinationMeasureCache) {
+try { _cbtAssignDestinationMeasureCache.set(cell, {text:textSig, end:textEndLocal}); } catch(eCache) {}
+}
+return textEndLocal;
+}
 function cbtAssignBuildCardIndex() {
 if (_cbtAssignCardIndex &&
 _cbtAssignCardIndexVersion === _cbtRelevantDomVersion) {
@@ -9019,8 +9284,11 @@ return { index:_cbtAssignCardIndex, rebuilt:false };
 }
 var index = {
 rows: [],
-byRef: Object.create(null)
+byRef: Object.create(null),
+byCard: (typeof WeakMap === 'function' ? new WeakMap() : null)
 };
+var liveMap = null;
+try { liveMap = cbtAssignHeaderMap(); } catch(eMap) { liveMap = null; }
 var cards = document.querySelectorAll('job-card');
 for (var i = 0; i < cards.length; i++) {
 var card = cards[i];
@@ -9036,6 +9304,8 @@ card.getAttribute('data-cbt-protect-ref') || ''
 ).toLowerCase();
 var destinationCell = null;
 var cartCell = null;
+var assignmentCell = null;
+var progressCell = null;
 try {
 var rowEl = card.querySelector('div.row');
 var cols = rowEl
@@ -9043,15 +9313,22 @@ var cols = rowEl
 : null;
 if (cols && cols.length > 1) destinationCell = cols[1];
 if (cols && cols.length > 2) cartCell = cols[2];
+if (cols && liveMap) {
+if (liveMap.assignment >= 0 && cols.length > liveMap.assignment) assignmentCell = cols[liveMap.assignment];
+if (liveMap.progress >= 0 && cols.length > liveMap.progress) progressCell = cols[liveMap.progress];
+}
 } catch(eDest) {}
 var entry = {
 card: card,
 destinationCell: destinationCell,
 cartCell: cartCell,
+assignmentCell: assignmentCell,
+progressCell: progressCell,
 currentRef: currentRef,
 rememberedRef: rememberedRef
 };
 index.rows.push(entry);
+if (index.byCard) index.byCard.set(card, entry);
 function addRef(ref) {
 if (!ref) return;
 if (!index.byRef[ref]) index.byRef[ref] = [];
@@ -9084,6 +9361,7 @@ try {
 cell.classList.remove('cbt-assign-cooldown-destination');
 cell.removeAttribute('data-cbt-cooldown');
 cell.style.removeProperty('--cbt-accept-gap-x');
+cell.style.removeProperty('--cbt-destination-text-end');
 } catch(e2) {}
 }
 }
@@ -9164,6 +9442,13 @@ var selectedRef =
 : entry.currentRef);
 var protectedInfo = selectedRef ? byRef[selectedRef] : null;
 if (!protectedInfo) continue;
+// Highlight/count down only when Amazon visibly confirms the pending state:
+// the same associate name is gray AND the row is still CREATED. A row that
+// is already BATCHING/accepted never receives even a temporary highlight.
+if (!cbtAssignEntryIsGrayCreatedPending(entry, protectedInfo.row)) {
+cbtAssignClearCooldownEntry(entry);
+continue;
+}
 try {
 card.classList.add('cbt-assign-cooldown');
 card.setAttribute('data-cbt-protect-ref', selectedRef);
@@ -9176,37 +9461,13 @@ var nextText = protectedInfo.seconds + 's To Accept';
 if (destinationCell.getAttribute('data-cbt-cooldown') !== nextText) {
 destinationCell.setAttribute('data-cbt-cooldown', nextText);
 }
-// Put the label between the VISIBLE Destination value and VISIBLE Cart value,
-// not at the geometric middle of either column. Nudge it slightly left as requested.
-var cartCell = entry.cartCell;
-if (cartCell && cartCell.isConnected) {
-var destRect = destinationCell.getBoundingClientRect();
-var cartRect = cartCell.getBoundingClientRect();
-function directTextRect(cell) {
-try {
-var nodes = cell.childNodes || [];
-for (var ni = 0; ni < nodes.length; ni++) {
-var node = nodes[ni];
-if (!node || node.nodeType !== 3 || !String(node.nodeValue || '').trim()) continue;
-var range = document.createRange();
-range.selectNodeContents(node);
-var rr = range.getBoundingClientRect();
-if (rr && rr.width > 0) return rr;
-}
-} catch(eTextRect) {}
-return null;
-}
-var destTextRect = directTextRect(destinationCell);
-var cartTextRect = directTextRect(cartCell);
-var gapLeft = destTextRect ? destTextRect.right : (destRect.left + destRect.width * 0.35);
-var gapRight = cartTextRect ? cartTextRect.left : (cartRect.left + cartRect.width * 0.20);
-var targetViewportX = (gapLeft + gapRight) / 2;
-// Nudge the label a little farther left while keeping it in the open gap and without moving columns.
-targetViewportX -= 22;
-var localX = targetViewportX - destRect.left;
-destinationCell.style.setProperty('--cbt-accept-gap-x', localX.toFixed(2) + 'px');
-} else {
-destinationCell.style.removeProperty('--cbt-accept-gap-x');
+// Keep the countdown inside Destination with the existing one-character gap.
+// The Destination value is stable while only the countdown changes, so reuse
+// its measured text end instead of forcing TreeWalker/Range/layout work every second.
+var textEndLocal = cbtAssignMeasureDestinationTextEnd(destinationCell);
+var textEndCss = textEndLocal.toFixed(2) + 'px';
+if (destinationCell.style.getPropertyValue('--cbt-destination-text-end') !== textEndCss) {
+destinationCell.style.setProperty('--cbt-destination-text-end', textEndCss);
 }
 } catch(eCell) {}
 }
@@ -9215,9 +9476,11 @@ nextHighlighted.add(card);
 }
 _cbtAssignHighlightedCards.forEach(function(card){
 if (!card || !card.isConnected || nextHighlighted.has(card)) return;
-var entry = null;
+var entry = cardIndex.byCard ? cardIndex.byCard.get(card) : null;
+if (!entry) {
 for (var i2 = 0; i2 < cardIndex.rows.length; i2++) {
 if (cardIndex.rows[i2].card === card) { entry = cardIndex.rows[i2]; break; }
+}
 }
 if (entry) cbtAssignClearCooldownEntry(entry);
 else {
@@ -9229,6 +9492,7 @@ if (oldCell) {
 oldCell.classList.remove('cbt-assign-cooldown-destination');
 oldCell.removeAttribute('data-cbt-cooldown');
 oldCell.style.removeProperty('--cbt-accept-gap-x');
+oldCell.style.removeProperty('--cbt-destination-text-end');
 }
 } catch(eOld) {}
 }
@@ -9269,9 +9533,7 @@ var linkInfo = cbtAssignLinkInfoFromCard(card, ref);
 var id = linkInfo && linkInfo.id;
 if (!id) continue;
 var cart = cbtAssignNormText(cols[map.cart].textContent || '');
-var assignment = cbtAssignNormText(
-cols[map.assignment].textContent || ''
-);
+var assignment = cbtAssignAssignmentText(cols[map.assignment]);
 var batchRaw = cbtAssignNormText(cols[map.batch].textContent || '');
 var batchMatch = batchRaw.match(/\d{1,2}:\d{2}\s*(?:AM|PM)/i);
 var batchMs = batchMatch ? parseTime(batchMatch[0]) : null;
@@ -9294,6 +9556,7 @@ assignmentHasName:
 !!assignment &&
 assignment.toUpperCase() !== 'ASSIGNABLE' &&
 assignment.toUpperCase() !== 'UNASSIGNABLE',
+assignmentGray: cbtAssignAssignmentCellLooksGray(cols[map.assignment], assignment),
 assignable: assignment.toUpperCase() === 'ASSIGNABLE',
 unassignable: assignment.toUpperCase() === 'UNASSIGNABLE',
 batchRaw: batchRaw,
@@ -9709,6 +9972,7 @@ var partialOnly = !!options.partialOnly;
 return {
 partialOnly: partialOnly,
 partialIds: options.partialIds || null,
+associate: cbtAssignNormText(options.associate || ''),
 name: !partialOnly,
 blank: !partialOnly,
 cart: !partialOnly && !!options.cart,
@@ -9719,6 +9983,10 @@ function cbtAssignTaskTypeAllowed(r, options) {
 var scope = cbtAssignNormalizeTaskTypes(options);
 var type = cbtAssignTaskType(r);
 if (scope.partialOnly) return type === 'partial';
+// A gray CREATED row is still waiting for acceptance, so after the gray-name
+// cooldown ends it is treated as an available normal-Assign cart regardless of
+// which associate is selected in the Assign workflow.
+if (cbtAssignRowIsGrayCreatedAvailable(r)) return true;
 if (type === 'blank') return true;
 if (type === 'name') return scope.name;
 if (type === 'cart') return scope.cart;
@@ -9747,6 +10015,12 @@ return false;
 return true;
 }
 if (r.partial || r.batchMs == null) return false;
+// A visible gray-name CREATED row is still an open normal-assignment cart once
+// the CURRENT gray assignee cooldown is over. This branch runs before ordinary
+// Name/Cart type gates so it cannot be filtered out as an occupied cart.
+if (cbtAssignRowIsGrayCreated(r)) {
+return cbtAssignRowIsGrayCreatedAvailable(r);
+}
 // Normal Assign must never touch a cart/task Amazon marks UNASSIGNABLE.
 // Partially Batched Only keeps its separate verified Force-Assign workflow.
 if (r.unassignable || cbtAssignNormText(r.assignment || '').toUpperCase() === 'UNASSIGNABLE') return false;
@@ -9775,11 +10049,13 @@ return rows
 if (options.partialOnly) {
 return a.rowOrder - b.rowOrder;
 }
-// For normal Assign, use blank available tasks first (no associate and no cart).
-// This preserves optional Cart Only / Name + Cart support, but blank tasks win first.
-var aBlank = cbtAssignTaskType(a) === 'blank' ? 0 : 1;
-var bBlank = cbtAssignTaskType(b) === 'blank' ? 0 : 1;
-if (aBlank !== bBlank) return aBlank - bBlank;
+// An available gray CREATED row is treated like a blank task for priority.
+// Batch Target decides which open cart is earliest.
+var aPrimary = (cbtAssignTaskType(a) === 'blank' ||
+cbtAssignRowIsGrayCreatedAvailable(a)) ? 0 : 1;
+var bPrimary = (cbtAssignTaskType(b) === 'blank' ||
+cbtAssignRowIsGrayCreatedAvailable(b)) ? 0 : 1;
+if (aPrimary !== bPrimary) return aPrimary - bPrimary;
 var aBatch = Number(a.batchMs);
 var bBatch = Number(b.batchMs);
 var hasA = Number.isFinite(aBatch);
@@ -9920,11 +10196,17 @@ reason: 'backend state unavailable — assignment API will decide'
 };
 }
 var state = cbtAssignOperationStateDeep(info, 0);
-var allowExplicitReassign =
+var allowPartialReassign =
 !!options.allowPartialReassign;
+var allowGrayCreatedReassign =
+!!options.allowGrayCreatedReassign;
 var assignability = null;
 try { assignability = afaAssignabilityDeep(info, 0); } catch(eAssignability) {}
-if (assignability === 'UNASSIGNABLE' && !allowExplicitReassign) {
+// A visible gray-name CREATED row is still eligible for the NORMAL Assign flow.
+// Amazon can report that already-named, not-yet-accepted job as UNASSIGNABLE even
+// though assignToAssociate can still be used on it. Only bypass that assignability
+// gate for this verified gray-CREATED case; accepted/BATCHING states stay blocked.
+if (assignability === 'UNASSIGNABLE' && !allowPartialReassign && !allowGrayCreatedReassign) {
 return {
 ok: false,
 retryable: true,
@@ -9934,7 +10216,30 @@ state: state || null,
 reason: 'task is UNASSIGNABLE — skipped before assignment request'
 };
 }
-if (cbtAssignStateLooksAccepted(state) && !allowExplicitReassign) {
+// For a verified visible gray CREATED retry, do not use the generic recursive
+// state as the blocker: job details can contain COMPLETED states from unrelated
+// operations. Only an actually active BATCHING operation overrides the visible
+// gray CREATED row. The DOM guard is checked again after this request.
+if (allowGrayCreatedReassign) {
+var grayAlreadyActive = false;
+try { grayAlreadyActive = cbtIsLiveBatch(info); } catch(eGrayLive) {}
+if (grayAlreadyActive) {
+return {
+ok: false,
+retryable: true,
+accepted: true,
+state: 'BATCHING',
+reason: 'task already active/accepted — BATCHING'
+};
+}
+return {
+ok: true,
+verified: true,
+state: state || null,
+grayCreatedRetry: true
+};
+}
+if (cbtAssignStateLooksAccepted(state) && !allowPartialReassign) {
 return {
 ok: false,
 retryable: true,
@@ -9948,7 +10253,7 @@ ok: true,
 verified: true,
 state: state || null,
 reassignAttempt: !!(
-allowExplicitReassign &&
+allowPartialReassign &&
 cbtAssignStateLooksAccepted(state)
 )
 };
@@ -10193,6 +10498,7 @@ reason: 'task changed before direct assignment'
 };
 }
 }
+function submitDirectAssignment() {
 return cbtAssignDirectSubmit(
 jobId,
 associate
@@ -10229,9 +10535,29 @@ reason:'Assignment rejected by the API' +
 (status ? ' — HTTP ' + status : '')
 };
 }
+// The gray row already contains the same associate before the retry, so
+// associate-name verification cannot distinguish old from new. For this one
+// verified gray CREATED path, a successful 2xx response (unless the API
+// explicitly returned false above) is the authoritative confirmation that the
+// SAME normal Assign request was accepted.
+if (assignOptions.allowGrayCreatedReassign) {
+return markSuccess(status, true);
+}
 return verifyAmbiguous(status, body, 'Successful HTTP response did not explicitly confirm the assignment');
 }
 if (!status || status >= 500) {
+if (assignOptions.allowGrayCreatedReassign) {
+releaseReservation();
+return {
+ok:false,
+attempted:true,
+retryable:true,
+reason:(status ? 'Server error response' : 'No direct assignment response') +
+'. Gray CREATED normal Assign was not confirmed' +
+(status ? ' — HTTP ' + status : '') +
+(body ? ' — ' + body.slice(0,120) : '')
+};
+}
 return verifyAmbiguous(status, body, status ? ('Server error response') : 'No direct assignment response');
 }
 releaseReservation();
@@ -10245,6 +10571,12 @@ reason:
 (body ? ' — ' + body.slice(0, 120) : '')
 };
 });
+}
+
+// Gray CREATED rows use the exact same direct assignment endpoint as every
+// other normal Assign cart. The gray-state flag only changes eligibility and
+// ambiguous-response verification; it never Force Assigns or resets the job.
+return submitDirectAssignment();
 });
 });
 }
@@ -10639,11 +10971,12 @@ nextName(5);
 return;
 }
 }
+var associateTaskTypes = Object.assign({}, taskTypes, { associate: associate });
 var eligible =
 cbtAssignEligibleRows(
 claimed,
 blocked,
-taskTypes
+associateTaskTypes
 );
 if (!eligible.length) {
 results.push({
@@ -10675,7 +11008,7 @@ return !claimed[target.key] &&
 !blocked[target.key] &&
 cbtAssignCurrentEligible(
 target.key,
-taskTypes,
+associateTaskTypes,
 ignoreReservationToken || ''
 );
 }
@@ -10698,6 +11031,9 @@ target.ref
 taskTypes.partialIds &&
 taskTypes.partialIds[String(target.key)]
 );
+var allowGrayCreatedReassign =
+!taskTypes.partialOnly &&
+cbtAssignRowIsGrayCreatedAvailable(target);
 if (taskTypes.partialOnly && !allowPartialReassign) {
 blocked[target.key] = true;
 results.push({
@@ -10758,6 +11094,7 @@ targetStillEligible,
 target.detailsUrl,
 {
 allowPartialReassign: allowPartialReassign,
+allowGrayCreatedReassign: allowGrayCreatedReassign,
 requirePartialOnly: !!taskTypes.partialOnly,
 partialIds: taskTypes.partialIds,
 partialRef: taskTypes.partialOnly ? target.ref : '',
@@ -12315,7 +12652,10 @@ if (!r.width && !r.height) { acClose(); return; }
 var sig = Math.round(r.left) + ':' + Math.round(r.top) + ':' + Math.round(r.width);
 if (sig !== _acRect) { _acRect = sig; acPlace(); }
 }
-window.addEventListener('resize', function(){ try { applyUiScale(); } catch(e) {} });
+window.addEventListener('resize', function(){
+try { applyUiScale(); } catch(e) {}
+try { _cbtAssignDestinationMeasureCache = (typeof WeakMap === 'function' ? new WeakMap() : null); } catch(eMeasureReset) {}
+});
 window.addEventListener('resize', function(){ if (_acDrop) acPlace(); });
 window.addEventListener('scroll', function(){ if (_acDrop) acPlace(); }, true);
 function acWatchRelevant() {
@@ -12357,7 +12697,7 @@ try {
 if (_acDrop) acTick();
 if (!document.hidden && acWatchRelevant()) acScanForFields();
 } catch(e2) {}
-}, 450);
+}, 1200);
 try { if (acWatchRelevant()) acScanForFields(); } catch(e3) {}
 }
 var _cbtStartupDone = false;
@@ -12479,7 +12819,8 @@ return r;
 window.addEventListener('popstate', onRoute);
 window.addEventListener('hashchange', onRoute);
 var lastPath = location.pathname + location.hash;
-var hbLastLive = 0, hbLastSecond = 0, hbLastHealth = 0, hbLastTimers = 0;
+var hbBoot = Date.now();
+var hbLastLive = hbBoot, hbLastSecond = hbBoot, hbLastHealth = hbBoot, hbLastTimers = hbBoot;
 setInterval(function () {
 var nowMs = Date.now();
 var nowPath = location.pathname + location.hash;
@@ -12508,7 +12849,7 @@ try { pollActiveTasks(); } catch(ePoll) {}
 try { fetchAndUpdate(); } catch(eStats) {}
 }
 }
-if (nowMs - hbLastTimers >= 5000) {
+if (nowMs - hbLastTimers >= 15000) {
 hbLastTimers = nowMs;
 if (isComoSite() && !document.hidden && isDashboardView()) {
 try { injectAllTimers(); } catch(eTimerScan) {}
@@ -12520,7 +12861,7 @@ if (!mp || !mp.isConnected) {
 try { panelHealthCheck(); } catch(eFast) {}
 }
 }
-}, 500);
+}, 1000);
 }
 function startCoreFeatures() {
 try {
@@ -12533,37 +12874,72 @@ _uiScaleLoaded = true;
 _uiScale = UI_SCALE_DEFAULT;
 }
 _fastMountUntil = Date.now() + 60000;
-window.addEventListener('load', function(){
-try { panelHealthCheck(); } catch(e4) {}
-});
-try {
-panelWatcher.observe(document.documentElement, { childList: true, subtree: true });
-} catch(e5) {}
-try { ensureSortAttachment(); } catch(e6) {}
+
+// Mount the visible panel and start fresh data immediately. Keep expensive DOM
+// scans/observers in separate short idle slices so Amazon's own render is never
+// competing with every COMO feature in one long JavaScript task.
 try { if (isDashboardView()) injectPanel(); } catch(e7) {}
 installRouteHealth();
 try { cbtAssignSharedProtectionPull(true); } catch(eFastProtect) {}
 try { cbtAssignStartSharedProtectionLive(); } catch(eFastProtectLive) {}
-try { startAutocompleteWatch(); } catch(e9) {}
 try { cbtStartTodayBoundaryClock(); } catch(e10) {}
 if (isComoSite()) {
+try { pollActiveTasks(); } catch(eLiveStart) {}
+if (!_statsLastRequestAt || (Date.now() - _statsLastRequestAt) > 700) {
+try { fetchAndUpdate(); } catch(eStatsStart) {}
+}
+}
+
+window.addEventListener('load', function(){
+cbtIdle(function(){ try { panelHealthCheck(); } catch(e4) {} }, 500);
+}, { once:true });
+
+// Sorting is unchanged; it simply starts in its own idle slice instead of the
+// same synchronous block as panel construction and network startup.
+cbtIdle(function(){
+try { ensureSortAttachment(); } catch(e6) {}
+}, 320);
+
+// Timer injection is still observer-driven afterward. This one initial scan is
+// separated from sorting so neither forces the other to share a long frame.
+cbtIdle(function(){
 try {
 cbtRetargetTimerWatcher((_attached && _attached.isConnected) ? _attached : getContainer());
 injectAllTimers();
 } catch(e12) {}
-pollActiveTasks();
-if (!_statsLastRequestAt ||
-(Date.now() - _statsLastRequestAt) > 700) {
-fetchAndUpdate();
-}
-}
+}, 420);
+
+// The document-wide watcher/autocomplete fallback are safety nets, not needed
+// to block initial data. Attach them after the first visible dashboard work.
+cbtIdle(function(){
+try {
+panelWatcher.observe(document.body || document.documentElement, { childList: true, subtree: true });
+} catch(e5) {}
+try { startAutocompleteWatch(); } catch(e9) {}
+}, 520);
 }
 function startBackgroundFeatures() {
+// Spread non-critical storage/history/name work across separate idle slices.
+// Live tasks, stats and shared assignment protection already started in core.
+cbtIdle(function(){
 try { cbtResetTodayWeeklyV2(); } catch(eReset) {}
 try { cbtTrustedRateMigration(); } catch(e0) {}
+}, 700);
+setTimeout(function(){ cbtIdle(function(){
+try { cbtBatchEventsPull(); } catch(eEvents) {}
+}, 700); }, 80);
+setTimeout(function(){ cbtIdle(function(){
 try { syncPull(function(){ syncPush(); }); } catch(e2) {}
+}, 700); }, 180);
+setTimeout(function(){ cbtIdle(function(){
 try { syncNamesFromAllTabs(); } catch(e3) {}
+}, 700); }, 320);
+// Full localStorage discovery is the most expensive name fallback. It is not
+// needed for Live/Today/Weekly rendering, so keep it out of the reload frame.
+setTimeout(function(){ cbtIdle(function(){
 try { scanLocalStorageForNames(); } catch(e4) {}
+}, 1200); }, 3500);
+
 setInterval(function(){
 if (document.hidden) return;
 cbtIdle(function(){
@@ -12571,9 +12947,6 @@ if (document.hidden) return;
 if (syncNamesFromAllTabs() && activeTab === 'names') renderNames();
 }, 700);
 }, 5000);
-try { cbtBatchEventsPull(); } catch(eEvents) {}
-try { cbtAssignSharedProtectionPull(true); } catch(eProtect) {}
-try { cbtAssignStartSharedProtectionLive(); } catch(eProtectLive) {}
 setInterval(function(){ if (!document.hidden) { try { cbtBatchEventsPull(); } catch(eEvents2) {} } }, 15000);
 setInterval(function(){ if (!document.hidden) syncPull(); }, 30000);
 var cbtAssignProtectFallbackTick = 0;
@@ -12596,14 +12969,14 @@ cbtAssignSharedProtectionPull(true);
 cbtAssignStartSharedProtectionLive();
 }
 if (!_cbtAssignLiveStreamReady ||
-cbtAssignProtectFallbackTick % 20 === 0) {
+cbtAssignProtectFallbackTick % 10 === 0) {
 cbtAssignSharedProtectionPull();
 }
 if (!_cbtAssignLiveStreamActive) {
 cbtAssignStartSharedProtectionLive();
 }
 } catch(eProtect2) {}
-}, 500);
+}, 1000);
 document.addEventListener('visibilitychange', function(){
 if (document.hidden) return;
 try { panelHealthCheck(); } catch(e9p) {}
@@ -12617,6 +12990,7 @@ try { cbtAssignStartSharedProtectionLive(); } catch(e9protectLive) {}
 try { syncPull(); } catch(e9c) {}
 });
 if (isComoSite()) {
+setTimeout(function(){ cbtIdle(function(){
 try {
 GM_xmlhttpRequest({
 method: 'GET',
@@ -12631,6 +13005,7 @@ fetchAndUpdate();
 onerror: function(){}
 });
 } catch(e9) {}
+}, 900); }, 900);
 }
 }
 function start() {
@@ -12639,6 +13014,7 @@ _cbtStartupDone = true;
 MY_DEVICE_ID = getDeviceId();
 _statsStartupGraceUntil = Date.now() + 2500;
 try { cbtStatsPrimeStartupWarm(); } catch(eWarmPrime) {}
+try { cbtLiveWarmHydrate(); } catch(eWarmLivePrime) {}
 if (isComoSite() && isDashboardView() && !document.hidden) {
 try { fetchAndUpdate(); } catch(eStatsWarm) {}
 }
