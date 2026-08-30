@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.196
+// @version      23.9.197
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -2280,6 +2280,30 @@ return { col: cols[i], idx: i };
 return null;
 }
 var _cbtTimerElements = new Set();
+// Keep the last valid Batch Target through Amazon's very short row-rebuild gap.
+// This prevents Time Left from flashing away/into a dash when the source cell is
+// temporarily detached or emptied and then restored a few milliseconds later.
+var CBT_TIMER_TARGET_GRACE_MS = 1250;
+var _cbtTimerGraceRetry = (typeof WeakMap === 'function' ? new WeakMap() : null);
+function cbtCancelTimerGraceRetry(row) {
+if (!_cbtTimerGraceRetry || !row) return;
+var id = _cbtTimerGraceRetry.get(row);
+if (!id) return;
+try { clearTimeout(id); } catch(e0) {}
+try { _cbtTimerGraceRetry.delete(row); } catch(e1) {}
+}
+function cbtScheduleTimerGraceRetry(row, delayMs) {
+if (!_cbtTimerGraceRetry || !row || !row.isConnected) return;
+if (_cbtTimerGraceRetry.get(row)) return;
+var id = setTimeout(function(){
+try { _cbtTimerGraceRetry.delete(row); } catch(e0) {}
+if (!row || !row.isConnected || !isDashboardView()) return;
+var host = row;
+try { host = row.closest('job-card') || row; } catch(e1) {}
+try { refreshTimerHost(host); } catch(e2) {}
+}, Math.max(40, Number(delayMs) || CBT_TIMER_TARGET_GRACE_MS));
+_cbtTimerGraceRetry.set(row, id);
+}
 function injectRowTimer(row) {
 var isHeader = row.classList.contains('job-card-header');
 var found = findBatchTargetCol(row);
@@ -2296,6 +2320,8 @@ var existingMatch = existingRaw.match(/\d{1,2}:\d{2}\s*(?:AM|PM)/i);
 existingTargetMs = existingMatch ? parseTime(existingMatch[0]) : null;
 }
 if (existingTargetMs) {
+cbtCancelTimerGraceRetry(row);
+existingTimerEl.removeAttribute('data-cbt-target-missing-since');
 var existingResult = fmtTimeLeft(existingTargetMs);
 var targetText = String(existingTargetMs);
 if (existingTimerEl.dataset.target !== targetText) existingTimerEl.dataset.target = targetText;
@@ -2304,6 +2330,24 @@ if (existingTimerEl.className !== existingClass) existingTimerEl.className = exi
 if (existingTimerEl.textContent !== existingResult.text) existingTimerEl.textContent = existingResult.text;
 _cbtTimerElements.add(existingTimerEl);
 } else {
+var previousTargetMs = parseInt(existingTimerEl.dataset.target || '', 10);
+if (previousTargetMs) {
+var missingSince = Number(existingTimerEl.getAttribute('data-cbt-target-missing-since')) || 0;
+if (!missingSince) {
+missingSince = Date.now();
+existingTimerEl.setAttribute('data-cbt-target-missing-since', String(missingSince));
+}
+var missingFor = Date.now() - missingSince;
+if (missingFor < CBT_TIMER_TARGET_GRACE_MS) {
+// Do not blank a good timer during Amazon's transient DOM refresh. The normal
+// second tick keeps the displayed value current while the source cell settles.
+_cbtTimerElements.add(existingTimerEl);
+cbtScheduleTimerGraceRetry(row, CBT_TIMER_TARGET_GRACE_MS - missingFor + 25);
+return;
+}
+}
+cbtCancelTimerGraceRetry(row);
+existingTimerEl.removeAttribute('data-cbt-target-missing-since');
 _cbtTimerElements.delete(existingTimerEl);
 existingTimerEl.removeAttribute('data-target');
 if (existingTimerEl.className !== 'etf-timeleft ok') existingTimerEl.className = 'etf-timeleft ok';
@@ -2449,6 +2493,19 @@ cbtAssignRenderProtectionCountdown();
 var _timerMutationHosts = new Set();
 var _timerMutationNodes = new Set();
 var _timerMutationPending = false;
+function cbtMutationRemovedTimerColumn(mutation) {
+if (!mutation || mutation.type !== 'childList') return false;
+var removed = mutation.removedNodes || [];
+for (var i = 0; i < removed.length; i++) {
+var node = removed[i];
+if (!node || node.nodeType !== 1) continue;
+try {
+if (node.matches && node.matches('.etf-col-cell')) return true;
+if (node.querySelector && node.querySelector('.etf-col-cell')) return true;
+} catch(e) {}
+}
+return false;
+}
 function queueTimerHost(node) {
 if (!node || node.nodeType !== 1) return;
 function addHost(candidate) {
@@ -2491,10 +2548,6 @@ try { row = host.querySelector('div.row'); } catch(e2) {}
 if (row) injectRowTimer(row);
 }
 function flushTimerMutationHosts() {
-if (cbtIsActivelyScrolling()) {
-cbtRunAfterScroll('timer-mutation-flush', flushTimerMutationHosts);
-return;
-}
 _timerMutationPending = false;
 if (!isDashboardView()) {
 _timerMutationNodes.clear();
@@ -2506,8 +2559,13 @@ _timerMutationNodes.clear();
 for (var n = 0; n < pendingNodes.length; n++) queueTimerHost(pendingNodes[n]);
 var hosts = Array.from(_timerMutationHosts);
 _timerMutationHosts.clear();
+// Time Left is visible-critical. Refresh only the task rows Amazon actually
+// touched and do it before paint, even while scrolling, so the injected column
+// does not briefly disappear during Amazon's own row replacement.
 for (var i = 0; i < hosts.length; i++) refreshTimerHost(hosts[i]);
-try { cbtAssignRenderProtectionCountdown(); } catch(eCooldown) {}
+try {
+if (cbtAssignHasActiveVisualProtection()) cbtAssignScheduleProtectionRenderFast();
+} catch(eCooldown) {}
 }
 var _timerWatchRoot = null;
 function cbtRetargetTimerWatcher(root) {
@@ -2522,7 +2580,10 @@ var timerWatcher = new MutationObserver(function(mutations) {
 if (!isDashboardView()) return;
 var foundRelevant = false;
 for (var i = 0; i < mutations.length; i++) {
-if (cbtMutationIsOnlyOwnUi(mutations[i])) continue;
+var removedTimerColumn = cbtMutationRemovedTimerColumn(mutations[i]);
+// Our own insertion is ignored, but if Amazon removes our Time Left column as
+// part of rebuilding a row that removal must be repaired immediately.
+if (!removedTimerColumn && cbtMutationIsOnlyOwnUi(mutations[i])) continue;
 foundRelevant = true;
 var target = mutations[i].target;
 if (target && target.nodeType === 1) _timerMutationNodes.add(target);
@@ -2535,14 +2596,11 @@ if (!foundRelevant) return;
 cbtMarkRelevantDomChanged();
 if (_timerMutationPending) return;
 _timerMutationPending = true;
-if (cbtIsActivelyScrolling()) {
-cbtRunAfterScroll('timer-mutation-flush', flushTimerMutationHosts);
-return;
-}
-var raf = (typeof requestAnimationFrame === 'function')
-? requestAnimationFrame
-: function(cb){ return setTimeout(cb, 16); };
-raf(flushTimerMutationHosts);
+// MutationObserver already runs before paint. A microtask keeps all mutations
+// from the same Amazon update coalesced while restoring Time Left in the same
+// rendering turn, eliminating the occasional visible remove/re-add flash.
+if (typeof queueMicrotask === 'function') queueMicrotask(flushTimerMutationHosts);
+else Promise.resolve().then(flushTimerMutationHosts);
 });
 var CBT_REC_RELEASE_MINUTE = 55;
 var CBT_REC_RELEASE_FREEZE_START = 55;
@@ -8734,21 +8792,21 @@ onload: function(res) {
 if (generation !== _cbtAssignLiveStreamGeneration) return;
 try { cbtAssignHandleSharedStreamProgress(res); } catch(eProgress) {}
 try { cbtAssignSharedProtectionPull(true); } catch(ePull) {}
-finish(75);
+finish(50);
 },
 onerror: function() {
 if (generation !== _cbtAssignLiveStreamGeneration) return;
 try { cbtAssignSharedProtectionPull(true); } catch(ePull) {}
-finish(150);
+finish(75);
 },
 ontimeout: function() {
 if (generation !== _cbtAssignLiveStreamGeneration) return;
 try { cbtAssignSharedProtectionPull(true); } catch(ePull) {}
-finish(150);
+finish(75);
 }
 });
 } catch(eStream) {
-finish(250);
+finish(125);
 }
 }
 function cbtAssignDeleteExpiredSharedNode(node) {
@@ -9391,6 +9449,7 @@ style.textContent =
 '}';
 (document.head || document.documentElement).appendChild(style);
 }
+// v23.9.197: stabilized Time Left through transient Amazon row rebuilds, restores removed timer columns before paint, coalesces fast protection renders for changed task rows, and reduces Firebase fallback sync latency without adding heavy DOM polling.
 // v23.9.194 dashboard performance-only: coalesced table/search renders, removed redundant weekly sanitization, avoided cloned DOM search-count scans, cached Names sorting, and skipped unchanged summary DOM writes.
 // v23.9.191 performance-only: removed duplicate timer work, reduced redundant half-second heartbeats, suppressed self-induced sort/observer churn, and cached stable Destination text measurements. Assignment/data rules are unchanged.
 // v23.9.190: fixed gray-CREATED self-lock: the Assign run's own pending associate reservation no longer masquerades as a cooldown and disqualifies the cart before submit.
@@ -9525,6 +9584,36 @@ return cbtAssignAssignmentCellLooksGray(assignmentCell, assignment);
 var _cbtAssignCardIndexVersion = -1;
 var _cbtAssignCardIndex = null;
 var _cbtAssignHighlightedCards = new Set();
+var _cbtAssignProtectionRenderPending = false;
+function cbtAssignHasActiveVisualProtection() {
+var now = cbtAssignNowMs();
+function hasRows(rows) {
+if (!rows || typeof rows !== 'object') return false;
+var keys = Object.keys(rows);
+for (var i = 0; i < keys.length; i++) {
+var row = rows[keys[i]];
+if (!row || Number(row.until) <= now) continue;
+// Only actual cart/task protection has a visible ref. Associate and global UI
+// leases intentionally have no row highlight.
+if (cbtAssignNormText(row.ref || '')) return true;
+}
+return false;
+}
+try {
+return hasRows(cbtAssignLoadProtection()) || hasRows(cbtAssignLoadSharedProtection());
+} catch(e) { return _cbtAssignHighlightedCards.size > 0; }
+}
+function cbtAssignScheduleProtectionRenderFast() {
+if (_cbtAssignProtectionRenderPending || !isDashboardView()) return;
+_cbtAssignProtectionRenderPending = true;
+var run = function(){
+_cbtAssignProtectionRenderPending = false;
+if (!isDashboardView()) return;
+try { cbtAssignRenderProtectionCountdown(); } catch(e) {}
+};
+if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
+else setTimeout(run, 0);
+}
 var _cbtAssignDestinationMeasureCache = (typeof WeakMap === 'function' ? new WeakMap() : null);
 function cbtAssignMeasureDestinationTextEnd(cell) {
 if (!cell || !cell.isConnected) return 0;
@@ -13272,7 +13361,10 @@ cbtAssignSharedProtectionPull(true);
 cbtAssignStartSharedProtectionLive();
 }
 if (!_cbtAssignLiveStreamReady ||
-cbtAssignProtectFallbackTick % 10 === 0) {
+// The live Firebase stream remains primary. This small ETag/304 fallback is
+// intentionally quicker so browsers whose userscript stream progress is
+// buffered still see a new highlight within about 3 seconds instead of 10.
+cbtAssignProtectFallbackTick % 3 === 0) {
 cbtAssignSharedProtectionPull();
 }
 if (!_cbtAssignLiveStreamActive) {
