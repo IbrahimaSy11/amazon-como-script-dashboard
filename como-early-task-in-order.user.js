@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.197
+// @version      23.9.198
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -5903,6 +5903,38 @@ panel2.innerHTML =
 '<div id="cbt-drag-bottom" title="Drag to resize"></div>';
 return panel2;
 }
+function cbtKeepSingleRunButton(panel) {
+if (!panel || !panel.querySelectorAll) return null;
+var buttons = panel.querySelectorAll('#cbt-afa-btn');
+var keep = buttons.length ? buttons[0] : null;
+for (var i = 1; i < buttons.length; i++) {
+try { buttons[i].remove(); } catch(eBtnRemove) {
+try { if (buttons[i].parentNode) buttons[i].parentNode.removeChild(buttons[i]); } catch(eBtnRemove2) {}
+}
+}
+if (keep) {
+var labels = keep.querySelectorAll('.cbt-afa-lbl');
+for (var j = 1; j < labels.length; j++) {
+try { labels[j].remove(); } catch(eLblRemove) {}
+}
+}
+return keep;
+}
+function cbtDedupeMainPanels() {
+var panels = [];
+try { panels = Array.prototype.slice.call(document.querySelectorAll('#cbt-panel')); } catch(ePanels) {}
+if (!panels.length) return null;
+// Always keep the first connected panel in document order. This is stable even
+// if an old/new userscript instance briefly overlaps during a SPA remount.
+var keep = panels[0];
+for (var i = 1; i < panels.length; i++) {
+try { panels[i].remove(); } catch(ePanelRemove) {
+try { if (panels[i].parentNode) panels[i].parentNode.removeChild(panels[i]); } catch(ePanelRemove2) {}
+}
+}
+cbtKeepSingleRunButton(keep);
+return keep;
+}
 var _panel2Ref = null;
 var PANEL_HEALTH_MS = 2000;
 var _mountFails = 0;
@@ -5942,8 +5974,8 @@ return null;
 }
 function injectPanel() {
 if (!isDashboardView()) { detachMainPanel(); return; }
-var existing = document.getElementById('cbt-panel');
-if (existing && existing.isConnected) return;
+var existing = cbtDedupeMainPanels() || document.getElementById('cbt-panel');
+if (existing && existing.isConnected) { cbtKeepSingleRunButton(existing); return; }
 if (!_panel2Ref) {
 _panel2Ref = buildPanel();
 attachPanelEvents(_panel2Ref);
@@ -5983,6 +6015,7 @@ if (collapse0) collapse0.textContent = '🔼';
 }
 } catch(ex) {}
 mount.el.parentNode.insertBefore(_panel2Ref, mount.el);
+try { cbtDedupeMainPanels(); cbtKeepSingleRunButton(_panel2Ref); } catch(eDedupeAfterMount) {}
 try { cbtStatsHydrateWarm(); } catch(eWarmStats) {}
 try {
 if (_statsLastSummaryData) cbtApplyStatsData(_statsLastSummaryData);
@@ -5994,7 +6027,10 @@ if (activeTab === 'live' && taskCache.size) requestLiveRender();
 }
 function panelHealthCheck() {
 if (!isDashboardView()) { detachMainPanel(); _mountFails = 0; return; }
-var p = document.getElementById('cbt-panel');
+var p = null;
+try { p = cbtDedupeMainPanels(); } catch(eDedupeHealth) {}
+if (!p) p = document.getElementById('cbt-panel');
+if (p) cbtKeepSingleRunButton(p);
 if (p && p.isConnected) { _mountFails = 0; return; }
 injectPanel();
 if (!document.getElementById('cbt-panel')) {
@@ -6105,6 +6141,13 @@ _dashboardSearchRenderRAF = true;
 runDashboardSearchRender();
 }
 function attachPanelEvents(panel2) {
+if (!panel2) return;
+if (panel2.getAttribute('data-cbt-events-bound') === '1') {
+cbtKeepSingleRunButton(panel2);
+return;
+}
+panel2.setAttribute('data-cbt-events-bound', '1');
+cbtKeepSingleRunButton(panel2);
 var unifiedSearch = panel2.querySelector('#cbt-unified-search-input');
 if (unifiedSearch) unifiedSearch.value = dashboardSearchTerm;
 panel2.querySelectorAll('.cbt-tab').forEach(function(tab) {
@@ -6945,10 +6988,27 @@ if (!mp || !mp.isConnected) injectPanel();
 var _acMutationRun = null;
 var panelWatcher = new MutationObserver(function(mutations) {
 var allOwnUi = !!(mutations && mutations.length);
+var mayHaveDuplicatePanel = false;
 for (var oi = 0; oi < mutations.length; oi++) {
-if (!cbtMutationIsOnlyOwnUi(mutations[oi])) { allOwnUi = false; break; }
+if (!cbtMutationIsOnlyOwnUi(mutations[oi])) allOwnUi = false;
+var added = mutations[oi] && mutations[oi].addedNodes ? mutations[oi].addedNodes : [];
+for (var ai = 0; ai < added.length; ai++) {
+var an = added[ai];
+if (!an || an.nodeType !== 1) continue;
+try {
+if (an.id === 'cbt-panel' || an.id === 'cbt-afa-btn' ||
+(an.querySelector && an.querySelector('#cbt-panel,#cbt-afa-btn'))) {
+mayHaveDuplicatePanel = true;
+break;
+}
+} catch(eDupProbe) {}
+}
+}
+if (mayHaveDuplicatePanel) {
+try { cbtDedupeMainPanels(); } catch(eDupPanel) {}
 }
 var livePanel = document.getElementById('cbt-panel');
+if (livePanel) cbtKeepSingleRunButton(livePanel);
 // Own dashboard/overlay updates are not a reason to re-run route/panel health.
 // If the panel itself was removed, livePanel is disconnected and normal recovery continues.
 if (allOwnUi && livePanel && livePanel.isConnected) return;
@@ -7385,6 +7445,8 @@ var _afaJobIndex = Object.create(null);
 var _afaJobInfo = Object.create(null);
 var _afaDone = Object.create(null);
 var _afaRunning = false, _afaStop = false, _afaOverlay = null;
+var _afaConfirmOpenSeq = 0;
+var _afaConfirmLoading = false;
 var _afaMissingMenuInfo = null;
 var _afaMissingMenuCheckSeq = 0;
 function afaLooksLikeJobId(v) {
@@ -7493,6 +7555,25 @@ return { eligible: false, reason: 'could not verify status \u2014 skipped' };
 });
 }
 function afaSectionAnchors(startRe, stopRes) {
+// Fast path for the current COMO DOM: the relevant task groups live inside
+// dropped-job sections with a short heading. This avoids walking every node in
+// document.body just because the Run menu was opened. The original broad scan
+// is kept below as a compatibility fallback if Amazon changes the markup.
+try {
+var sections = document.querySelectorAll('dropped-job');
+for (var si = 0; si < sections.length; si++) {
+var section = sections[si];
+var headings = section.querySelectorAll('h1,h2,h3,h4,[role="heading"]');
+var matched = false;
+for (var hi = 0; hi < headings.length; hi++) {
+var ht = (headings[hi].textContent || '').trim();
+if (ht.length < 60 && startRe.test(ht)) { matched = true; break; }
+}
+if (!matched) continue;
+var holder = section.querySelector('.job-cards,[class*="job-cards"]') || section;
+return Array.prototype.slice.call(holder.querySelectorAll('a'));
+}
+} catch(eFastSection) {}
 var all;
 try { all = Array.prototype.slice.call(document.body.querySelectorAll('*')); } catch(e) { return []; }
 var startIdx = -1, i, t;
@@ -7515,6 +7596,17 @@ for (i = startIdx; i < stopIdx; i++) if (all[i].tagName === 'A') out.push(all[i]
 return out;
 }
 function afaSectionCount(labelRe) {
+// Cheap heading-only lookup first. Fall back to the old document-wide lookup
+// only when the expected heading cannot be found.
+try {
+var headings = document.querySelectorAll('dropped-job h1,dropped-job h2,dropped-job h3,dropped-job h4,dropped-job [role="heading"],h1,h2,h3,h4,[role="heading"]');
+for (var h = 0; h < headings.length; h++) {
+var ht = (headings[h].textContent || '').trim();
+if (ht.length >= 60 || !labelRe.test(ht)) continue;
+var hm = ht.match(/\((\d+)\)/);
+if (hm) return parseInt(hm[1], 10);
+}
+} catch(eFastCount) {}
 var all;
 try { all = document.body.querySelectorAll('*'); } catch(e) { return null; }
 for (var i = 0; i < all.length; i++) {
@@ -7557,9 +7649,9 @@ explicitPartialId: true
 return [];
 }
 }
-function afaScanDashboard() {
+function afaScanDashboard(cardsSnapshot) {
 var found = [], seen = Object.create(null);
-var cards = document.querySelectorAll('job-card');
+var cards = cardsSnapshot || document.querySelectorAll('job-card');
 for (var i = 0; i < cards.length; i++) {
 var card = cards[i];
 try { if (isInExcludedSection(card)) continue; } catch(e) {}
@@ -7759,9 +7851,9 @@ return true;
 } catch(e3) {}
 return false;
 }
-function afaScanMissingCandidates() {
+function afaScanMissingCandidates(cardsSnapshot) {
 var found = [], seen = Object.create(null);
-var cards = document.querySelectorAll('job-card');
+var cards = cardsSnapshot || document.querySelectorAll('job-card');
 function pushCandidate(item) {
 if (!item || !item.id) return;
 var key = String(item.id);
@@ -8126,9 +8218,9 @@ afaConfirm();
 }
 });
 }
-function afaScanCompletionCandidates() {
+function afaScanCompletionCandidates(cardsSnapshot) {
 var found = [], seen = Object.create(null);
-var cards = document.querySelectorAll('job-card');
+var cards = cardsSnapshot || document.querySelectorAll('job-card');
 for (var i = 0; i < cards.length; i++) {
 var card = cards[i];
 try { if (isInExcludedSection(card)) continue; } catch(e) {}
@@ -11611,13 +11703,18 @@ tryEarliest();
 stepName();
 }
 function afaSetBtn(text, busy) {
-var b = document.getElementById('cbt-afa-btn');
+var panel = null;
+try { panel = cbtDedupeMainPanels(); } catch(ePanelDedupeBtn) {}
+if (!panel) panel = document.getElementById('cbt-panel');
+var b = cbtKeepSingleRunButton(panel);
 if (!b) return;
 b.innerHTML = '<span class="cbt-afa-lbl">' + text + '</span>';
 if (busy) b.classList.add('busy'); else b.classList.remove('busy');
 }
 function afaClose() {
 if (_afaRunning) return;
+_afaConfirmOpenSeq++;
+_afaConfirmLoading = false;
 try { cbtAssignReleaseUiSessionLock(); } catch(eAssignUiCloseRelease) {}
 _afaMissingMenuInfo = null;
 _afaMissingMenuCheckSeq++;
@@ -11659,10 +11756,56 @@ return '<div class="cbt-afa-row ' + cls + '">' +
 }
 function afaConfirm() {
 if (_afaRunning) { afaProgressView(); return; }
+// Ignore a double-click while the same menu is already being prepared. This
+// prevents two identical full DOM scans and two overlapping menu renders.
+if (_afaConfirmLoading && _afaOverlay && _afaOverlay.isConnected) return;
 try { cbtAssignReleaseUiSessionLock(); } catch(eAssignUiRelease) {}
+_afaConfirmLoading = true;
+var openSeq = ++_afaConfirmOpenSeq;
+afaShell(
+'Cart Actions',
+'<div id="cbt-afa-lead">Loading cart actions…</div>' +
+'<div class="cbt-afa-note">Reading the current task groups.</div>',
+'<button class="cbt-afa-act" data-afa="close">Close</button>'
+);
+var loadingOverlay = _afaOverlay;
+var loadingCard = loadingOverlay && loadingOverlay.querySelector('#cbt-afa-card');
+if (loadingCard) {
+loadingCard.addEventListener('click', function(e){
+var b = e.target.closest('[data-afa="close"]');
+if (b) afaClose();
+});
+}
+var raf = (typeof requestAnimationFrame === 'function')
+? requestAnimationFrame
+: function(cb){ return setTimeout(cb, 16); };
+// Let the overlay reach the screen first. The expensive scans then run outside
+// the click handler, so clicking Run never has to wait for the whole page scan
+// before there is visible feedback.
+raf(function(){
+setTimeout(function(){
+if (openSeq !== _afaConfirmOpenSeq || !_afaOverlay || _afaOverlay !== loadingOverlay) return;
+try {
+var cardsSnapshot = document.querySelectorAll('job-card');
 var pbNow = afaScanPartiallyBatched();
 var expected = afaSectionCount(/^Partially\s+Batched(\s*\(\d+\))?$/i);
-afaConfirmRender(afaScanDashboard(), pbNow, expected);
+var forceRows = afaScanDashboard(cardsSnapshot);
+if (openSeq !== _afaConfirmOpenSeq || !_afaOverlay || _afaOverlay !== loadingOverlay) return;
+afaConfirmRender(forceRows, pbNow, expected, null, { cards: cardsSnapshot });
+} catch(eConfirmScan) {
+_afaConfirmLoading = false;
+if (openSeq !== _afaConfirmOpenSeq || !_afaOverlay || _afaOverlay !== loadingOverlay) return;
+afaShell(
+'Cart Actions',
+'<div id="cbt-afa-lead">Cart actions could not be read yet.</div>' +
+'<div class="cbt-afa-note">The Amazon task list may still be updating. Close and press Run again.</div>',
+'<button class="cbt-afa-act" data-afa="close">Close</button>'
+);
+var errCard = _afaOverlay && _afaOverlay.querySelector('#cbt-afa-card');
+if (errCard) errCard.addEventListener('click', function(e){ if (e.target.closest('[data-afa="close"]')) afaClose(); });
+}
+}, 0);
+});
 }
 var CBT_ASSIGN_SUGGEST_MAX = 10;
 var CBT_ASSIGN_RECENT_KEEP = 30;
@@ -12022,7 +12165,8 @@ syncPartialOnlyMode();
 search('');
 try { input.focus(); } catch(e) {}
 }
-function afaConfirmRender(list, pbAll, pbExpected, suppress) {
+function afaConfirmRender(list, pbAll, pbExpected, suppress, scanContext) {
+_afaConfirmLoading = false;
 suppress = suppress || {
 force: Object.create(null),
 partial: Object.create(null),
@@ -12042,7 +12186,8 @@ var noId = list.filter(function(x){ return !x.id; });
 var pbReady = pbAll.filter(function(x){ return x.id; });
 var pbFound = (pbExpected != null) ? Math.max(pbExpected, pbAll.length) : pbAll.length;
 var pbUnresolved = Math.max(0, pbFound - pbReady.length);
-var completionCandidates = afaScanCompletionCandidates()
+var sharedCards = scanContext && scanContext.cards ? scanContext.cards : null;
+var completionCandidates = afaScanCompletionCandidates(sharedCards)
 .filter(function(x){ return !isSuppressed('complete', x); });
 var completeReady = completionCandidates.filter(function(x){ return x.id; });
 var assignTaskState = cbtAssignSiteTaskState();
@@ -12107,7 +12252,7 @@ completeDisabled,
 ? 'No regular tasks are available to Auto Complete right now.'
 : 'Runs Complete Task only. It never Force Assigns and never includes Partially Batched.')
 );
-var missingCandidates = afaScanMissingCandidates();
+var missingCandidates = afaScanMissingCandidates(sharedCards);
 _afaMissingMenuInfo = null;
 var missingBlock =
 '<div class="cbt-afa-action-block off" id="cbt-afa-missing-block">' +
