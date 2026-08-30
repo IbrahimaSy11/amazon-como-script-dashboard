@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.201
+// @version      23.9.202
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -9301,477 +9301,41 @@ if (!key) return;
 cbtAssignProtect(key, associate, '');
 }
 
-// Global store-wide Assign UI/session lease. Exactly one computer/browser may own
-// the Assign workflow at a time. The picker gets a 15-second turn; once an actual
-// assignment run starts, the same lease is safely renewed until that run finishes.
-var CBT_ASSIGN_UI_SESSION_KEY = '__cbt_assign_ui_session__';
-var CBT_ASSIGN_UI_SESSION_MS = 15 * 1000;
-var _cbtAssignUiSessionToken = '';
-var _cbtAssignUiSessionDeadline = 0;
-var _cbtAssignUiSessionRunHeartbeat = null;
-var _cbtAssignUiSessionRenewInFlight = false;
-var _cbtAssignUiSessionRenewToken = '';
-var _cbtAssignUiSessionAutoBackPending = false;
-var _cbtAssignUiAcquireSeq = 0;
-// v23.9.199: the 15-second picker turn is an INACTIVITY limit, not an absolute
-// countdown from opening Assign. Active typing/clicking keeps the shared lease
-// alive so the picker cannot throw the user back to Cart Actions mid-selection.
-var CBT_ASSIGN_PICKER_IDLE_MS = 15 * 1000;
-var CBT_ASSIGN_PICKER_RENEW_BEFORE_MS = 7 * 1000;
-var _cbtAssignPickerLastActivityAt = 0;
-var _cbtAssignPickerKeepAliveTimer = null;
-var _cbtAssignPickerRenewInFlight = false;
-var _cbtAssignPickerBoundCard = null;
-// Promise for the most recent Firebase release. Summary Back waits for this so
-// it never races the just-released 15-second lease and appears unresponsive.
+// v23.9.202: the global Assign-screen turn/lease is intentionally removed.
+// Every computer may open and use Assign at the same time with no countdown,
+// inactivity timer, or picker ownership. Cross-computer safety is enforced only
+// at the actual assignment boundary by the existing atomic shared associate and
+// cart reservations. Keep these tiny compatibility shims because older UI paths
+// still call the old helper names; none of them create timers or Firebase leases.
 var _cbtAssignUiSessionReleasePromise = Promise.resolve(true);
-function cbtAssignUiSessionRow() {
-return cbtAssignProtection(CBT_ASSIGN_UI_SESSION_KEY);
-}
-function cbtAssignUiSessionSeconds(row) {
-row = row || cbtAssignUiSessionRow();
-if (!row) return 0;
-return Math.max(1, Math.ceil((Number(row.until) - cbtAssignNowMs()) / 1000));
-}
-function cbtAssignUiSessionOwned() {
-if (!syncEnabled()) return true;
-if (!_cbtAssignUiSessionToken) return false;
-var row = cbtAssignUiSessionRow();
-return !!(row && String(row.token || '') === String(_cbtAssignUiSessionToken));
-}
-function cbtAssignUiSessionOwnedByOther() {
-if (!syncEnabled()) return null;
-var row = cbtAssignUiSessionRow();
-if (!row) return null;
-if (_cbtAssignUiSessionToken && String(row.token || '') === String(_cbtAssignUiSessionToken)) return null;
-return row;
-}
+function cbtAssignUiSessionRow() { return null; }
+function cbtAssignUiSessionSeconds() { return 0; }
+function cbtAssignUiSessionOwned() { return true; }
+function cbtAssignUiSessionOwnedByOther() { return null; }
 function cbtAssignPickerIsOpen() {
 var overlay = _afaOverlay;
 if (!overlay || !overlay.isConnected || _afaRunning) return false;
 var title = overlay.querySelector('#cbt-afa-title');
 return !!(title && /^Assign$/i.test(String(title.textContent || '').trim()));
 }
-function cbtAssignStopPickerKeepAlive() {
-if (_cbtAssignPickerKeepAliveTimer) {
-clearInterval(_cbtAssignPickerKeepAliveTimer);
-_cbtAssignPickerKeepAliveTimer = null;
+function cbtAssignStopPickerKeepAlive() {}
+function cbtAssignPickerTouch() {}
+function cbtAssignPickerIdleExpired() { return false; }
+function cbtAssignPickerReturnAfterIdle() {}
+function cbtAssignStartPickerKeepAlive() {}
+function cbtAssignAcquireUiSessionLock() {
+return Promise.resolve({ok:true,concurrent:true});
 }
-_cbtAssignPickerRenewInFlight = false;
-_cbtAssignPickerBoundCard = null;
-}
-function cbtAssignPickerTouch() {
-if (!_cbtAssignUiSessionToken || _afaRunning || !cbtAssignPickerIsOpen()) return;
-_cbtAssignPickerLastActivityAt = cbtAssignNowMs();
-}
-function cbtAssignPickerIdleExpired(now) {
-now = Number(now) || cbtAssignNowMs();
-if (!_cbtAssignPickerLastActivityAt) return false;
-return now - _cbtAssignPickerLastActivityAt >= CBT_ASSIGN_PICKER_IDLE_MS;
-}
-function cbtAssignPickerReturnAfterIdle() {
-if (_cbtAssignUiSessionAutoBackPending || _afaRunning || !cbtAssignPickerIsOpen()) return;
-_cbtAssignUiSessionAutoBackPending = true;
-cbtAssignStopPickerKeepAlive();
-Promise.resolve(cbtAssignReleaseUiSessionLock()).catch(function(){ return false; }).then(function(){
-_cbtAssignUiSessionAutoBackPending = false;
-if (_afaRunning || !cbtAssignPickerIsOpen()) return;
-try { afaConfirm(); } catch(eBack) {}
-});
-}
-function cbtAssignStartPickerKeepAlive(card) {
-cbtAssignStopPickerKeepAlive();
-if (!_cbtAssignUiSessionToken || _afaRunning) return;
-_cbtAssignPickerLastActivityAt = cbtAssignNowMs();
-_cbtAssignPickerBoundCard = card || null;
-if (card && !card.__cbtAssignPickerActivityBound) {
-card.__cbtAssignPickerActivityBound = true;
-var touch = function(){ cbtAssignPickerTouch(); };
-card.addEventListener('pointerdown', touch, {passive:true});
-card.addEventListener('keydown', touch, true);
-card.addEventListener('input', touch, true);
-card.addEventListener('change', touch, true);
-}
-function tickPickerLease() {
-if (_afaRunning || !_cbtAssignUiSessionToken || !cbtAssignPickerIsOpen()) {
-cbtAssignStopPickerKeepAlive();
-return;
-}
-var now = cbtAssignNowMs();
-if (cbtAssignPickerIdleExpired(now)) {
-cbtAssignPickerReturnAfterIdle();
-return;
-}
-var row = cbtAssignUiSessionRow();
-var own = !!(row && String(row.token || '') === String(_cbtAssignUiSessionToken));
-var remaining = own ? (Number(row.until) - now) : 0;
-if (remaining > CBT_ASSIGN_PICKER_RENEW_BEFORE_MS || _cbtAssignPickerRenewInFlight) return;
-_cbtAssignPickerRenewInFlight = true;
-Promise.resolve(cbtAssignRenewUiSessionLock()).then(function(ok){
-_cbtAssignPickerRenewInFlight = false;
-if (!ok && cbtAssignPickerIsOpen() && !cbtAssignPickerIdleExpired(cbtAssignNowMs())) {
-// Pull fresh shared state before deciding the turn was truly lost. This avoids
-// a transient cached/stream gap kicking an active picker back to Cart Actions.
-try { cbtAssignSharedProtectionPull(true); } catch(ePull) {}
-}
-}, function(){
-_cbtAssignPickerRenewInFlight = false;
-});
-}
-_cbtAssignPickerKeepAliveTimer = setInterval(tickPickerLease, 1000);
-tickPickerLease();
-}
-function cbtAssignAcquireUiSessionLock(acquireSeq) {
-acquireSeq = Number(acquireSeq) || 0;
-if (!syncEnabled()) {
-if (acquireSeq && acquireSeq !== _cbtAssignUiAcquireSeq) {
-return Promise.resolve({ok:false,cancelled:true});
-}
-_cbtAssignUiSessionToken = 'local_' + Date.now().toString(36);
-_cbtAssignUiSessionDeadline = cbtAssignNowMs() + CBT_ASSIGN_UI_SESSION_MS;
-return Promise.resolve({ok:true,token:_cbtAssignUiSessionToken,local:true});
-}
-var token = (MY_DEVICE_ID || getDeviceId()) + '_assign_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8);
-return new Promise(function(resolve){
-function run(tryNo) {
-try {
-GM_xmlhttpRequest({
-method:'GET',
-url:cbtAssignSharedProtectUrl(CBT_ASSIGN_UI_SESSION_KEY),
-headers:{'Content-Type':'application/json','X-Firebase-ETag':'true'},
-timeout:CBT_ASSIGN_LOCK_REQUEST_TIMEOUT_MS,
-onload:function(getRes){
-if (acquireSeq && acquireSeq !== _cbtAssignUiAcquireSeq) {
-resolve({ok:false,cancelled:true});
-return;
-}
-if (!(getRes.status>=200 && getRes.status<300)) {
-resolve({ok:false,error:true,reason:'Shared Assign lock is unavailable.'});
-return;
-}
-var existing = null;
-try {
-if (getRes.responseText && getRes.responseText !== 'null') existing = cbtAssignSanitizeProtection(JSON.parse(getRes.responseText));
-} catch(e0) {}
-if (existing) {
-resolve({ok:false,row:existing});
-return;
-}
-var etag = cbtFirebaseEtag(getRes.responseHeaders);
-if (!etag) {
-resolve({ok:false,error:true,reason:'Shared Assign lock could not be verified.'});
-return;
-}
-var row = {
-jobId:CBT_ASSIGN_UI_SESSION_KEY,
-until:cbtAssignNowMs() + CBT_ASSIGN_UI_SESSION_MS,
-associate:'',
-ref:'',
-token:token,
-pending:true
-};
-GM_xmlhttpRequest({
-method:'PUT',
-url:cbtAssignSharedProtectUrl(CBT_ASSIGN_UI_SESSION_KEY),
-headers:{'Content-Type':'application/json','If-Match':etag},
-data:JSON.stringify(row),
-timeout:CBT_ASSIGN_LOCK_REQUEST_TIMEOUT_MS,
-onload:function(putRes){
-if (putRes.status === 412 && tryNo < 4) {
-setTimeout(function(){ run(tryNo + 1); }, 20 * (tryNo + 1));
-return;
-}
-if (putRes.status >= 200 && putRes.status < 300) {
-if (acquireSeq && acquireSeq !== _cbtAssignUiAcquireSeq) {
-cbtAssignReleaseSharedReservation(CBT_ASSIGN_UI_SESSION_KEY, token);
-resolve({ok:false,cancelled:true});
-return;
-}
-_cbtAssignUiSessionToken = token;
-_cbtAssignUiSessionDeadline = Number(row.until) || 0;
-cbtAssignLoadSharedProtection()[CBT_ASSIGN_UI_SESSION_KEY] = row;
-_cbtAssignSharedNodeToJobId[cbtAssignSharedNodeForJob(CBT_ASSIGN_UI_SESSION_KEY)] = CBT_ASSIGN_UI_SESSION_KEY;
-cbtAssignScheduleSharedProtectionSave();
-try { cbtAssignRenderGlobalSessionState(); } catch(eRender) {}
-resolve({ok:true,token:token,row:row});
-return;
-}
-resolve({ok:false,error:true,reason:'Another computer may have taken the Assign turn.'});
-},
-onerror:function(){ resolve({ok:false,error:true,reason:'Shared Assign lock is unavailable.'}); },
-ontimeout:function(){ resolve({ok:false,error:true,reason:'Shared Assign lock timed out.'}); }
-});
-},
-onerror:function(){ resolve({ok:false,error:true,reason:'Shared Assign lock is unavailable.'}); },
-ontimeout:function(){ resolve({ok:false,error:true,reason:'Shared Assign lock timed out.'}); }
-});
-} catch(e) {
-resolve({ok:false,error:true,reason:'Shared Assign lock is unavailable.'});
-}
-}
-run(0);
-});
-}
-function cbtAssignRenewUiSessionLock() {
-if (!syncEnabled()) {
-_cbtAssignUiSessionDeadline = cbtAssignNowMs() + CBT_ASSIGN_UI_SESSION_MS;
-return Promise.resolve(true);
-}
-var token = String(_cbtAssignUiSessionToken || '');
-if (!token) return Promise.resolve(false);
-return new Promise(function(resolve){
-try {
-GM_xmlhttpRequest({
-method:'GET',
-url:cbtAssignSharedProtectUrl(CBT_ASSIGN_UI_SESSION_KEY),
-headers:{'Content-Type':'application/json','X-Firebase-ETag':'true'},
-timeout:CBT_ASSIGN_LOCK_REQUEST_TIMEOUT_MS,
-onload:function(getRes){
-var current = null;
-try {
-if (getRes.status>=200 && getRes.status<300 && getRes.responseText && getRes.responseText !== 'null') current = JSON.parse(getRes.responseText);
-} catch(e0) {}
-if (!current || String(current.token || '') !== token || !current.pending) { resolve(false); return; }
-if (String(_cbtAssignUiSessionToken || '') !== token) { resolve(false); return; }
-var etag = cbtFirebaseEtag(getRes.responseHeaders);
-if (!etag) { resolve(false); return; }
-var row = Object.assign({}, current, {
-jobId:CBT_ASSIGN_UI_SESSION_KEY,
-until:cbtAssignNowMs() + CBT_ASSIGN_UI_SESSION_MS,
-token:token,
-pending:true,
-ref:''
-});
-GM_xmlhttpRequest({
-method:'PUT',
-url:cbtAssignSharedProtectUrl(CBT_ASSIGN_UI_SESSION_KEY),
-headers:{'Content-Type':'application/json','If-Match':etag},
-data:JSON.stringify(row),
-timeout:CBT_ASSIGN_LOCK_REQUEST_TIMEOUT_MS,
-onload:function(putRes){
-if (putRes.status>=200 && putRes.status<300) {
-if (String(_cbtAssignUiSessionToken || '') !== token) {
-cbtAssignReleaseSharedReservation(CBT_ASSIGN_UI_SESSION_KEY, token);
-resolve(false);
-return;
-}
-_cbtAssignUiSessionDeadline = Number(row.until) || 0;
-cbtAssignLoadSharedProtection()[CBT_ASSIGN_UI_SESSION_KEY] = cbtAssignSanitizeProtection(row) || row;
-cbtAssignScheduleSharedProtectionSave();
-try { cbtAssignRenderGlobalSessionState(); } catch(eRender) {}
-resolve(true);
-return;
-}
-resolve(false);
-},
-onerror:function(){ resolve(false); },
-ontimeout:function(){ resolve(false); }
-});
-},
-onerror:function(){ resolve(false); },
-ontimeout:function(){ resolve(false); }
-});
-} catch(e) { resolve(false); }
-});
-}
+function cbtAssignRenewUiSessionLock() { return Promise.resolve(true); }
 function cbtAssignReleaseUiSessionLock() {
-_cbtAssignUiAcquireSeq++;
-cbtAssignStopPickerKeepAlive();
-_cbtAssignPickerLastActivityAt = 0;
-var token = String(_cbtAssignUiSessionToken || '');
-_cbtAssignUiSessionToken = '';
-_cbtAssignUiSessionDeadline = 0;
-_cbtAssignUiSessionAutoBackPending = false;
-if (_cbtAssignUiSessionRunHeartbeat) {
-clearInterval(_cbtAssignUiSessionRunHeartbeat);
-_cbtAssignUiSessionRunHeartbeat = null;
-}
-// Clear our own cached lease immediately so this computer never briefly
-// mistakes its just-released turn for another computer's lock.
-if (token) {
-try {
-var shared = cbtAssignLoadSharedProtection();
-var cached = shared[CBT_ASSIGN_UI_SESSION_KEY];
-if (cached && String(cached.token || '') === token) {
-delete shared[CBT_ASSIGN_UI_SESSION_KEY];
-delete _cbtAssignSharedNodeToJobId[cbtAssignSharedNodeForJob(CBT_ASSIGN_UI_SESSION_KEY)];
-cbtAssignScheduleSharedProtectionSave();
-}
-} catch(eCacheRelease) {}
-}
-try { cbtAssignRenderGlobalSessionState(); } catch(eRenderNow) {}
-if (!token || !syncEnabled()) {
 _cbtAssignUiSessionReleasePromise = Promise.resolve(true);
 return _cbtAssignUiSessionReleasePromise;
 }
-_cbtAssignUiSessionReleasePromise = Promise.resolve(
-cbtAssignReleaseSharedReservation(CBT_ASSIGN_UI_SESSION_KEY, token)
-).catch(function(){ return false; }).then(function(ok){
-try { cbtAssignRenderGlobalSessionState(); } catch(eRenderAfter) {}
-return !!ok;
-});
-return _cbtAssignUiSessionReleasePromise;
-}
-function cbtAssignStartUiSessionRunHeartbeat() {
-cbtAssignStopPickerKeepAlive();
-if (!syncEnabled() || !_cbtAssignUiSessionToken) return;
-if (_cbtAssignUiSessionRunHeartbeat) clearInterval(_cbtAssignUiSessionRunHeartbeat);
-function renewRunLease() {
-var tokenAtStart = String(_cbtAssignUiSessionToken || '');
-if (!_afaRunning || !tokenAtStart) return;
-if (_cbtAssignUiSessionRenewInFlight && _cbtAssignUiSessionRenewToken === tokenAtStart) return;
-_cbtAssignUiSessionRenewInFlight = true;
-_cbtAssignUiSessionRenewToken = tokenAtStart;
-Promise.resolve(cbtAssignRenewUiSessionLock()).then(function(ok){
-if (!ok && _afaRunning && String(_cbtAssignUiSessionToken || '') === tokenAtStart) _afaStop = true;
-}, function(){
-if (_afaRunning && String(_cbtAssignUiSessionToken || '') === tokenAtStart) _afaStop = true;
-}).then(function(){
-if (_cbtAssignUiSessionRenewToken === tokenAtStart) {
-_cbtAssignUiSessionRenewInFlight = false;
-_cbtAssignUiSessionRenewToken = '';
-}
-});
-}
-renewRunLease();
-_cbtAssignUiSessionRunHeartbeat = setInterval(renewRunLease, 3000);
-}
-function cbtAssignRenderGlobalSessionState() {
-var row = cbtAssignUiSessionRow();
-var now = cbtAssignNowMs();
-var own = !!(row && _cbtAssignUiSessionToken && String(row.token || '') === String(_cbtAssignUiSessionToken));
-var other = !!(row && !own);
-var seconds = row ? Math.max(1, Math.ceil((Number(row.until) - now) / 1000)) : 0;
-var overlay = _afaOverlay;
-var card = overlay && overlay.querySelector('#cbt-afa-card');
-if (card) {
-var menuAssign = card.querySelector('[data-afa="assign"]');
-if (menuAssign) {
-var menuAssignBlock = menuAssign.closest ? menuAssign.closest('.cbt-afa-action-block') : null;
-if (other) {
-menuAssign.setAttribute('data-cbt-global-locked','1');
-menuAssign.disabled = true;
-menuAssign.textContent = 'Wait ' + seconds + 's';
-menuAssign.title = 'Another computer is using Assign. ' + seconds + 's remaining.';
-if (menuAssignBlock) menuAssignBlock.classList.add('off');
-var copy = menuAssign.nextElementSibling;
-if (copy && copy.classList && copy.classList.contains('cbt-afa-action-copy')) {
-copy.textContent = 'Another computer is using Assign — wait ' + seconds + 's.';
-}
-} else {
-if (menuAssign.getAttribute('data-cbt-global-locked') === '1') {
-menuAssign.removeAttribute('data-cbt-global-locked');
-menuAssign.textContent = '▶ Assign Cart';
-menuAssign.title = '';
-}
-var hasNormalNow = cbtAssignHasSiteTasks();
-var hasPartialNow = cbtAssignHasPartialTasks();
-menuAssign.disabled = !hasNormalNow && !hasPartialNow;
-if (menuAssignBlock) menuAssignBlock.classList.toggle('off', !!menuAssign.disabled);
-var restoreCopy = menuAssign.nextElementSibling;
-if (restoreCopy && restoreCopy.classList && restoreCopy.classList.contains('cbt-afa-action-copy')) {
-restoreCopy.textContent = hasNormalNow
-? 'Select associates in order. Normal Tasks are the default; Partially Batched can be selected exclusively inside Assign Cart.'
-: (hasPartialNow
-? 'Partially Batched carts are available. Open Assign Cart and check “Only Assign Partially Batched Carts”.'
-: 'No normal Tasks or readable Partially Batched carts are available right now.');
-}
-}
-}
-var turn = card.querySelector('#cbt-afa-assign-turn');
-if (turn) {
-if (own || (_cbtAssignUiSessionToken && !_afaRunning && cbtAssignPickerIsOpen() && !other)) {
-turn.textContent = _afaRunning ? 'Assign In Use · protected across all computers' : 'Your Assign Turn · stays active while you use Assign';
-turn.className = 'cbt-afa-note cbt-afa-assign-turn-own';
-} else if (other) {
-turn.textContent = 'Wait ' + seconds + 's · another computer is using Assign';
-turn.className = 'cbt-afa-note cbt-afa-assign-turn-wait';
-} else {
-turn.textContent = 'Assign turn expired.';
-}
-var start = card.querySelector('[data-afa="assign-start"]');
-if (start && !own && syncEnabled() && !(
-_cbtAssignUiSessionToken && !_afaRunning && cbtAssignPickerIsOpen() && !other
-)) start.disabled = true;
-}
-}
-// v23.9.199: do not eject an ACTIVE picker just because the original 15-second
-// lease reached its first deadline. Activity keeps the lease renewed. Only real
-// 15-second inactivity (or another computer actually owning the lease) returns
-// this picker to Cart Actions.
-if (_cbtAssignUiSessionToken && !_afaRunning && cbtAssignPickerIsOpen()) {
-if (cbtAssignPickerIdleExpired(now)) {
-cbtAssignPickerReturnAfterIdle();
-} else if (other && !_cbtAssignUiSessionAutoBackPending) {
-// The atomic Firebase lock was genuinely taken elsewhere; fail closed.
-cbtAssignPickerReturnAfterIdle();
-}
-}
-}
-// v23.9.201: paint the Assign picker immediately, then complete the atomic
-// Firebase turn acquisition in the background. The picker may be searched while
-// the lock is pending, but the real Assign button stays disabled until ownership
-// is confirmed. This removes network latency from the visible picker-open path
-// without weakening the one-computer-at-a-time safety rule.
+function cbtAssignStartUiSessionRunHeartbeat() {}
+function cbtAssignRenderGlobalSessionState() {}
 function cbtAssignOpenPickerWithGlobalLock() {
-var other = cbtAssignUiSessionOwnedByOther();
-if (other) {
-try { cbtAssignRenderGlobalSessionState(); } catch(e0) {}
-return Promise.resolve({ok:false,row:other});
-}
-afaAssignPicker({ lockPending: !!syncEnabled() });
-var overlayAtRequest = _afaOverlay;
-var cardAtRequest = overlayAtRequest && overlayAtRequest.querySelector('#cbt-afa-card');
-var noteAtRequest = cardAtRequest && cardAtRequest.querySelector('#cbt-afa-assign-turn');
-var startAtRequest = cardAtRequest && cardAtRequest.querySelector('[data-afa="assign-start"]');
-if (syncEnabled()) {
-if (noteAtRequest) {
-noteAtRequest.textContent = 'Checking shared Assign turn…';
-noteAtRequest.className = 'cbt-afa-note';
-}
-if (startAtRequest) {
-startAtRequest.disabled = true;
-startAtRequest.setAttribute('data-cbt-lock-pending','1');
-}
-}
-var acquireSeq = ++_cbtAssignUiAcquireSeq;
-return cbtAssignAcquireUiSessionLock(acquireSeq).then(function(lock){
-if (acquireSeq !== _cbtAssignUiAcquireSeq || !_afaOverlay || _afaOverlay !== overlayAtRequest) {
-if (lock && lock.ok && lock.token && syncEnabled()) {
-cbtAssignReleaseSharedReservation(CBT_ASSIGN_UI_SESSION_KEY, lock.token);
-}
-return {ok:false,cancelled:true};
-}
-var card = _afaOverlay && _afaOverlay.querySelector('#cbt-afa-card');
-var note = card && card.querySelector('#cbt-afa-assign-turn');
-var start = card && card.querySelector('[data-afa="assign-start"]');
-if (!lock || !lock.ok) {
-if (start) {
-start.disabled = true;
-start.removeAttribute('data-cbt-lock-pending');
-}
-if (lock && lock.row) {
-var sec = Math.max(1, Math.ceil((Number(lock.row.until) - cbtAssignNowMs()) / 1000));
-if (note) {
-note.textContent = 'Wait ' + sec + 's · another computer is using Assign';
-note.className = 'cbt-afa-note cbt-afa-assign-turn-wait';
-}
-} else if (note) {
-note.textContent = (lock && lock.reason) ? lock.reason : 'Shared Assign turn could not be verified.';
-note.className = 'cbt-afa-note';
-}
-return lock || {ok:false};
-}
-if (start) start.removeAttribute('data-cbt-lock-pending');
-try {
-if (card && typeof card.__cbtAssignRefreshStartState === 'function') {
-card.__cbtAssignRefreshStartState();
-}
-} catch(eRefreshStart) {}
-try { cbtAssignStartPickerKeepAlive(card); } catch(eKeepAlive) {}
-try { cbtAssignRenderGlobalSessionState(); } catch(e2) {}
-return lock;
-});
+afaAssignPicker();
+return Promise.resolve({ok:true,concurrent:true});
 }
 function cbtAssignUpdateProtectionMeta(jobId, associate, ref) {
 jobId = String(jobId || '');
@@ -11514,16 +11078,8 @@ if (action === 'assign-summary-back') {
 if (b.disabled) return;
 b.disabled = true;
 b.textContent = 'Opening…';
-Promise.resolve(_cbtAssignUiSessionReleasePromise || true)
-.catch(function(){ return false; })
-.then(function(){ return cbtAssignOpenPickerWithGlobalLock(); })
-.then(function(lock){
-if (lock && lock.ok) return;
-// If another computer took the turn, or Firebase is temporarily unavailable,
-// Back must still respond: return to Cart Actions where the live Wait state is visible.
-if (_afaOverlay) afaConfirm();
-})
-.catch(function(){ if (_afaOverlay) afaConfirm(); });
+try { afaAssignPicker(); }
+catch(eBackAssign) { if (_afaOverlay) afaConfirm(); }
 }
 });
 }
@@ -11536,10 +11092,6 @@ names = Array.isArray(names)
 : [];
 taskTypes = cbtAssignNormalizeTaskTypes(taskTypes);
 if (!names.length || _afaRunning) return;
-if (syncEnabled() && !cbtAssignUiSessionOwned()) {
-try { cbtAssignRenderGlobalSessionState(); } catch(eNoGlobalTurn) {}
-return;
-}
 if (taskTypes.partialOnly) {
 var forcedPartialRows = cbtAssignReadPartialRows();
 var forcedPartialIds = Object.create(null);
@@ -11698,17 +11250,6 @@ return lock;
 }
 function tryEarliest() {
 if (_afaStop) {
-finish();
-return;
-}
-if (syncEnabled() && !cbtAssignUiSessionOwned()) {
-results.push({
-ref: associate,
-skip: true,
-ok: false,
-msg: 'Not Assigned. The Shared Assign Turn Was Lost. The Run Was Stopped To Prevent A Cross-Computer Conflict.'
-});
-cbtAssignProgress(nameIndex + 1, names.length, associate, null, results);
 finish();
 return;
 }
@@ -12183,7 +11724,7 @@ return out;
 }
 function afaAssignPicker(options) {
 options = options || {};
-var lockPending = !!options.lockPending;
+var lockPending = false;
 var selectedNames = [];
 var activeIndex = -1;
 var currentRows = [];
@@ -12192,7 +11733,7 @@ afaShell(
 'Assign',
 '<div id="cbt-afa-lead">Search and select one or more associates.</div>' +
 '<div id="cbt-afa-assign-turn" class="cbt-afa-note">' +
-(lockPending ? 'Checking shared Assign turn…' : 'Your Assign Turn · stays active while you use Assign') +
+'Concurrent Assign · conflicts are checked only when the assignment starts' +
 '</div>' +
 '<div id="cbt-afa-assign-types">' +
 '<div class="cbt-afa-assign-type-title">Assign Source</div>' +
@@ -12257,10 +11798,6 @@ return -1;
 function updateAssignStartState() {
 var startBtn = card.querySelector('[data-afa="assign-start"]');
 if (!startBtn) return;
-if (syncEnabled() && !cbtAssignUiSessionOwned()) {
-startBtn.disabled = true;
-return;
-}
 if (typePartial.checked) {
 startBtn.disabled =
 selectedNames.length === 0 ||
@@ -12429,10 +11966,6 @@ return;
 }
 if (b.getAttribute('data-afa') === 'assign-start') {
 if (!selectedNames.length || b.disabled) return;
-if (syncEnabled() && !cbtAssignUiSessionOwned()) {
-try { cbtAssignRenderGlobalSessionState(); } catch(eLostTurn) {}
-return;
-}
 if (typePartial.checked && !cbtAssignPartialCheckboxAvailable()) {
 cbtAssignRefreshPartialCheckboxState();
 syncPartialOnlyMode();
@@ -12449,20 +11982,10 @@ partialOnly: !!typePartial.checked,
 cart: !typePartial.checked && !!typeCart.checked,
 both: !typePartial.checked && !!typeBoth.checked
 };
-var startOverlay = _afaOverlay;
 b.setAttribute('data-cbt-start-pending','1');
 b.disabled = true;
-cbtAssignRenewUiSessionLock().then(function(lockOk){
-b.removeAttribute('data-cbt-start-pending');
-if (!_afaOverlay || _afaOverlay !== startOverlay || !b.isConnected) return;
-if (!lockOk || (syncEnabled() && !cbtAssignUiSessionOwned())) {
-updateAssignStartState();
-try { cbtAssignRenderGlobalSessionState(); } catch(eRenewRender) {}
-return;
-}
 cbtAssignRememberRecentNames(frozenNames);
 cbtAssignRun(frozenNames, frozenTypes);
-});
 return;
 }
 });
@@ -12480,9 +12003,6 @@ if (!_afaOverlay || !_afaOverlay.isConnected || !card.isConnected) return;
 try { cbtAssignRefreshPartialCheckboxState(); } catch(ePartialWarm) {}
 try { syncPartialOnlyMode(); } catch(ePartialSync) {}
 }, 0);
-if (!lockPending) {
-try { cbtAssignStartPickerKeepAlive(card); } catch(ePickerKeepAlive) {}
-}
 try { input.focus(); } catch(e) {}
 }
 function afaConfirmRender(list, pbAll, pbExpected, suppress, scanContext) {
@@ -12525,12 +12045,9 @@ label + (count != null ? ' (' + count + ')' : '') +
 '<span class="cbt-afa-action-copy">' + copy + '</span>' +
 '</div>';
 }
-var globalAssignOther = cbtAssignUiSessionOwnedByOther();
-var globalAssignWait = globalAssignOther ? cbtAssignUiSessionSeconds(globalAssignOther) : 0;
-if (globalAssignOther) assignDisabled = true;
 var assignBlock = actionBlock(
 'assign',
-globalAssignOther ? ('Wait ' + globalAssignWait + 's') : '▶ Assign Cart',
+'▶ Assign Cart',
 null,
 assignDisabled,
 assignDisabled
@@ -12617,11 +12134,6 @@ listHtml +
 );
 var card = _afaOverlay.querySelector('#cbt-afa-card');
 if (!card) return;
-try {
-var globalAssignButton = card.querySelector('[data-afa="assign"]');
-if (globalAssignButton && globalAssignOther) globalAssignButton.setAttribute('data-cbt-global-locked','1');
-cbtAssignRenderGlobalSessionState();
-} catch(eGlobalAssignRender) {}
 var missingCheckSeq = ++_afaMissingMenuCheckSeq;
 var missingOverlay = _afaOverlay;
 function setMissingMenuState(info, finished) {
@@ -12727,16 +12239,12 @@ afaClose();
 return;
 }
 if (action === 'assign') {
-if (b.getAttribute('data-cbt-global-locked') === '1') {
-try { cbtAssignRenderGlobalSessionState(); } catch(eWaitRender) {}
-return;
-}
 if (b.disabled ||
 (!cbtAssignHasSiteTasks() && !cbtAssignHasPartialTasks())) {
 afaConfirm();
 return;
 }
-cbtAssignOpenPickerWithGlobalLock();
+afaAssignPicker();
 return;
 }
 if (action === 'missingqr') {
