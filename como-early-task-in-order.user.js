@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.206
+// @version      23.9.216
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -16,6 +16,14 @@
 
 (function () {
 'use strict';
+// v23.9.211 AGGRESSIVE NOLAG:
+// - no Run hover pre-scan or document-wide '*' fallback scans
+// - Run checks are frame-batched
+// - no continuous assignment Firebase stream/root polling
+// - 60-second cross-computer assignment lock remains silent at assignment time
+// - lightweight 60s To Accept + immediate pending highlight; waits for the assigned associate before accepting gray->black
+// - sticky per-assignment visual state prevents a cleared highlight from reappearing on the next assignment/render
+// - reduced observer, backend polling, timer safety-scan, Names and sync cadence
 if (window.top !== window.self &&
 /[?&](?:cbtAfaProbe|cbtMissingQrProbe|cbtAssignProbe)=1(?:&|$)/.test(window.location.search)) return;
 function cbtStoreIdFromLocation() {
@@ -2655,6 +2663,7 @@ continue;
 injectRowTimer(header);
 }
 }
+// v23.9.216: restored the exact v23.9.206 assignment highlight/To Accept acceptance logic while preserving the No-Lag infrastructure.
 function tickTimers() {
 if (document.hidden || !isDashboardView()) return;
 _cbtTimerElements.forEach(function (el) {
@@ -2783,11 +2792,10 @@ if (!foundRelevant) return;
 cbtMarkRelevantDomChanged();
 if (_timerMutationPending) return;
 _timerMutationPending = true;
-// MutationObserver already runs before paint. A microtask keeps all mutations
-// from the same Amazon update coalesced while restoring Time Left in the same
-// rendering turn, eliminating the occasional visible remove/re-add flash.
-if (typeof queueMicrotask === 'function') queueMicrotask(flushTimerMutationHosts);
-else Promise.resolve().then(flushTimerMutationHosts);
+// v23.9.211 NoLag: one repair pass per animation frame prevents MutationObserver
+// bursts from monopolizing the main thread while Amazon rebuilds many task rows.
+if (typeof requestAnimationFrame === 'function') requestAnimationFrame(flushTimerMutationHosts);
+else setTimeout(flushTimerMutationHosts, 16);
 });
 var CBT_REC_RELEASE_MINUTE = 55;
 var CBT_REC_RELEASE_FREEZE_START = 55;
@@ -5025,6 +5033,7 @@ if (_deepCaptureInner(v, depth + 1)) added = true;
 }
 return added;
 }
+var _cbtNameStorageSeen = Object.create(null);
 function scanLocalStorageForNames() {
 var added = false;
 try {
@@ -5036,6 +5045,10 @@ try { val = localStorage.getItem(key); } catch(e) { continue; }
 if (!val || val.length < 2) continue;
 var ch = val.charAt(0);
 if (ch !== '{' && ch !== '[') continue;
+// Avoid reparsing large unchanged JSON blobs every time the Names tab renders.
+var sig = val.length + '|' + val.slice(0, 64) + '|' + val.slice(-64);
+if (_cbtNameStorageSeen[key] === sig) continue;
+_cbtNameStorageSeen[key] = sig;
 try {
 var parsed = JSON.parse(val);
 if (_deepCaptureInner(parsed, 0)) added = true;
@@ -6123,7 +6136,7 @@ cbtKeepSingleRunButton(keep);
 return keep;
 }
 var _panel2Ref = null;
-var PANEL_HEALTH_MS = 2000;
+var PANEL_HEALTH_MS = 5000;
 var _mountFails = 0;
 var _fastMountUntil = 0;
 function isComoSite() {
@@ -6358,17 +6371,8 @@ try { cbtBatchEventsPull(); } catch(e2) {}
 });
 });
 var afaBtn = panel2.querySelector('#cbt-afa-btn');
-if (afaBtn) {
-// v23.9.205: quietly prepare the Cart Actions snapshot while the pointer is
-// approaching Run.  This does no network action and never changes assignment
-// state; it only removes menu-open latency on the common desktop path.
-afaBtn.addEventListener('mouseenter', function(){
-try { afaWarmCartActionsSnapshot(); } catch(eWarmRunHover) {}
-}, { passive: true });
-afaBtn.addEventListener('focus', function(){
-try { afaWarmCartActionsSnapshot(); } catch(eWarmRunFocus) {}
-}, { passive: true });
-}
+// v23.9.211 NoLag: do not pre-scan Cart Actions on hover/focus.  Large COMO
+// dashboards can turn that invisible warm-up into a long main-thread task.
 if (afaBtn) afaBtn.addEventListener('click', function(e){
 e.stopPropagation();
 if (_afaRunning) {
@@ -7076,7 +7080,7 @@ function renderNames() {
 var tbody = document.getElementById('cbt-names-tbody');
 if (!tbody) return;
 var _nowN = Date.now();
-if (_nowN - _namesScanLast > 5000) {
+if (_nowN - _namesScanLast > 60000) {
 _namesScanLast = _nowN;
 scanLocalStorageForNames();
 syncNamesFromAllTabs();
@@ -7779,26 +7783,10 @@ var holder = section.querySelector('.job-cards,[class*="job-cards"]') || section
 return Array.prototype.slice.call(holder.querySelectorAll('a'));
 }
 } catch(eFastSection) {}
-var all;
-try { all = Array.prototype.slice.call(document.body.querySelectorAll('*')); } catch(e) { return []; }
-var startIdx = -1, i, t;
-for (i = 0; i < all.length; i++) {
-t = (all[i].textContent || '').trim();
-if (t.length < 60 && startRe.test(t)) { startIdx = i; break; }
-}
-if (startIdx === -1) return [];
-var stopIdx = all.length;
-for (i = startIdx + 1; i < all.length; i++) {
-t = (all[i].textContent || '').trim();
-if (t.length >= 60) continue;
-for (var j = 0; j < stopRes.length; j++) {
-if (stopRes[j].test(t)) { stopIdx = i; break; }
-}
-if (stopIdx !== all.length) break;
-}
-var out = [];
-for (i = startIdx; i < stopIdx; i++) if (all[i].tagName === 'A') out.push(all[i]);
-return out;
+// v23.9.211 NoLag: never fall back to querySelectorAll('*').  If the expected
+// dropped-job structure is unavailable, return no anchors and let the action's
+// normal backend revalidation handle it.
+return [];
 }
 function afaSectionCount(labelRe) {
 // Cheap heading-only lookup first. Fall back to the old document-wide lookup
@@ -7812,14 +7800,7 @@ var hm = ht.match(/\((\d+)\)/);
 if (hm) return parseInt(hm[1], 10);
 }
 } catch(eFastCount) {}
-var all;
-try { all = document.body.querySelectorAll('*'); } catch(e) { return null; }
-for (var i = 0; i < all.length; i++) {
-var t = (all[i].textContent || '').trim();
-if (t.length >= 60 || !labelRe.test(t)) continue;
-var m = t.match(/\((\d+)\)/);
-if (m) return parseInt(m[1], 10);
-}
+// v23.9.211 NoLag: no document-wide fallback scan.
 return null;
 }
 function afaRefreshJobData() {
@@ -8805,7 +8786,6 @@ _cbtAssignSharedNodeToJobId[cbtAssignSharedNodeForJob(jobId)] = jobId;
 // block the assignment promise on localStorage serialization or a full DOM
 // highlight scan. Persist/render on the next turn instead.
 try { cbtAssignScheduleSharedProtectionSave(); } catch(eSavePending) {}
-try { cbtAssignScheduleProtectionRenderFast(); } catch(eRenderPending) {}
 resolve({ok:true,token:token,row:row});
 return;
 }
@@ -8885,7 +8865,6 @@ if (row) {
 cbtAssignLoadSharedProtection()[jobId] = row;
 _cbtAssignSharedNodeToJobId[cbtAssignSharedNodeForJob(jobId)] = jobId;
 cbtAssignSaveSharedProtection();
-try { cbtAssignRenderProtectionCountdown(); } catch(eRender) {}
 }
 resolve(row);
 },
@@ -9047,11 +9026,7 @@ _cbtAssignLiveStreamBuffer.slice(-64 * 1024);
 }
 }
 function cbtAssignScheduleSharedProtectionLiveReconnect(delayMs) {
-if (_cbtAssignLiveStreamRetryTimer || !syncEnabled()) return;
-_cbtAssignLiveStreamRetryTimer = setTimeout(function(){
-_cbtAssignLiveStreamRetryTimer = null;
-cbtAssignStartSharedProtectionLive();
-}, Math.max(50, Number(delayMs) || 150));
+// v23.9.211 NoLag: continuous Firebase stream/reconnect disabled.
 }
 function cbtAssignStopSharedProtectionLive() {
 _cbtAssignLiveStreamGeneration++;
@@ -9072,57 +9047,8 @@ if (req && typeof req.abort === 'function') req.abort();
 } catch(eAbort) {}
 }
 function cbtAssignStartSharedProtectionLive() {
-if (!syncEnabled() || _cbtAssignLiveStreamActive) return;
-var generation = ++_cbtAssignLiveStreamGeneration;
-var finished = false;
-_cbtAssignLiveStreamActive = true;
-_cbtAssignLiveStreamReady = false;
-_cbtAssignLiveStreamLastProgress = 0;
-_cbtAssignLiveStreamStartedAt = Date.now();
-_cbtAssignLiveStreamOffset = 0;
-_cbtAssignLiveStreamBuffer = '';
-function finish(retryDelay) {
-if (finished || generation !== _cbtAssignLiveStreamGeneration) return;
-finished = true;
-_cbtAssignLiveStreamActive = false;
-_cbtAssignLiveStreamReady = false;
-_cbtAssignLiveStreamLastProgress = 0;
-_cbtAssignLiveStreamStartedAt = 0;
-_cbtAssignLiveStreamReq = null;
-cbtAssignScheduleSharedProtectionLiveReconnect(retryDelay);
-}
-try {
-_cbtAssignLiveStreamReq = GM_xmlhttpRequest({
-method: 'GET',
-url: cbtAssignSharedProtectUrl(''),
-headers: {
-'Accept': 'text/event-stream',
-'Cache-Control': 'no-cache'
-},
-onprogress: function(res) {
-if (generation !== _cbtAssignLiveStreamGeneration) return;
-cbtAssignHandleSharedStreamProgress(res);
-},
-onload: function(res) {
-if (generation !== _cbtAssignLiveStreamGeneration) return;
-try { cbtAssignHandleSharedStreamProgress(res); } catch(eProgress) {}
-try { cbtAssignSharedProtectionPull(true); } catch(ePull) {}
-finish(50);
-},
-onerror: function() {
-if (generation !== _cbtAssignLiveStreamGeneration) return;
-try { cbtAssignSharedProtectionPull(true); } catch(ePull) {}
-finish(75);
-},
-ontimeout: function() {
-if (generation !== _cbtAssignLiveStreamGeneration) return;
-try { cbtAssignSharedProtectionPull(true); } catch(ePull) {}
-finish(75);
-}
-});
-} catch(eStream) {
-finish(125);
-}
+// v23.9.211 NoLag: no continuous Firebase event stream.
+// The per-job ETag GET/PUT lock still runs when Assign is actually pressed.
 }
 function cbtAssignDeleteExpiredSharedNode(node) {
 node = String(node || '').replace(/^\/+|\/+$/g, '');
@@ -9161,6 +9087,8 @@ ontimeout:function(){}
 } catch(e) {}
 }
 function cbtAssignSharedProtectionPull(force) {
+// v23.9.212 lightweight cross-computer countdown sync:
+// one conditional ETag GET every few seconds, no Firebase event stream.
 if (_cbtAssignSharedProtectPullInFlight || !syncEnabled()) return;
 if (!force && document.hidden) return;
 _cbtAssignSharedProtectPullInFlight = true;
@@ -9169,46 +9097,27 @@ var headers = {
 'Content-Type':'application/json',
 'X-Firebase-ETag':'true'
 };
-if (_cbtAssignSharedProtectEtag) {
-headers['If-None-Match'] = _cbtAssignSharedProtectEtag;
-}
+if (_cbtAssignSharedProtectEtag) headers['If-None-Match'] = _cbtAssignSharedProtectEtag;
 GM_xmlhttpRequest({
 method:'GET',
 url:cbtAssignSharedProtectUrl(''),
 headers:headers,
-timeout:CBT_FIREBASE_SYNC_TIMEOUT_MS,
+timeout:CBT_ASSIGN_LOCK_REQUEST_TIMEOUT_MS,
 onload:function(res){
 _cbtAssignSharedProtectPullInFlight = false;
 if (res.status === 304) return;
+if (!(res.status >= 200 && res.status < 300)) return;
 var raw = {};
-var expiredNodes = [];
-var parsedOk = true;
 try {
-raw =
-res.status >= 200 &&
-res.status < 300 &&
-res.responseText &&
-res.responseText !== 'null'
-? (JSON.parse(res.responseText) || {})
-: {};
-} catch(e0) {
-parsedOk = false;
-}
-if (res.status >= 200 && res.status < 300 && parsedOk) {
+raw = res.responseText && res.responseText !== 'null' ? (JSON.parse(res.responseText) || {}) : {};
+} catch(eParse) { return; }
 var nextEtag = cbtFirebaseEtag(res.responseHeaders);
 if (nextEtag) _cbtAssignSharedProtectEtag = nextEtag;
-expiredNodes = cbtAssignApplySharedProtectionSnapshot(raw);
-}
-expiredNodes.slice(0,20).forEach(function(node){
-try { cbtAssignDeleteExpiredSharedNode(node); } catch(e1) {}
-});
+// Rebind countdowns only when the shared snapshot actually changed.
+cbtAssignApplySharedProtectionSnapshot(raw);
 },
-onerror:function(){
-_cbtAssignSharedProtectPullInFlight = false;
-},
-ontimeout:function(){
-_cbtAssignSharedProtectPullInFlight = false;
-}
+onerror:function(){ _cbtAssignSharedProtectPullInFlight = false; },
+ontimeout:function(){ _cbtAssignSharedProtectPullInFlight = false; }
 });
 } catch(e) {
 _cbtAssignSharedProtectPullInFlight = false;
@@ -9273,6 +9182,11 @@ _cbtAssignSharedNodeToJobId[cbtAssignSharedNodeForJob(jobId)] = jobId;
 cbtAssignPersistProtection();
 cbtAssignSaveSharedProtection();
 cbtAssignSharedProtectionPut(jobId, row);
+try { cbtAssignScheduleProtectionRenderFast(); } catch(eRenderImmediate) {}
+// Re-check once after the short immediate-accept verification window.
+setTimeout(function(){
+try { cbtAssignScheduleProtectionRenderFast(); } catch(eRenderVerify) {}
+}, CBT_ASSIGN_INITIAL_VISUAL_VERIFY_MS + 60);
 }
 function cbtAssignProtection(jobId) {
 jobId = String(jobId || '');
@@ -9440,6 +9354,8 @@ style.textContent =
 '}';
 (document.head || document.documentElement).appendChild(style);
 }
+// v23.9.215: pending visual rule is now strict: CREATED always keeps the 60s highlight/text. Early removal is allowed only after the exact associate was observed gray and then turns normal/black, or when the exact associate is normal/black and Amazon's task progress has advanced beyond CREATED. This prevents temporary DOM paint/style changes from clearing active protection.
+// v23.9.213: lightweight cross-computer 60s To Accept + immediate pending cart highlight. No live stream or per-second full DOM scan.
 // v23.9.197: stabilized Time Left through transient Amazon row rebuilds, restores removed timer columns before paint, coalesces fast protection renders for changed task rows, and reduces Firebase fallback sync latency without adding heavy DOM polling.
 // v23.9.200: preserves Time Left across task-detail Back navigation with per-job route caching and a short before-paint remount repair observer; v23.9.199 multi-computer Assign lease behavior is preserved.
 // v23.9.194 dashboard performance-only: coalesced table/search renders, removed redundant weekly sanitization, avoided cloned DOM search-count scans, cached Names sorting, and skipped unchanged summary DOM writes.
@@ -9576,7 +9492,51 @@ return cbtAssignAssignmentCellLooksGray(assignmentCell, assignment);
 var _cbtAssignCardIndexVersion = -1;
 var _cbtAssignCardIndex = null;
 var _cbtAssignHighlightedCards = new Set();
+var _cbtAssignCountdownCells = new Set();
+var _cbtAssignCountdownMeta = (typeof WeakMap === 'function' ? new WeakMap() : null);
 var _cbtAssignProtectionRenderPending = false;
+// v23.9.214: remember what THIS browser has actually observed for each protection
+// record. This stops a temporary old/black assignment cell from being mistaken
+// for acceptance before Amazon has painted the newly assigned associate.
+var _cbtAssignVisualStates = Object.create(null);
+var CBT_ASSIGN_DIRECT_BLACK_GRACE_MS = 3500;
+var CBT_ASSIGN_INITIAL_VISUAL_VERIFY_MS = 650;
+function cbtAssignVisualStateKey(protectionRow) {
+if (!protectionRow) return '';
+return String(protectionRow.jobId || '') + '|' +
+String(Number(protectionRow.until) || 0) + '|' +
+cbtAssignNormText(protectionRow.associate || '').toLowerCase();
+}
+function cbtAssignVisualState(protectionRow) {
+var key = cbtAssignVisualStateKey(protectionRow);
+if (!key) return null;
+var state = _cbtAssignVisualStates[key];
+if (!state) {
+state = _cbtAssignVisualStates[key] = {
+key:key,
+sawExpected:false,
+sawGray:false,
+accepted:false,
+stableBlack:0,
+lastSeenAt:0
+};
+}
+return state;
+}
+function cbtAssignPruneVisualStates(activeRows, now) {
+var keep = Object.create(null);
+if (activeRows) {
+Object.keys(activeRows).forEach(function(jobId){
+var row = activeRows[jobId];
+if (!row || Number(row.until) <= now) return;
+var key = cbtAssignVisualStateKey(row);
+if (key) keep[key] = true;
+});
+}
+Object.keys(_cbtAssignVisualStates).forEach(function(key){
+if (!keep[key]) delete _cbtAssignVisualStates[key];
+});
+}
 function cbtAssignHasActiveVisualProtection() {
 var now = cbtAssignNowMs();
 function hasRows(rows) {
@@ -9594,6 +9554,93 @@ return false;
 try {
 return hasRows(cbtAssignLoadProtection()) || hasRows(cbtAssignLoadSharedProtection());
 } catch(e) { return _cbtAssignHighlightedCards.size > 0; }
+}
+function cbtAssignEntryAcceptedNow(entry, protectionRow) {
+if (!entry || !entry.card || !entry.card.isConnected || !protectionRow) return false;
+var state = cbtAssignVisualState(protectionRow);
+if (!state) return false;
+if (state.accepted) return true;
+var assignmentCell = entry.assignmentCell;
+var progressCell = entry.progressCell;
+if (!assignmentCell || !assignmentCell.isConnected) return false;
+var assignment = cbtAssignAssignmentText(assignmentCell);
+var actual = cbtAssignNormText(assignment || '').toLowerCase();
+var expected = cbtAssignNormText(protectionRow.associate || '').toLowerCase();
+var isNamed = !!actual && !/^(?:ASSIGNABLE|UNASSIGNABLE)$/i.test(actual);
+var expectedSeen = !!(isNamed && expected && actual === expected);
+
+// Do not let stale/temporary text clear a new assignment. We only judge
+// acceptance after Amazon is actually showing the expected associate.
+if (!expectedSeen) {
+state.stableBlack = 0;
+return false;
+}
+state.sawExpected = true;
+state.lastSeenAt = cbtAssignNowMs();
+var isGray = cbtAssignAssignmentCellLooksGray(assignmentCell, assignment);
+var progressRaw = progressCell && progressCell.isConnected
+? cbtAssignNormText(progressCell.textContent || '').toUpperCase()
+: '';
+var createdOnly = cbtAssignProgressIsCreatedOnly(progressRaw);
+var advanced = /\b(BATCHING|IN_PROGRESS|ACCEPTED|STARTED|ACTIVE|COMPLETED|COMPLETE|DONE)\b/.test(progressRaw);
+
+if (isGray) {
+state.sawGray = true;
+state.stableBlack = 0;
+return false;
+}
+
+// Strongest visual signal: this exact associate was visibly gray first and is
+// now black/normal. That means the associate accepted, so clear immediately.
+if (state.sawGray) {
+state.accepted = true;
+return true;
+}
+
+// Critical v23.9.215 rule: while Amazon still says CREATED, NEVER clear just
+// because the name happens to look black. That temporary style/paint state was
+// the reason the highlight disappeared early in v23.9.213/v23.9.214.
+if (createdOnly) {
+state.stableBlack = 0;
+return false;
+}
+
+// Very fast acceptance can skip the visible gray state. In that case only an
+// advanced Amazon task status plus this exact associate shown black/normal is
+// enough to suppress/remove the pending visual immediately.
+if (advanced) {
+state.accepted = true;
+return true;
+}
+
+// Unknown/transient status is fail-safe: keep the visual until a real acceptance
+// signal appears or the 60-second protection expires.
+state.stableBlack = 0;
+return false;
+}
+function cbtAssignEntryShouldShowPendingVisual(entry, protectionRow, now) {
+if (!entry || !entry.card || !entry.card.isConnected || !protectionRow) return false;
+var state = cbtAssignVisualState(protectionRow);
+if (state && state.accepted) return false;
+if (cbtAssignEntryAcceptedNow(entry, protectionRow)) return false;
+var until = Number(protectionRow.until) || 0;
+if (until <= now) return false;
+
+// Give a brand-new assignment a tiny verification window before painting if we
+// have not yet seen a gray pending name. This lets an associate who accepts
+// essentially immediately reach an advanced/black accepted state without a
+// visible highlight flash. If gray is already visible, pending is confirmed and
+// the highlight can show immediately.
+var started = until - CBT_ASSIGN_PROTECT_MS;
+if (state && !state.sawGray && started > 0 &&
+(now - started) >= 0 && (now - started) < CBT_ASSIGN_INITIAL_VISUAL_VERIFY_MS) {
+return false;
+}
+
+// While this protection record is active, keep its visual present even if Amazon
+// is between DOM paints. Acceptance, not a temporary missing/mismatched cell, is
+// what removes the visual.
+return true;
 }
 function cbtAssignScheduleProtectionRenderFast() {
 if (_cbtAssignProtectionRenderPending || !isDashboardView()) return;
@@ -9859,6 +9906,57 @@ oldCell.style.removeProperty('--cbt-destination-text-end');
 }
 });
 _cbtAssignHighlightedCards = nextHighlighted;
+}
+function cbtAssignTickProtectionCountdown() {
+// Lightweight 1-second path: only active bound cells are touched. No document
+// query, no Firebase request, and no task-table scan. It also checks the already
+// cached assignment cell so black/normal acceptance clears the visual promptly.
+if (!_cbtAssignCountdownCells.size) return;
+var now = cbtAssignNowMs();
+var expired = [];
+_cbtAssignCountdownCells.forEach(function(cell){
+if (!cell || !cell.isConnected) { expired.push(cell); return; }
+var meta = _cbtAssignCountdownMeta ? _cbtAssignCountdownMeta.get(cell) : null;
+if (meta && cbtAssignEntryAcceptedNow(meta.entry, meta.row)) {
+try {
+var acceptedCard = meta.entry && meta.entry.card;
+if (acceptedCard) {
+acceptedCard.classList.remove('cbt-assign-cooldown');
+acceptedCard.removeAttribute('data-cbt-protect-ref');
+_cbtAssignHighlightedCards.delete(acceptedCard);
+}
+cell.classList.remove('cbt-assign-cooldown-destination');
+cell.removeAttribute('data-cbt-cooldown');
+cell.removeAttribute('data-cbt-protect-until');
+cell.style.removeProperty('--cbt-accept-gap-x');
+cell.style.removeProperty('--cbt-destination-text-end');
+} catch(eAccepted) {}
+expired.push(cell);
+return;
+}
+var until = Number(cell.getAttribute('data-cbt-protect-until')) || 0;
+if (until <= now) {
+try {
+var card = cell.closest && cell.closest('job-card');
+if (card) {
+card.classList.remove('cbt-assign-cooldown');
+card.removeAttribute('data-cbt-protect-ref');
+_cbtAssignHighlightedCards.delete(card);
+}
+cell.classList.remove('cbt-assign-cooldown-destination');
+cell.removeAttribute('data-cbt-cooldown');
+cell.removeAttribute('data-cbt-protect-until');
+cell.style.removeProperty('--cbt-accept-gap-x');
+cell.style.removeProperty('--cbt-destination-text-end');
+} catch(e0) {}
+expired.push(cell);
+return;
+}
+var seconds = Math.max(1, Math.ceil((until - now) / 1000));
+var text = seconds + 's To Accept';
+try { if (cell.getAttribute('data-cbt-cooldown') !== text) cell.setAttribute('data-cbt-cooldown', text); } catch(e1) {}
+});
+for (var i = 0; i < expired.length; i++) _cbtAssignCountdownCells.delete(expired[i]);
 }
 function cbtAssignReadRows() {
 var map = cbtAssignHeaderMap();
@@ -11740,17 +11838,48 @@ assignTaskState: assignTaskState
 };
 }
 function afaWarmCartActionsSnapshot() {
-if (_afaRunning || _afaMenuSnapshotInFlight) return;
-var cached = _afaMenuSnapshotCache;
-if (cached && (Date.now() - Number(cached.at || 0)) < AFA_MENU_SNAPSHOT_TTL_MS) return;
-_afaMenuSnapshotInFlight = true;
-var warmSeq = ++_afaMenuSnapshotWarmSeq;
-cbtIdle(function(){
-if (warmSeq !== _afaMenuSnapshotWarmSeq) return;
-try { _afaMenuSnapshotCache = afaCollectMenuSnapshot(); }
-catch(eWarmMenu) {}
-if (warmSeq === _afaMenuSnapshotWarmSeq) _afaMenuSnapshotInFlight = false;
-}, 500);
+// v23.9.211 NoLag: intentionally disabled.  Opening/hovering Run must never
+// start a hidden multi-scan of the task DOM.
+}
+function afaCollectMenuSnapshotBatched(done) {
+var snapshot = {
+at: Date.now(),
+cards: [],
+forceRows: [],
+pbAll: [],
+pbExpected: null,
+completionCandidates: [],
+missingCandidates: [],
+assignTaskState: null
+};
+try { snapshot.cards = Array.prototype.slice.call(document.querySelectorAll('job-card')); } catch(eCards) {}
+var steps = [
+function(){ snapshot.pbAll = afaScanPartiallyBatched(); },
+function(){ snapshot.pbExpected = afaSectionCount(/^Partially\s+Batched(\s*\(\d+\))?$/i); },
+function(){ snapshot.forceRows = afaScanDashboard(snapshot.cards); },
+function(){ snapshot.completionCandidates = afaScanCompletionCandidates(snapshot.cards); },
+function(){ snapshot.missingCandidates = afaScanMissingCandidates(snapshot.cards); },
+function(){ snapshot.assignTaskState = cbtAssignSiteTaskState(); }
+];
+var idx = 0;
+var raf = (typeof requestAnimationFrame === 'function')
+? requestAnimationFrame
+: function(cb){ return setTimeout(cb, 16); };
+function next() {
+if (idx >= steps.length) {
+snapshot.at = Date.now();
+if (typeof done === 'function') done(snapshot);
+return;
+}
+raf(function(){
+setTimeout(function(){
+try { steps[idx](); } catch(eStep) {}
+idx++;
+next();
+}, 0);
+});
+}
+next();
 }
 function afaConfirmInstantShell() {
 // Paint the real Cart Actions structure immediately.  Only actions that require
@@ -11779,59 +11908,20 @@ if (action === 'assign') { afaAssignPicker(); }
 }
 function afaConfirm() {
 if (_afaRunning) { afaProgressView(); return; }
-// Ignore a double-click while the same menu is already being verified.
 if (_afaConfirmLoading && _afaOverlay && _afaOverlay.isConnected) return;
 try { cbtAssignReleaseUiSessionLock(); } catch(eAssignUiRelease) {}
-// Cancel a hover warm-up that has not started yet so the click never launches
-// two copies of the same DOM scan.
 _afaMenuSnapshotWarmSeq++;
 _afaMenuSnapshotInFlight = false;
 _afaConfirmLoading = true;
 var openSeq = ++_afaConfirmOpenSeq;
 
-// If the user hovered Run a moment before clicking, use that very fresh
-// snapshot immediately.  Every destructive action still performs its own
-// fresh read before running, so this cache cannot create an assignment conflict.
-var cached = _afaMenuSnapshotCache;
-var cacheFresh = !!(
-cached &&
-(Date.now() - Number(cached.at || 0)) < AFA_MENU_SNAPSHOT_TTL_MS
-);
-if (cacheFresh) {
-try {
-afaConfirmRender(
-cached.forceRows || [],
-cached.pbAll || [],
-cached.pbExpected,
-null,
-{
-cards: cached.cards || [],
-completionCandidates: cached.completionCandidates || [],
-missingCandidates: cached.missingCandidates || [],
-assignTaskState: cached.assignTaskState || null
-}
-);
-} catch(eCachedMenu) {
-cacheFresh = false;
-}
-}
-
-// On a cold click there is no "Loading cart actions…" screen anymore.  The
-// complete Cart Actions shell paints now, and only the current counts/states
-// are verified in the following frame.
-if (!cacheFresh) afaConfirmInstantShell();
+// Paint immediately, then split each expensive cart scan across separate frames.
+afaConfirmInstantShell();
 var menuOverlay = _afaOverlay;
-
-var raf = (typeof requestAnimationFrame === 'function')
-? requestAnimationFrame
-: function(cb){ return setTimeout(cb, 16); };
-raf(function(){
-setTimeout(function(){
+afaCollectMenuSnapshotBatched(function(snapshot){
 if (openSeq !== _afaConfirmOpenSeq || !_afaOverlay || _afaOverlay !== menuOverlay) return;
 try {
-var snapshot = afaCollectMenuSnapshot();
 _afaMenuSnapshotCache = snapshot;
-if (openSeq !== _afaConfirmOpenSeq || !_afaOverlay || _afaOverlay !== menuOverlay) return;
 afaConfirmRender(
 snapshot.forceRows || [],
 snapshot.pbAll || [],
@@ -11846,10 +11936,7 @@ assignTaskState: snapshot.assignTaskState || null
 );
 } catch(eConfirmScan) {
 _afaConfirmLoading = false;
-// Keep the already-visible Cart Actions shell instead of replacing it with an
-// error/loading page.  Assign remains usable and every actual action rechecks.
 }
-}, 0);
 });
 }
 var CBT_ASSIGN_SUGGEST_MAX = 10;
@@ -13278,7 +13365,7 @@ try {
 if (_acDrop) acTick();
 if (!document.hidden && acWatchRelevant()) acScanForFields();
 } catch(e2) {}
-}, 1200);
+}, 2500);
 try { if (acWatchRelevant()) acScanForFields(); } catch(e3) {}
 }
 var _cbtStartupDone = false;
@@ -13415,7 +13502,10 @@ try { cbtStartTimerRouteRepair(); } catch(eTimerPageShow) {}
 });
 var lastPath = location.pathname + location.hash;
 var hbBoot = Date.now();
-var hbLastLive = hbBoot, hbLastSecond = hbBoot, hbLastHealth = hbBoot, hbLastTimers = hbBoot;
+var hbLastLive = hbBoot, hbLastSecond = hbBoot, hbLastHealth = hbBoot;
+var hbLastTaskPoll = hbBoot, hbLastStatsPoll = hbBoot, hbLastTimers = hbBoot;
+var CBT_LIVE_REFRESH_MS = 3000;
+var CBT_STATS_REFRESH_MS = 6000;
 setInterval(function () {
 var nowMs = Date.now();
 var nowPath = location.pathname + location.hash;
@@ -13423,7 +13513,7 @@ if (nowPath !== lastPath) {
 lastPath = nowPath;
 onRoute();
 }
-if (nowMs - hbLastLive >= TICK_MS) {
+if (nowMs - hbLastLive >= 1000) {
 hbLastLive = nowMs;
 if (isComoSite()) {
 try { tickLive(); } catch(eLiveTick) {}
@@ -13439,12 +13529,22 @@ try { tickTimers(); } catch(eTimerTick) {}
 if (nowMs - hbLastHealth >= PANEL_HEALTH_MS) {
 hbLastHealth = nowMs;
 try { panelHealthCheck(); } catch(eHealth) {}
+}
+if (nowMs - hbLastTaskPoll >= CBT_LIVE_REFRESH_MS) {
+hbLastTaskPoll = nowMs;
 if (isComoSite()) {
 try { pollActiveTasks(); } catch(ePoll) {}
+}
+}
+if (nowMs - hbLastStatsPoll >= CBT_STATS_REFRESH_MS) {
+hbLastStatsPoll = nowMs;
+if (isComoSite()) {
 try { fetchAndUpdate(); } catch(eStats) {}
 }
 }
-if (nowMs - hbLastTimers >= 15000) {
+// MutationObserver repairs normal timer changes.  This is only a low-frequency
+// safety scan instead of walking all task cards every 15 seconds.
+if (nowMs - hbLastTimers >= 60000) {
 hbLastTimers = nowMs;
 if (isComoSite() && !document.hidden && isDashboardView()) {
 if (cbtIsActivelyScrolling()) {
@@ -13580,12 +13680,8 @@ try { if (isDashboardView()) cbtStartTimerRouteRepair(); } catch(eTimerBootRepai
 try { cbtStartTodayBoundaryClock(); } catch(e10) {}
 });
 
-// Shared assignment protection starts separately so Firebase startup cannot
-// share the same main-thread turn as panel construction.
-cbtStartupNextFrame(function(){
-try { cbtAssignSharedProtectionPull(true); } catch(eFastProtect) {}
-try { cbtAssignStartSharedProtectionLive(); } catch(eFastProtectLive) {}
-});
+// v23.9.211 NoLag: no continuous assignment-sync startup.  The silent
+// cross-computer lock is acquired only when an assignment is actually attempted.
 
 // Cached Live rows are ingested in tiny frame-sized batches. Fresh backend Live
 // starts after that cache is finished, preserving the existing "fresh wins"
@@ -13617,11 +13713,10 @@ cbtInjectAllTimersStartupBatched();
 } catch(e12) {}
 }, 1000);
 
-// Safety-net observers are last because they do not need to block first paint.
+// v23.9.211 NoLag: do not attach the broad body-wide panel MutationObserver.
+// Route heartbeat/panel health recovery remains, and autocomplete has its own
+// lightweight relevance-gated interval.
 cbtIdle(function(){
-try {
-panelWatcher.observe(document.body || document.documentElement, { childList: true, subtree: true });
-} catch(e5) {}
 try { startAutocompleteWatch(); } catch(e9) {}
 }, 1250);
 }
@@ -13656,40 +13751,22 @@ cbtIdle(function(){
 if (document.hidden) return;
 if (syncNamesFromAllTabs() && activeTab === 'names') renderNames();
 }, 700);
-}, 5000);
-setInterval(function(){ if (!document.hidden) { try { cbtBatchEventsPull(); } catch(eEvents2) {} } }, 15000);
-setInterval(function(){ if (!document.hidden) syncPull(); }, 30000);
-var cbtAssignProtectFallbackTick = 0;
+}, 30000);
+setInterval(function(){ if (!document.hidden) { try { cbtBatchEventsPull(); } catch(eEvents2) {} } }, 60000);
+setInterval(function(){ if (!document.hidden) syncPull(); }, 120000);
+// v23.9.213 lightweight To Accept/highlight sync: no event stream and no 1-second
+// Firebase loop. One conditional ETag request every 3 seconds while visible;
+// 304 responses do not trigger DOM scans or countdown rebinding.
+setTimeout(function(){
+if (!document.hidden && isComoSite() && isDashboardView()) {
+try { cbtAssignSharedProtectionPull(true); } catch(eProtectInitial) {}
+}
+}, 900);
 setInterval(function(){
-if (document.hidden) return;
-cbtAssignProtectFallbackTick++;
-try { cbtAssignRenderGlobalSessionState(); } catch(eGlobalAssignFastTick) {}
-try {
-var streamTooOld =
-_cbtAssignLiveStreamActive &&
-_cbtAssignLiveStreamStartedAt &&
-Date.now() - _cbtAssignLiveStreamStartedAt > 10 * 60 * 1000;
-var streamStale =
-_cbtAssignLiveStreamReady &&
-_cbtAssignLiveStreamLastProgress &&
-Date.now() - _cbtAssignLiveStreamLastProgress > 75000;
-if (streamTooOld || streamStale) {
-cbtAssignStopSharedProtectionLive();
-cbtAssignSharedProtectionPull(true);
-cbtAssignStartSharedProtectionLive();
-}
-if (!_cbtAssignLiveStreamReady ||
-// The live Firebase stream remains primary. This small ETag/304 fallback is
-// intentionally quicker so browsers whose userscript stream progress is
-// buffered still see a new highlight within about 3 seconds instead of 10.
-cbtAssignProtectFallbackTick % 3 === 0) {
-cbtAssignSharedProtectionPull();
-}
-if (!_cbtAssignLiveStreamActive) {
-cbtAssignStartSharedProtectionLive();
-}
-} catch(eProtect2) {}
-}, 1000);
+if (document.hidden || !isComoSite() || !isDashboardView()) return;
+try { cbtAssignSharedProtectionPull(false); } catch(eProtectLight) {}
+}, 3000);
+
 document.addEventListener('visibilitychange', function(){
 if (document.hidden) return;
 try { panelHealthCheck(); } catch(e9p) {}
@@ -13699,7 +13776,6 @@ try { fetchAndUpdate(); } catch(e9stats) {}
 }
 try { cbtBatchEventsPull(); } catch(e9events) {}
 try { cbtAssignSharedProtectionPull(true); } catch(e9protect) {}
-try { cbtAssignStartSharedProtectionLive(); } catch(e9protectLive) {}
 try { syncPull(); } catch(e9c) {}
 });
 if (isComoSite()) {
