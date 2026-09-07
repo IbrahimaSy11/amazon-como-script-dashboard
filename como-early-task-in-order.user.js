@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.228
+// @version      23.9.229
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -23,6 +23,7 @@
 // - slows only redundant fallback cadence; timers/assignment protection remain responsive
 // v23.9.225 FINAL NOLAG DEBUG PASS:
 // - removes the once-per-second full task-card protection scan; countdown updates now touch only active protected cells
+// v23.9.229: deeper NoLag pass: mutation-local To Accept rebinding (no full task-grid scan in the observer), settled sorting for Amazon DOM bursts, idle core API processing, and cached Live elapsed nodes.
 // v23.9.228: pre-paint To Accept rebinding. When Amazon replaces a task row, the active orange protection is reapplied inside the MutationObserver callback before the browser paints the new row, preventing the brief blink that could repeat with Amazon's periodic refresh.
 // v23.9.226: stabilizes the orange To Accept visual so Amazon DOM repaints cannot make it blink/twitch; countdown text keeps a fixed visual slot.
 // - skips protection card indexing completely when no cart is protected
@@ -2289,12 +2290,17 @@ _sorting = false;
 }
 var _sortSchedulePending = false;
 var _sortScheduledContainer = null;
+var _sortSettleTimer = 0;
 function cbtScheduleSort(container) {
 if (!container || !container.isConnected) return;
 _sortScheduledContainer = container;
-if (_sortSchedulePending) return;
 _sortSchedulePending = true;
+// Amazon often rebuilds several task rows in one short burst. Waiting for the
+// burst to settle avoids sorting the same grid on consecutive frames.
+if (_sortSettleTimer) clearTimeout(_sortSettleTimer);
+_sortSettleTimer = setTimeout(runScheduledSort, 55);
 function runScheduledSort() {
+_sortSettleTimer = 0;
 if (cbtIsActivelyScrolling()) {
 cbtRunAfterScroll('task-sort', runScheduledSort);
 return;
@@ -2308,7 +2314,6 @@ var raf = (typeof requestAnimationFrame === 'function')
 : function(cb){ return setTimeout(cb, 16); };
 raf(function(){ try { sortNow(target); } catch(eSort) {} });
 }
-runScheduledSort();
 }
 function attach(container) {
 if (_attached === container) return;
@@ -2895,7 +2900,10 @@ cbtMarkRelevantDomChanged();
 // frame to appear every refresh, which looked like a fast blink. This runs only
 // while at least one cart has active visual protection.
 try {
-if (cbtAssignHasActiveVisualProtection()) cbtAssignRenderProtectionCountdown();
+// Rebind only task cards touched by this Amazon mutation. The previous path
+// rebuilt an index for the entire task grid inside the MutationObserver, which
+// could add a visible hitch to Amazon's periodic refresh.
+cbtAssignPrePaintRebindMutations(mutations);
 } catch(eCooldownPrePaint) {}
 if (_timerMutationPending) return;
 _timerMutationPending = true;
@@ -3634,12 +3642,23 @@ var data = rawStats ? JSON.parse(rawStats) : [];
 if (!Array.isArray(data)) throw new Error('activeJobSummary returned a non-array payload');
 _statsLastSummaryData = data;
 _cbtLastCoreStatsDomVersion = _cbtRelevantDomVersion;
+var statsSeq = ++_cbtCoreStatsSeq;
 if (cbtIsActivelyScrolling()) {
 cbtRunAfterScroll('stats-apply', function(){
-try { cbtApplyStatsData(_statsLastSummaryData || []); } catch(eStatsApply) {}
+try {
+if (statsSeq < _cbtCoreStatsAppliedSeq) return;
+_cbtCoreStatsAppliedSeq = statsSeq;
+cbtApplyStatsData(_statsLastSummaryData || []);
+} catch(eStatsApply) {}
 });
 } else {
-cbtApplyStatsData(data);
+cbtIdle(function(){
+try {
+if (statsSeq < _cbtCoreStatsAppliedSeq) return;
+_cbtCoreStatsAppliedSeq = statsSeq;
+cbtApplyStatsData(_statsLastSummaryData || data || []);
+} catch(eStatsApplyIdle) {}
+}, 120);
 }
 })
 .catch(function () {})
@@ -5962,6 +5981,10 @@ var _cbtLastCoreLiveRaw = '';
 var _cbtLastCoreStatsRaw = '';
 var _cbtLastCoreLiveCacheSize = -1;
 var _cbtLastCoreStatsDomVersion = -1;
+// Core responses are applied after a short idle handoff. Sequence guards ensure
+// an older response can never overwrite a newer response that arrived later.
+var _cbtCoreLiveSeq = 0, _cbtCoreLiveAppliedSeq = 0;
+var _cbtCoreStatsSeq = 0, _cbtCoreStatsAppliedSeq = 0;
 function cbtTouchCachedLiveSeen() {
 var now = cbtNowMs();
 taskCache.forEach(function(data, ref){
@@ -6090,8 +6113,17 @@ return;
 }
 if (isCoreLive) _cbtLastCoreLiveRaw = raw;
 if (isCoreStats) _cbtLastCoreStatsRaw = raw;
+var coreSeq = isCoreLive ? (++_cbtCoreLiveSeq) : (isCoreStats ? (++_cbtCoreStatsSeq) : 0);
 var apply = function(){
 try {
+if (isCoreLive) {
+if (coreSeq < _cbtCoreLiveAppliedSeq) return;
+_cbtCoreLiveAppliedSeq = coreSeq;
+}
+if (isCoreStats) {
+if (coreSeq < _cbtCoreStatsAppliedSeq) return;
+_cbtCoreStatsAppliedSeq = coreSeq;
+}
 var parsed = JSON.parse(raw);
 if (isCoreLive) {
 _cbtPassiveLiveLastAt = Date.now();
@@ -6109,7 +6141,9 @@ ingestData(parsed);
 } catch(e2) {}
 };
 if (isCore) {
-try { requestAnimationFrame(apply); } catch(eFast) { setTimeout(apply, 0); }
+// Do not compete with Amazon's own DOM render in the same animation frame.
+// A short idle handoff keeps data fresh while avoiding periodic frame hitches.
+cbtIdle(apply, 120);
 } else {
 cbtIdle(apply, 700);
 }
@@ -6150,8 +6184,17 @@ return;
 }
 if (typeof payload === 'string' && isCoreLive) _cbtLastCoreLiveRaw = payload;
 if (typeof payload === 'string' && isCoreStats) _cbtLastCoreStatsRaw = payload;
+var coreSeq = isCoreLive ? (++_cbtCoreLiveSeq) : (isCoreStats ? (++_cbtCoreStatsSeq) : 0);
 var applyXhrLive = function(){
 try {
+if (isCoreLive) {
+if (coreSeq < _cbtCoreLiveAppliedSeq) return;
+_cbtCoreLiveAppliedSeq = coreSeq;
+}
+if (isCoreStats) {
+if (coreSeq < _cbtCoreStatsAppliedSeq) return;
+_cbtCoreStatsAppliedSeq = coreSeq;
+}
 var d = (typeof payload === 'string') ? JSON.parse(payload) : payload;
 if (!d) return;
 if (isCoreLive) {
@@ -6170,7 +6213,7 @@ ingestData(d);
 } catch(e1) {}
 };
 if (isCore) {
-try { requestAnimationFrame(applyXhrLive); } catch(eFastXhr) { setTimeout(applyXhrLive, 0); }
+cbtIdle(applyXhrLive, 120);
 } else {
 cbtIdle(applyXhrLive, 700);
 }
@@ -6326,8 +6369,17 @@ if (rawLive === _cbtLastCoreLiveRaw && taskCache.size === _cbtLastCoreLiveCacheS
 cbtTouchCachedLiveSeen();
 } else {
 _cbtLastCoreLiveRaw = rawLive;
-var freshData = rawLive ? JSON.parse(rawLive) : [];
+var pendingRawLive = rawLive;
+var liveSeq = ++_cbtCoreLiveSeq;
+cbtIdle(function(){
+try {
+if (!isDashboardView()) return;
+if (liveSeq < _cbtCoreLiveAppliedSeq) return;
+_cbtCoreLiveAppliedSeq = liveSeq;
+var freshData = pendingRawLive ? JSON.parse(pendingRawLive) : [];
 cbtApplyAuthoritativeLivePayload(freshData);
+} catch(eLiveIdle) {}
+}, 120);
 }
 }
 } catch(e) {}
@@ -7285,6 +7337,7 @@ var refEl=rowEl.querySelector('.cbt-ref');
 if (refEl && refEl.textContent!==p.shortRef) refEl.textContent=p.shortRef;
 var elapsedEl=rowEl.querySelector('.cbt-elapsed');
 if (elapsedEl) {
+_cbtLiveElapsedElements.add(elapsedEl);
 if (elapsedEl.dataset.start!==String(p.start)) elapsedEl.dataset.start=String(p.start);
 if (elapsedEl.dataset.live!==p.live) elapsedEl.dataset.live=p.live;
 }
@@ -7319,6 +7372,9 @@ html+='<td><span class="'+p.rateClass+'" title="'+cbtEscHtml(p.rateTitle)+'">'+p
 }
 setHTML(tbody, html);
 lockLiveRowGeometry();
+try {
+tbody.querySelectorAll('.cbt-elapsed').forEach(function(el){ _cbtLiveElapsedElements.add(el); });
+} catch(eLiveBind) {}
 _cbtLastLiveTickSecond = -1;
 tickLive();
 requestUnifiedSearchCount();
@@ -7635,15 +7691,21 @@ html += savedNamesSearchHTML(term, shown);
 setHTML(crossEl, html);
 }
 var _cbtLastLiveTickSecond = -1;
+var _cbtLiveElapsedElements = new Set();
 function tickLive() {
 if (document.hidden || activeTab !== 'live') return;
 var nowMs = cbtNowMs();
 var tickSecond = Math.floor(nowMs / 1000);
 if (tickSecond === _cbtLastLiveTickSecond) return;
 _cbtLastLiveTickSecond = tickSecond;
-var tbody = document.getElementById('cbt-tbody');
-if (!tbody || !tbody.isConnected) return;
-tbody.querySelectorAll('.cbt-elapsed[data-live="1"]').forEach(function(el){
+// Live rows are registered when rendered. Avoid querySelectorAll across the
+// whole Live table every second; only touch the elapsed nodes that actually exist.
+_cbtLiveElapsedElements.forEach(function(el){
+if (!el || !el.isConnected) {
+_cbtLiveElapsedElements.delete(el);
+return;
+}
+if (el.dataset.live !== '1') return;
 var startMs = parseFloat(el.dataset.start);
 if (!startMs) return;
 var sec = Math.max(0, (nowMs - startMs) / 1000);
@@ -9970,6 +10032,7 @@ var _cbtAssignCardIndex = null;
 var _cbtAssignHighlightedCards = new Set();
 var _cbtAssignCountdownCells = new Set();
 var _cbtAssignCountdownMeta = (typeof WeakMap === 'function' ? new WeakMap() : null);
+var _cbtAssignActiveVisualByRef = Object.create(null);
 var _cbtAssignProtectionRenderPending = false;
 // v23.9.214: remember what THIS browser has actually observed for each protection
 // record. This stops a temporary old/black assignment cell from being mistaken
@@ -10252,6 +10315,94 @@ try { if (_cbtAssignCountdownMeta) _cbtAssignCountdownMeta.delete(cell); } catch
 } catch(e2) {}
 }
 }
+function cbtAssignPrePaintRebindMutations(mutations) {
+if (!isDashboardView() || !_cbtAssignActiveVisualByRef) return 0;
+var hasActive = false;
+for (var activeRef in _cbtAssignActiveVisualByRef) {
+if (Object.prototype.hasOwnProperty.call(_cbtAssignActiveVisualByRef, activeRef)) { hasActive = true; break; }
+}
+if (!hasActive) return 0;
+var now = cbtAssignNowMs();
+var headerMap = null;
+try { headerMap = cbtAssignHeaderMap(); } catch(eMap) {}
+var cards = new Set();
+function addCard(card) {
+if (!card || card.nodeType !== 1 || !card.isConnected) return;
+try {
+if (!(card.matches && card.matches('job-card'))) card = card.closest ? card.closest('job-card') : null;
+} catch(eClosest) { card = null; }
+if (card && card.isConnected) cards.add(card);
+}
+function scanNode(node) {
+if (!node || node.nodeType !== 1) return;
+try {
+if (node.matches && node.matches('job-card')) cards.add(node);
+else addCard(node);
+if (node.querySelectorAll) node.querySelectorAll('job-card').forEach(function(card){ cards.add(card); });
+} catch(eScan) {}
+}
+for (var mi = 0; mi < (mutations ? mutations.length : 0); mi++) {
+var m = mutations[mi];
+if (!m) continue;
+scanNode(m.target);
+var added = m.addedNodes || [];
+for (var ai = 0; ai < added.length; ai++) scanNode(added[ai]);
+}
+var bound = 0;
+cards.forEach(function(card){
+if (!card || !card.isConnected) return;
+var ref = '';
+try {
+var a = card.querySelector('a');
+ref = cbtAssignNormText(a ? a.textContent : '').toLowerCase();
+} catch(eRef) {}
+var remembered = '';
+try { remembered = cbtAssignNormText(card.getAttribute('data-cbt-protect-ref') || '').toLowerCase(); } catch(eRemember) {}
+var selectedRef = (ref && _cbtAssignActiveVisualByRef[ref]) ? ref :
+(remembered && _cbtAssignActiveVisualByRef[remembered] ? remembered : '');
+if (!selectedRef) return;
+var info = _cbtAssignActiveVisualByRef[selectedRef];
+if (!info || !info.row || Number(info.row.until) <= now) return;
+var rowEl = null, cols = null;
+try {
+rowEl = card.querySelector('div.row');
+cols = rowEl ? rowEl.querySelectorAll(':scope > div[class*="col-"]') : null;
+} catch(eCols) {}
+if (!cols || cols.length < 2) return;
+var destinationCell = cols[1];
+var assignmentCell = headerMap && headerMap.assignment >= 0 && cols.length > headerMap.assignment ? cols[headerMap.assignment] : null;
+var progressCell = headerMap && headerMap.progress >= 0 && cols.length > headerMap.progress ? cols[headerMap.progress] : null;
+var entry = {
+card:card,
+destinationCell:destinationCell,
+assignmentCell:assignmentCell,
+progressCell:progressCell,
+currentRef:ref,
+rememberedRef:remembered
+};
+try {
+if (!cbtAssignEntryShouldShowPendingVisual(entry, info.row, now)) return;
+} catch(eShow) {}
+try {
+card.classList.add('cbt-assign-cooldown');
+card.setAttribute('data-cbt-protect-ref', selectedRef);
+destinationCell.classList.add('cbt-assign-cooldown-destination');
+var seconds = Math.max(1, Math.ceil((Number(info.row.until) - now) / 1000));
+var nextText = seconds + 's To Accept';
+if (destinationCell.getAttribute('data-cbt-cooldown') !== nextText) destinationCell.setAttribute('data-cbt-cooldown', nextText);
+var protectUntil = String(Number(info.row.until) || 0);
+if (destinationCell.getAttribute('data-cbt-protect-until') !== protectUntil) destinationCell.setAttribute('data-cbt-protect-until', protectUntil);
+var textEndLocal = cbtAssignMeasureDestinationTextEnd(destinationCell);
+var textEndCss = textEndLocal.toFixed(2) + 'px';
+if (destinationCell.style.getPropertyValue('--cbt-destination-text-end') !== textEndCss) destinationCell.style.setProperty('--cbt-destination-text-end', textEndCss);
+_cbtAssignHighlightedCards.add(card);
+_cbtAssignCountdownCells.add(destinationCell);
+if (_cbtAssignCountdownMeta) _cbtAssignCountdownMeta.set(destinationCell, {entry:entry, row:info.row, ref:selectedRef});
+bound++;
+} catch(eBind) {}
+});
+return bound;
+}
 function cbtAssignRenderProtectionCountdown() {
 if (!isDashboardView()) return;
 cbtAssignEnsureProtectionStyle();
@@ -10302,6 +10453,7 @@ seconds: Math.max(1, Math.ceil((Number(p.until) - now) / 1000))
 if (changedLocal) cbtAssignPersistProtection();
 if (changedShared) cbtAssignSaveSharedProtection();
 var refs = Object.keys(byRef);
+_cbtAssignActiveVisualByRef = byRef;
 cbtAssignPruneVisualStates(mergedRows, now);
 // No active cart protection means there is nothing to index. The old path still
 // walked every job-card once per second even when zero carts were protected.
@@ -10384,7 +10536,7 @@ destinationCell.setAttribute('data-cbt-protect-until', protectUntil);
 }
 _cbtAssignCountdownCells.add(destinationCell);
 try {
-if (_cbtAssignCountdownMeta) _cbtAssignCountdownMeta.set(destinationCell, {entry:entry, row:protectedInfo.row});
+if (_cbtAssignCountdownMeta) _cbtAssignCountdownMeta.set(destinationCell, {entry:entry, row:protectedInfo.row, ref:selectedRef});
 } catch(eMetaBind) {}
 // Keep the countdown anchored after Destination. Its 150px text slot has a
 // fixed left edge, so changing 60s -> 59s -> ... cannot visually shift/twitch.
@@ -10438,6 +10590,7 @@ _cbtAssignCountdownCells.forEach(function(cell){
 if (!cell || !cell.isConnected) { expired.push(cell); return; }
 var meta = _cbtAssignCountdownMeta ? _cbtAssignCountdownMeta.get(cell) : null;
 if (meta && cbtAssignEntryAcceptedNow(meta.entry, meta.row)) {
+try { if (meta.ref) delete _cbtAssignActiveVisualByRef[String(meta.ref).toLowerCase()]; } catch(eDropActive) {}
 try {
 var acceptedCard = meta.entry && meta.entry.card;
 if (acceptedCard) {
@@ -10456,6 +10609,7 @@ return;
 }
 var until = Number(cell.getAttribute('data-cbt-protect-until')) || 0;
 if (until <= now) {
+try { if (meta && meta.ref) delete _cbtAssignActiveVisualByRef[String(meta.ref).toLowerCase()]; } catch(eDropExpired) {}
 try {
 var card = cell.closest && cell.closest('job-card');
 if (card) {
