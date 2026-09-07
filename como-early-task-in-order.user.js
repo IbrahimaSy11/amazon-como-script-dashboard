@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.224
+// @version      23.9.228
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -16,6 +16,19 @@
 
 (function () {
 'use strict';
+// v23.9.227 FINAL NOLAG DEBUG PASS:
+// - stops fallback Live polling away from Operations Dashboard
+// - ignores unrelated JSON/XHR traffic and dedupes identical core payloads before parsing
+// - removes duplicate startup route-observer work once the task container exists
+// - slows only redundant fallback cadence; timers/assignment protection remain responsive
+// v23.9.225 FINAL NOLAG DEBUG PASS:
+// - removes the once-per-second full task-card protection scan; countdown updates now touch only active protected cells
+// v23.9.228: pre-paint To Accept rebinding. When Amazon replaces a task row, the active orange protection is reapplied inside the MutationObserver callback before the browser paints the new row, preventing the brief blink that could repeat with Amazon's periodic refresh.
+// v23.9.226: stabilizes the orange To Accept visual so Amazon DOM repaints cannot make it blink/twitch; countdown text keeps a fixed visual slot.
+// - skips protection card indexing completely when no cart is protected
+// - avoids duplicate Live renders when the visible associate/package/timing data did not actually change
+// - core Live/stats responses use shallow name/job capture instead of recursively walking the same JSON payload multiple times
+// - removes a duplicate protection render after a successful Assign Cart operation
 // v23.9.224 ASSIGN CART AVAILABILITY:
 // - if Amazon's real job-details 'Assign to Associate' button is enabled, Assign Cart may use that task
 // - this fallback also covers current Partially Batched carts without requiring a prior Force Assign
@@ -2506,45 +2519,52 @@ if (!node || node.nodeType !== 1) return;
 _timerMutationNodes.add(node);
 }
 function catchCurrentRows() {
-if (!isDashboardView()) return;
+if (!isDashboardView()) return false;
 var container = null;
 try { container = getContainer(); } catch(e0) {}
-if (container && container.isConnected) {
+if (!container || !container.isConnected) return false;
 try { cbtRetargetTimerWatcher(container); } catch(e1) {}
 queueNode(container);
 cbtTimerQueueRepairFlush();
+return true;
 }
-}
+// If Amazon already mounted the task container, the normal container-scoped
+// timer MutationObserver is enough. Do not also run a document-wide observer.
+if (catchCurrentRows()) return;
 try {
 _cbtTimerRouteRepairObserver = new MutationObserver(function(mutations){
 if (!isDashboardView() || Date.now() >= stopAt) {
 cbtStopTimerRouteRepair();
 return;
 }
+// As soon as the real task container exists, hand off to the normal scoped
+// watcher and immediately disconnect this temporary document-wide watcher.
+if (catchCurrentRows()) {
+cbtStopTimerRouteRepair();
+return;
+}
 var relevant = false;
 for (var i = 0; i < mutations.length; i++) {
-var m = mutations[i];
-var target = m && m.target;
-if (target && target.nodeType === 1) { queueNode(target); relevant = true; }
-var added = (m && m.addedNodes) || [];
+var added = (mutations[i] && mutations[i].addedNodes) || [];
 for (var j = 0; j < added.length; j++) {
-if (added[j] && added[j].nodeType === 1) { queueNode(added[j]); relevant = true; }
-}
-}
-if (relevant) {
+var node = added[j];
+if (!node || node.nodeType !== 1) continue;
 try {
-var c = getContainer();
-if (c && c.isConnected) cbtRetargetTimerWatcher(c);
-} catch(e2) {}
-cbtTimerQueueRepairFlush();
+if ((node.matches && node.matches('div.container-fluid.job-cards,job-card,div.row.job-card-header')) ||
+(node.querySelector && node.querySelector('div.container-fluid.job-cards,job-card,div.row.job-card-header'))) {
+queueNode(node);
+relevant = true;
 }
+} catch(e2) {}
+}
+}
+if (relevant) cbtTimerQueueRepairFlush();
 });
 _cbtTimerRouteRepairObserver.observe(document.documentElement, {childList:true, subtree:true});
-} catch(e3) { _cbtTimerRouteRepairObserver = null; }
-// If Back restored the list from BFCache or Amazon already mounted the first
-// rows before the route callback ran, repair those rows immediately too.
-catchCurrentRows();
 _cbtTimerRouteRepairStopTimer = setTimeout(cbtStopTimerRouteRepair, CBT_TIMER_ROUTE_REPAIR_MS + 50);
+} catch(e3) {
+_cbtTimerRouteRepairObserver = null;
+}
 }
 // Keep the last valid Batch Target through Amazon's very short row-rebuild gap.
 // This prevents Time Left from flashing away/into a dash when the source cell is
@@ -2761,11 +2781,11 @@ if (el.textContent !== result.text) el.textContent = result.text;
 if (el.className !== nextClass) el.className = nextClass;
 });
 if (cbtIsActivelyScrolling()) {
-cbtRunAfterScroll('assign-protection-render', function(){
-try { cbtAssignRenderProtectionCountdown(); } catch(eCooldownScroll) {}
+cbtRunAfterScroll('assign-protection-tick', function(){
+try { cbtAssignTickProtectionCountdown(); } catch(eCooldownScroll) {}
 });
 } else {
-cbtAssignRenderProtectionCountdown();
+try { cbtAssignTickProtectionCountdown(); } catch(eCooldown) {}
 }
 }
 var _timerMutationHosts = new Set();
@@ -2841,9 +2861,6 @@ _timerMutationHosts.clear();
 // touched and do it before paint, even while scrolling, so the injected column
 // does not briefly disappear during Amazon's own row replacement.
 for (var i = 0; i < hosts.length; i++) refreshTimerHost(hosts[i]);
-try {
-if (cbtAssignHasActiveVisualProtection()) cbtAssignScheduleProtectionRenderFast();
-} catch(eCooldown) {}
 }
 var _timerWatchRoot = null;
 function cbtRetargetTimerWatcher(root) {
@@ -2872,6 +2889,14 @@ if (added[j] && added[j].nodeType === 1) _timerMutationNodes.add(added[j]);
 }
 if (!foundRelevant) return;
 cbtMarkRelevantDomChanged();
+// v23.9.228: Amazon periodically replaces task-row DOM. Rebind an ACTIVE
+// To Accept visual immediately in this MutationObserver microtask, before the
+// browser paints the replacement row. The old rAF-only path allowed one bare
+// frame to appear every refresh, which looked like a fast blink. This runs only
+// while at least one cart has active visual protection.
+try {
+if (cbtAssignHasActiveVisualProtection()) cbtAssignRenderProtectionCountdown();
+} catch(eCooldownPrePaint) {}
 if (_timerMutationPending) return;
 _timerMutationPending = true;
 // v23.9.211 NoLag: one repair pass per animation frame prevents MutationObserver
@@ -3262,7 +3287,6 @@ if (calc.cycle && calc.cycle.quietHours) parts.push('overnight: no normal hourly
 parts.push('resets at next :55 store time');
 return parts.join(' · ');
 }
-var CBT_STATS_REFRESH_MS = 2000;
 var CBT_STATS_WARM_MAX_AGE_MS = 120000;
 var CBT_STATS_WARM_CYCLE_GRACE_MS = 30000;
 var CBT_STATS_WARM_WRITE_MIN_MS = 15000;
@@ -3601,11 +3625,15 @@ if (ctrl) fetchOptions.signal = ctrl.signal;
 _origFetch(COMO_BASE + '/api/store/' + STORE_ID + '/activeJobSummary?_cbt=' + Date.now(), fetchOptions)
 .then(function (r) {
 if (!r || !r.ok) throw new Error('activeJobSummary HTTP ' + (r ? r.status : 0));
-return r.json();
+return r.text();
 })
-.then(function (data) {
+.then(function (rawStats) {
+if (rawStats === _cbtLastCoreStatsRaw && _cbtLastCoreStatsDomVersion === _cbtRelevantDomVersion) return;
+_cbtLastCoreStatsRaw = rawStats || '';
+var data = rawStats ? JSON.parse(rawStats) : [];
 if (!Array.isArray(data)) throw new Error('activeJobSummary returned a non-array payload');
 _statsLastSummaryData = data;
+_cbtLastCoreStatsDomVersion = _cbtRelevantDomVersion;
 if (cbtIsActivelyScrolling()) {
 cbtRunAfterScroll('stats-apply', function(){
 try { cbtApplyStatsData(_statsLastSummaryData || []); } catch(eStatsApply) {}
@@ -3621,7 +3649,7 @@ _statsFetchInFlight = false;
 });
 }
 var CBT_BACKEND_FETCH_TIMEOUT_MS = 15000;
-var POLL_MS = 2000, TICK_MS = 500;
+var POLL_MS = 2000;
 var WARN_ELAPSED_MIN = 15, ALERT_ELAPSED_MIN = 25;
 var WARN_RATE = 2.1, ALERT_RATE = 1.5;
 var CBT_MAX_VALID_RATE = 20;
@@ -5791,6 +5819,44 @@ captureName(data);
 var changed = cbtSaveLocalBatchEvent(event);
 if (changed) cbtPushBatchEvent(event);
 }
+function cbtLiveVisibleSignature(data) {
+if (!data || typeof data !== 'object') return '';
+var op = null;
+try { op = cbtBatchingOpInfo(data, false); } catch(e0) { op = null; }
+return [
+cbtTaskGeneration(data) || '',
+cbtAssociateLogin(data) || '',
+String(data.state || ''),
+String(data.operationState || ''),
+String(Number(data.packagesBatched) || 0),
+String(Number(data.packagesCollected) || 0),
+String(Number(data.totalExpectedPackages) || 0),
+op && op.startMs ? String(op.startMs) : '',
+op && op.endMs ? String(op.endMs) : '',
+op && op.state ? String(op.state) : ''
+].join('|');
+}
+function cbtCaptureTopLevelNamesAndJobs(d) {
+if (!d) return false;
+var added = false;
+function one(obj) {
+if (!obj || typeof obj !== 'object') return;
+try { if (captureName(obj)) added = true; } catch(e0) {}
+try { afaRecordJobObject(obj); } catch(e1) {}
+}
+if (Array.isArray(d)) {
+for (var i = 0; i < d.length && i < 5000; i++) one(d[i]);
+} else if (typeof d === 'object') {
+one(d);
+var keys = ['summaries','tasks','results','items','jobs','data'];
+for (var k = 0; k < keys.length; k++) {
+var arr = d[keys[k]];
+if (!Array.isArray(arr)) continue;
+for (var j = 0; j < arr.length && j < 5000; j++) one(arr[j]);
+}
+}
+return added;
+}
 function ingestItem(item, authoritative) {
 if (!item || typeof item !== 'object' || item.shortClientRef == null) return false;
 var ref = String(item.shortClientRef);
@@ -5827,6 +5893,7 @@ cbtForgetLiveStart(ref);
 return true;
 }
 if (!incomingLive) return false;
+var oldVisibleSig = existing ? cbtLiveVisibleSignature(existing) : '';
 var merged = existing ? Object.assign({}, existing, incoming) : incoming;
 if (existing && (!Array.isArray(incoming.operationDetails) || !incoming.operationDetails.length) &&
 Array.isArray(existing.operationDetails) && existing.operationDetails.length) {
@@ -5837,8 +5904,9 @@ merged.packagesCollected = Math.max(Number(existing && existing.packagesCollecte
 var liveAssoc = cbtAssociateLogin(incoming) || cbtAssociateLogin(merged);
 if (liveAssoc) merged.associateId = liveAssoc;
 try { ensureActiveAssociateInToday(merged); } catch(e) {}
+try { afaRecordJobObject(merged); } catch(eJob) {}
 taskCache.set(ref, merged);
-return true;
+return !existing || oldVisibleSig !== cbtLiveVisibleSignature(merged);
 }
 function cbtCaptureNamesAndJobs(obj, depth) {
 if (obj == null || depth > 6) return false;
@@ -5858,11 +5926,14 @@ if (v && typeof v === 'object' && cbtCaptureNamesAndJobs(v, depth + 1)) added = 
 }
 return added;
 }
-function ingestData(d, authoritative) {
+function ingestData(d, authoritative, shallowCapture) {
 if (!d) return;
 var changed = false;
 try {
-if (cbtCaptureNamesAndJobs(d, 0) && activeTab === 'names') renderNames();
+var namesChanged = shallowCapture
+? cbtCaptureTopLevelNamesAndJobs(d)
+: cbtCaptureNamesAndJobs(d, 0);
+if (namesChanged && activeTab === 'names') renderNames();
 } catch(e) {}
 function take(i) { if (ingestItem(i, !!authoritative)) changed = true; }
 if (Array.isArray(d)) {
@@ -5878,9 +5949,30 @@ if (changed && !authoritative) requestLiveRender();
 return changed;
 }
 var CBT_PASSIVE_JSON_RE = /\"(?:shortClientRef|associateId|associateID|driverAssignment|associate|assignedAssociate|assignedTo|assignee)\"\s*:/i;
+// v23.9.227: only inspect network responses that can actually contain
+// task/associate/batching data. This avoids cloning/parsing unrelated JSON.
+var CBT_PASSIVE_URL_RE = /(?:activeJobsWithSiteSummary|activeJobSummary|jobdetails|jobs?|tasks?|associate|assignment|batch(?:ing|es)?|operation)/i;
+function cbtPassiveUrlMayMatter(url) {
+return CBT_PASSIVE_URL_RE.test(String(url || ''));
+}
 function cbtPassiveJsonMayMatter(raw) {
 return typeof raw === 'string' && CBT_PASSIVE_JSON_RE.test(raw);
 }
+var _cbtLastCoreLiveRaw = '';
+var _cbtLastCoreStatsRaw = '';
+var _cbtLastCoreLiveCacheSize = -1;
+var _cbtLastCoreStatsDomVersion = -1;
+function cbtTouchCachedLiveSeen() {
+var now = cbtNowMs();
+taskCache.forEach(function(data, ref){
+if (!cbtIsLiveBatch(data)) return;
+ref = String(ref);
+_cbtMissingPollsByRef[ref] = 0;
+var locked = _cbtLiveStartByRef[ref];
+if (locked) { locked.lastSeen = now; locked.missingSince = 0; }
+});
+}
+
 // v23.9.217: apply one authoritative Live payload regardless of whether it came
 // from Amazon's own request or our fallback request. This prevents the old
 // duplicate fetch + duplicate parse + duplicate ingest cycle.
@@ -5941,7 +6033,7 @@ delete _cbtMissingPollsByRef[key];
 cbtForgetLiveStart(key);
 }
 });
-try { if (ingestData(freshData, true)) changed = true; } catch(eIngest) {}
+try { if (ingestData(freshData, true, true)) changed = true; } catch(eIngest) {}
 try { cbtLiveWarmSave(bestByRef); } catch(eWarmSave) {}
 cbtPruneOldLiveStarts();
 if (isDashboardView() && _cbtLiveDashboardSyncPending) {
@@ -5951,11 +6043,13 @@ if (cbtRecMainTasksSnapshot()) _cbtLiveDashboardSyncPending = false;
 }
 try { cbtMaybeReloadStaleLive(); } catch(eStaleLive) {}
 if (changed) requestLiveRender();
+_cbtLastCoreLiveCacheSize = taskCache.size;
 return changed;
 }
 function cbtApplyPassiveStatsPayload(data) {
 if (!Array.isArray(data)) return false;
 _cbtPassiveStatsLastAt = Date.now();
+_cbtLastCoreStatsDomVersion = _cbtRelevantDomVersion;
 _statsLastSummaryData = data;
 if (cbtIsActivelyScrolling()) {
 cbtRunAfterScroll('stats-passive-apply', function(){
@@ -5977,28 +6071,44 @@ reqUrl = String(req0 && req0.url ? req0.url : (req0 || ''));
 try { resp = await _origFetch.apply(this, arguments); }
 catch(e) { throw e; }
 try {
-if ((resp.headers.get('content-type') || '').includes('json')) {
+var inspectUrl = cbtPassiveUrlMayMatter(reqUrl);
+if (inspectUrl && (resp.headers.get('content-type') || '').includes('json')) {
 resp.clone().text().then(function(raw){
-var isCoreLiveResponse = /activeJobsWithSiteSummary|activeJobSummary/i.test(reqUrl);
-if (!raw || (!isCoreLiveResponse && !cbtPassiveJsonMayMatter(raw))) return;
+var isCoreLive = /activeJobsWithSiteSummary/i.test(reqUrl);
+var isCoreStats = /activeJobSummary/i.test(reqUrl);
+var isCore = isCoreLive || isCoreStats;
+if (!raw || (!isCore && !cbtPassiveJsonMayMatter(raw))) return;
+if (isCoreLive && raw === _cbtLastCoreLiveRaw && taskCache.size === _cbtLastCoreLiveCacheSize) {
+_cbtPassiveLiveLastAt = Date.now();
+_cbtBackendLastOk = Date.now();
+cbtTouchCachedLiveSeen();
+return;
+}
+if (isCoreStats && raw === _cbtLastCoreStatsRaw && _cbtLastCoreStatsDomVersion === _cbtRelevantDomVersion) {
+_cbtPassiveStatsLastAt = Date.now();
+return;
+}
+if (isCoreLive) _cbtLastCoreLiveRaw = raw;
+if (isCoreStats) _cbtLastCoreStatsRaw = raw;
 var apply = function(){
 try {
 var parsed = JSON.parse(raw);
-if (/activeJobsWithSiteSummary/i.test(reqUrl)) {
+if (isCoreLive) {
 _cbtPassiveLiveLastAt = Date.now();
 cbtApplyAuthoritativeLivePayload(parsed);
 return;
 }
-if (/activeJobSummary/i.test(reqUrl)) {
+if (isCoreStats) {
 cbtApplyPassiveStatsPayload(parsed);
-// Preserve name discovery from the old passive path without forcing a render.
-try { ingestData(parsed); } catch(eNames) {}
+try {
+if (cbtCaptureTopLevelNamesAndJobs(parsed) && activeTab === 'names') renderNames();
+} catch(eNames) {}
 return;
 }
 ingestData(parsed);
 } catch(e2) {}
 };
-if (/activeJobsWithSiteSummary|activeJobSummary/i.test(reqUrl)) {
+if (isCore) {
 try { requestAnimationFrame(apply); } catch(eFast) { setTimeout(apply, 0); }
 } else {
 cbtIdle(apply, 700);
@@ -6014,9 +6124,7 @@ this._cbtUrl = url;
 return _xhrOpen.apply(this, arguments);
 };
 XMLHttpRequest.prototype.send = function() {
-// Use loadend rather than load so the one-shot listener is removed even when a
-// request is aborted or errors. Reused XHR objects must never accumulate stale
-// passive-ingestion listeners across sends.
+if (!cbtPassiveUrlMayMatter(this._cbtUrl)) return _xhrSend.apply(this, arguments);
 this.addEventListener('loadend', function(){
 var xhr = this;
 try {
@@ -6025,27 +6133,43 @@ var payload;
 try {
 payload = xhr.responseType === 'json' ? xhr.response : xhr.responseText;
 } catch(e0) { return; }
-var isCoreLiveXhr = /activeJobsWithSiteSummary|activeJobSummary/i.test(String(xhr._cbtUrl || ''));
-if (typeof payload === 'string' && !isCoreLiveXhr && !cbtPassiveJsonMayMatter(payload)) return;
+var xhrUrl = String(xhr._cbtUrl || '');
+var isCoreLive = /activeJobsWithSiteSummary/i.test(xhrUrl);
+var isCoreStats = /activeJobSummary/i.test(xhrUrl);
+var isCore = isCoreLive || isCoreStats;
+if (typeof payload === 'string' && !isCore && !cbtPassiveJsonMayMatter(payload)) return;
+if (typeof payload === 'string' && isCoreLive && payload === _cbtLastCoreLiveRaw && taskCache.size === _cbtLastCoreLiveCacheSize) {
+_cbtPassiveLiveLastAt = Date.now();
+_cbtBackendLastOk = Date.now();
+cbtTouchCachedLiveSeen();
+return;
+}
+if (typeof payload === 'string' && isCoreStats && payload === _cbtLastCoreStatsRaw && _cbtLastCoreStatsDomVersion === _cbtRelevantDomVersion) {
+_cbtPassiveStatsLastAt = Date.now();
+return;
+}
+if (typeof payload === 'string' && isCoreLive) _cbtLastCoreLiveRaw = payload;
+if (typeof payload === 'string' && isCoreStats) _cbtLastCoreStatsRaw = payload;
 var applyXhrLive = function(){
 try {
 var d = (typeof payload === 'string') ? JSON.parse(payload) : payload;
 if (!d) return;
-var liveUrl = String(xhr._cbtUrl || '');
-if (/activeJobsWithSiteSummary/i.test(liveUrl)) {
+if (isCoreLive) {
 _cbtPassiveLiveLastAt = Date.now();
 cbtApplyAuthoritativeLivePayload(d);
 return;
 }
-if (/activeJobSummary/i.test(liveUrl)) {
+if (isCoreStats) {
 cbtApplyPassiveStatsPayload(d);
-try { ingestData(d); } catch(eNamesXhr) {}
+try {
+if (cbtCaptureTopLevelNamesAndJobs(d) && activeTab === 'names') renderNames();
+} catch(eNamesXhr) {}
 return;
 }
 ingestData(d);
 } catch(e1) {}
 };
-if (/activeJobsWithSiteSummary|activeJobSummary/i.test(String(xhr._cbtUrl || ''))) {
+if (isCore) {
 try { requestAnimationFrame(applyXhrLive); } catch(eFastXhr) { setTimeout(applyXhrLive, 0); }
 } else {
 cbtIdle(applyXhrLive, 700);
@@ -6177,7 +6301,7 @@ attempt();
 }
 var _cbtPollInFlight = false;
 async function pollActiveTasks(force) {
-if (_cbtPollInFlight || document.hidden) return;
+if (_cbtPollInFlight || document.hidden || !isDashboardView()) return;
 // Amazon's own dashboard already fetched this endpoint recently. Its response was
 // consumed by our passive hook, so another identical request here would only repeat
 // JSON parsing/ingestion/rendering on the main thread.
@@ -6196,8 +6320,15 @@ if (pollCtrl) liveFetchOptions.signal = pollCtrl.signal;
 var res = await _origFetch(liveUrl, liveFetchOptions);
 if (res.ok) {
 cbtCalibrateServerClock(res, requestPerf);
-var freshData = await res.json();
+var rawLive = await res.text();
+_cbtBackendLastOk = Date.now();
+if (rawLive === _cbtLastCoreLiveRaw && taskCache.size === _cbtLastCoreLiveCacheSize) {
+cbtTouchCachedLiveSeen();
+} else {
+_cbtLastCoreLiveRaw = rawLive;
+var freshData = rawLive ? JSON.parse(rawLive) : [];
 cbtApplyAuthoritativeLivePayload(freshData);
+}
 }
 } catch(e) {}
 finally {
@@ -9673,11 +9804,13 @@ style.textContent =
 'position:absolute;' +
 'left:calc(var(--cbt-destination-text-end,0px) + 1ch);' +
 'right:auto;' +
-'max-width:none;' +
+'width:150px;' +
+'min-width:150px;' +
+'max-width:150px;' +
 'overflow:visible;' +
 'top:50%;' +
 'transform:translateY(-50%);' +
-'text-align:center;' +
+'text-align:left;' +
 'display:block;' +
 'margin:0;' +
 'padding:0;' +
@@ -10111,8 +10244,11 @@ if (cell) {
 try {
 cell.classList.remove('cbt-assign-cooldown-destination');
 cell.removeAttribute('data-cbt-cooldown');
+cell.removeAttribute('data-cbt-protect-until');
 cell.style.removeProperty('--cbt-accept-gap-x');
 cell.style.removeProperty('--cbt-destination-text-end');
+try { _cbtAssignCountdownCells.delete(cell); } catch(eSet) {}
+try { if (_cbtAssignCountdownMeta) _cbtAssignCountdownMeta.delete(cell); } catch(eMeta) {}
 } catch(e2) {}
 }
 }
@@ -10165,19 +10301,48 @@ seconds: Math.max(1, Math.ceil((Number(p.until) - now) / 1000))
 });
 if (changedLocal) cbtAssignPersistProtection();
 if (changedShared) cbtAssignSaveSharedProtection();
+var refs = Object.keys(byRef);
+cbtAssignPruneVisualStates(mergedRows, now);
+// No active cart protection means there is nothing to index. The old path still
+// walked every job-card once per second even when zero carts were protected.
+if (!refs.length) {
+_cbtAssignHighlightedCards.forEach(function(card){
+if (!card || !card.isConnected) return;
+try {
+card.classList.remove('cbt-assign-cooldown');
+card.removeAttribute('data-cbt-protect-ref');
+var cell0 = card.querySelector('.cbt-assign-cooldown-destination');
+if (cell0) {
+cell0.classList.remove('cbt-assign-cooldown-destination');
+cell0.removeAttribute('data-cbt-cooldown');
+cell0.removeAttribute('data-cbt-protect-until');
+cell0.style.removeProperty('--cbt-accept-gap-x');
+cell0.style.removeProperty('--cbt-destination-text-end');
+}
+} catch(eClear0) {}
+});
+_cbtAssignHighlightedCards.clear();
+_cbtAssignCountdownCells.forEach(function(cell){
+if (!cell) return;
+try {
+cell.classList.remove('cbt-assign-cooldown-destination');
+cell.removeAttribute('data-cbt-cooldown');
+cell.removeAttribute('data-cbt-protect-until');
+cell.style.removeProperty('--cbt-accept-gap-x');
+cell.style.removeProperty('--cbt-destination-text-end');
+} catch(eClear1) {}
+});
+_cbtAssignCountdownCells.clear();
+return;
+}
 var built = cbtAssignBuildCardIndex();
 var cardIndex = built.index;
 var nextHighlighted = new Set();
-if (built.rebuilt) {
-for (var r0 = 0; r0 < cardIndex.rows.length; r0++) {
-cbtAssignClearCooldownEntry(cardIndex.rows[r0]);
-}
-} else {
+// Never blank every active highlight just because Amazon rebuilt the task grid.
+// Reconcile below and clear only cards that are truly stale/no longer protected.
 _cbtAssignHighlightedCards.forEach(function(card){
 if (!card || !card.isConnected) return;
 });
-}
-var refs = Object.keys(byRef);
 for (var ri = 0; ri < refs.length; ri++) {
 var wantedRef = refs[ri];
 var candidates = cardIndex.byRef[wantedRef] || [];
@@ -10193,10 +10358,11 @@ var selectedRef =
 : entry.currentRef);
 var protectedInfo = selectedRef ? byRef[selectedRef] : null;
 if (!protectedInfo) continue;
-// Highlight/count down only when Amazon visibly confirms the pending state:
-// the same associate name is gray AND the row is still CREATED. A row that
-// is already BATCHING/accepted never receives even a temporary highlight.
-if (!cbtAssignEntryIsGrayCreatedPending(entry, protectedInfo.row)) {
+// Keep the pending visual stable for the full active protection window.
+// Amazon frequently rebuilds/repaints these cells; a transient missing/old/black
+// paint must not make the orange highlight or countdown disappear and reappear.
+// The visual clears only on a real acceptance signal or protection expiry.
+if (!cbtAssignEntryShouldShowPendingVisual(entry, protectedInfo.row, now)) {
 cbtAssignClearCooldownEntry(entry);
 continue;
 }
@@ -10212,9 +10378,17 @@ var nextText = protectedInfo.seconds + 's To Accept';
 if (destinationCell.getAttribute('data-cbt-cooldown') !== nextText) {
 destinationCell.setAttribute('data-cbt-cooldown', nextText);
 }
-// Keep the countdown inside Destination with the existing one-character gap.
-// The Destination value is stable while only the countdown changes, so reuse
-// its measured text end instead of forcing TreeWalker/Range/layout work every second.
+var protectUntil = String(Number(protectedInfo.row.until) || 0);
+if (destinationCell.getAttribute('data-cbt-protect-until') !== protectUntil) {
+destinationCell.setAttribute('data-cbt-protect-until', protectUntil);
+}
+_cbtAssignCountdownCells.add(destinationCell);
+try {
+if (_cbtAssignCountdownMeta) _cbtAssignCountdownMeta.set(destinationCell, {entry:entry, row:protectedInfo.row});
+} catch(eMetaBind) {}
+// Keep the countdown anchored after Destination. Its 150px text slot has a
+// fixed left edge, so changing 60s -> 59s -> ... cannot visually shift/twitch.
+// Reuse the cached Destination measurement instead of forcing layout every second.
 var textEndLocal = cbtAssignMeasureDestinationTextEnd(destinationCell);
 var textEndCss = textEndLocal.toFixed(2) + 'px';
 if (destinationCell.style.getPropertyValue('--cbt-destination-text-end') !== textEndCss) {
@@ -10242,8 +10416,11 @@ var oldCell = card.querySelector('.cbt-assign-cooldown-destination');
 if (oldCell) {
 oldCell.classList.remove('cbt-assign-cooldown-destination');
 oldCell.removeAttribute('data-cbt-cooldown');
+oldCell.removeAttribute('data-cbt-protect-until');
 oldCell.style.removeProperty('--cbt-accept-gap-x');
 oldCell.style.removeProperty('--cbt-destination-text-end');
+try { _cbtAssignCountdownCells.delete(oldCell); } catch(eSetOld) {}
+try { if (_cbtAssignCountdownMeta) _cbtAssignCountdownMeta.delete(oldCell); } catch(eMetaOld) {}
 }
 } catch(eOld) {}
 }
@@ -12127,7 +12304,6 @@ target.key,
 associate,
 target.ref
 );
-cbtAssignRenderProtectionCountdown();
 } catch(eProtectMeta) {}
 results.push({
 ref: associate,
@@ -13844,7 +14020,7 @@ try {
 if (_acDrop) acTick();
 if (!document.hidden && acWatchRelevant()) acScanForFields();
 } catch(e2) {}
-}, 2500);
+}, 5000);
 try { if (acWatchRelevant()) acScanForFields(); } catch(e3) {}
 }
 var _cbtStartupDone = false;
@@ -13983,8 +14159,8 @@ var lastPath = location.pathname + location.hash;
 var hbBoot = Date.now();
 var hbLastLive = hbBoot, hbLastSecond = hbBoot, hbLastHealth = hbBoot;
 var hbLastTaskPoll = hbBoot, hbLastStatsPoll = hbBoot, hbLastTimers = hbBoot;
-var CBT_LIVE_REFRESH_MS = 3000;
-var CBT_STATS_REFRESH_MS = 6000;
+var CBT_LIVE_REFRESH_MS = 4500;
+var CBT_STATS_REFRESH_MS = 9000;
 setInterval(function () {
 var nowMs = Date.now();
 var nowPath = location.pathname + location.hash;
@@ -14011,13 +14187,13 @@ try { panelHealthCheck(); } catch(eHealth) {}
 }
 if (nowMs - hbLastTaskPoll >= CBT_LIVE_REFRESH_MS) {
 hbLastTaskPoll = nowMs;
-if (isComoSite()) {
+if (!document.hidden && isComoSite() && isDashboardView()) {
 try { pollActiveTasks(); } catch(ePoll) {}
 }
 }
 if (nowMs - hbLastStatsPoll >= CBT_STATS_REFRESH_MS) {
 hbLastStatsPoll = nowMs;
-if (isComoSite()) {
+if (!document.hidden && isComoSite() && isDashboardView()) {
 try { fetchAndUpdate(); } catch(eStats) {}
 }
 }
