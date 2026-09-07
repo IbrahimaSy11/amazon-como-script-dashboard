@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.216
+// @version      23.9.224
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -16,6 +16,23 @@
 
 (function () {
 'use strict';
+// v23.9.224 ASSIGN CART AVAILABILITY:
+// - if Amazon's real job-details 'Assign to Associate' button is enabled, Assign Cart may use that task
+// - this fallback also covers current Partially Batched carts without requiring a prior Force Assign
+// - existing normal eligibility remains first priority; UI-button probing runs only during an Assign action
+// v23.9.223 FINAL CLEANUP + DATA ACCURACY:
+// - canonical associate extraction prevents placeholder/object values from becoming associate names
+// - completed-event timestamps are normalized against the trusted batching span
+// - low-confidence disappearance-only completions no longer affect associate statistics
+// - duplicate copies of the same cart completion are semantically deduped across devices
+// - event conflict resolution no longer rewards a longer/less accurate elapsed time
+// v23.9.217 INCREMENTAL NOLAG:
+// - reuses Amazon's own Live/summary responses instead of duplicating the same network polls
+// - manual Live/summary requests are now fallback-only when the site feed is stale
+// - Live warm-cache localStorage writes are throttled to avoid synchronous storage jank
+// - Live renders happen only when authoritative data actually changes
+// - cross-computer protection polling reduced slightly while preserving assignment safety
+// v23.9.219 UI: restored the exact stable v23.9.93 header button style (uniform height; Run + collapse solid blue).
 // v23.9.211 AGGRESSIVE NOLAG:
 // - no Run hover pre-scan or document-wide '*' fallback scans
 // - Run checks are frame-batched
@@ -117,6 +134,71 @@ style.textContent = `
       border: 1px solid var(--cb-border);
     }
     #cbt-controls span:hover { background: var(--cb-blue); color: #fff; border-color: var(--cb-blue); }
+
+    /* v23.9.222 — FIRST-PAINT HEADER CONTROLS
+       These rules live in the main stylesheet so the collapse control is already
+       fully sized/blue before the panel is inserted. This prevents the tiny
+       unstyled pill/line that was visible for a moment during reload. */
+    #cbt-controls > span {
+      height: 26px !important; min-height: 26px !important; max-height: 26px !important;
+      box-sizing: border-box !important;
+      display: inline-flex !important; align-items: center !important; justify-content: center !important;
+      padding-top: 0 !important; padding-bottom: 0 !important;
+      line-height: 1 !important; vertical-align: middle !important;
+      white-space: nowrap !important; flex-shrink: 0 !important;
+    }
+    #cbt-collapse-btn {
+      width: 26px !important; min-width: 26px !important; max-width: 26px !important;
+      padding: 0 !important; font-size: 0 !important;
+      position: relative !important;
+      background: #2979ff !important;
+      background-image: none !important;
+      border: 1px solid #2979ff !important;
+      color: #ffffff !important;
+      -webkit-text-fill-color: #ffffff !important;
+      outline: none !important;
+      box-shadow: none !important;
+      filter: none !important;
+      transform: none !important;
+      opacity: 1 !important;
+    }
+    #cbt-collapse-btn::before {
+      content: '' !important;
+      display: block !important;
+      width: 0 !important; height: 0 !important;
+      border-left: 4px solid transparent !important;
+      border-right: 4px solid transparent !important;
+      margin: 0 !important; padding: 0 !important;
+      transform: none !important;
+    }
+    #cbt-collapse-btn[data-cbt-collapse-state="expanded"]::before {
+      border-bottom: 6px solid #ffffff !important;
+      border-top: 0 !important;
+    }
+    #cbt-collapse-btn[data-cbt-collapse-state="collapsed"]::before {
+      border-top: 6px solid #ffffff !important;
+      border-bottom: 0 !important;
+    }
+    #cbt-collapse-btn:hover,
+    #cbt-collapse-btn:active,
+    #cbt-collapse-btn:focus,
+    #cbt-collapse-btn:focus-visible,
+    #cbt-panel.dark #cbt-collapse-btn,
+    #cbt-panel.dark #cbt-collapse-btn:hover,
+    #cbt-panel.dark #cbt-collapse-btn:active,
+    #cbt-panel.dark #cbt-collapse-btn:focus,
+    #cbt-panel.dark #cbt-collapse-btn:focus-visible {
+      background: #2979ff !important;
+      background-image: none !important;
+      border-color: #2979ff !important;
+      color: #ffffff !important;
+      -webkit-text-fill-color: #ffffff !important;
+      outline: none !important;
+      box-shadow: none !important;
+      filter: none !important;
+      transform: none !important;
+      opacity: 1 !important;
+    }
 
     /* ── Stats bar ── */
     #cbt-stats-bar {
@@ -3502,8 +3584,10 @@ cbtStatsScheduleStartupRecheck();
 removeFromHeader();
 }
 var _statsFetchInFlight = false;
-function fetchAndUpdate() {
+function fetchAndUpdate(force) {
 if (_statsFetchInFlight || document.hidden || !isDashboardView()) return;
+if (!force && _cbtPassiveStatsLastAt &&
+Date.now() - _cbtPassiveStatsLastAt < CBT_PASSIVE_STATS_FRESH_MS) return;
 _statsFetchInFlight = true;
 _statsLastRequestAt = Date.now();
 removeFromHeader();
@@ -3544,6 +3628,12 @@ var CBT_MAX_VALID_RATE = 20;
 var CBT_OBS_RATE_MIN_WINDOW_MS = 30000;
 var _cbtObservedProgressByRef = Object.create(null);
 var _cbtBackendLastOk = 0;
+// v23.9.217: Amazon already requests the same Live/summary endpoints. Reuse those
+// responses and keep our own requests as a fallback instead of doing duplicate work.
+var _cbtPassiveLiveLastAt = 0;
+var _cbtPassiveStatsLastAt = 0;
+var CBT_PASSIVE_LIVE_FRESH_MS = 7000;
+var CBT_PASSIVE_STATS_FRESH_MS = 10000;
 var _cbtLiveStartByRef = Object.create(null);
 var _cbtMissingPollsByRef = Object.create(null);
 var CBT_MISSING_POLL_GRACE = 3;
@@ -3845,9 +3935,39 @@ var REMOTE_HISTORY_DATE_KEY = 'cbt_remote_history_date_v3_' + CBT_HISTORY_STORE_
 var REMOTE_WEEKLY_KEY = 'cbt_remote_weekly_cache_v3_' + CBT_HISTORY_STORE_SCOPE;
 var REMOTE_WEEKLY_PERIOD_KEY = 'cbt_remote_weekly_period_start_v3_' + CBT_HISTORY_STORE_SCOPE;
 function cbtNormalizeAssociateName(v) {
-v = String(v == null ? '' : v).trim();
+if (v == null || (typeof v !== 'string' && typeof v !== 'number')) return '';
+v = String(v).trim();
 if (!v || v.length > 60) return '';
+if (/^(?:null|undefined|none|n\/?a|assignable|unassignable|unknown|unassigned|—|-)$/i.test(v)) return '';
 return /^[A-Za-z0-9._-]+$/.test(v) ? v : '';
+}
+function cbtAssociateLogin(data) {
+function fromValue(v) {
+var direct = cbtNormalizeAssociateName(v);
+if (direct) return direct;
+if (!v || typeof v !== 'object') return '';
+var innerKeys = ['associateId','associateID','login','username','userId','userID','id','name'];
+for (var i = 0; i < innerKeys.length; i++) {
+var n = cbtNormalizeAssociateName(v[innerKeys[i]]);
+if (n) return n;
+}
+return '';
+}
+if (data == null) return '';
+if (typeof data === 'string' || typeof data === 'number') return fromValue(data);
+if (typeof data !== 'object') return '';
+var keys = ['associateId','associateID','associate','assignedAssociate','assignedAssociateId','assignedTo','assignee','driverAssignment'];
+for (var k = 0; k < keys.length; k++) {
+var found = fromValue(data[keys[k]]);
+if (found) return found;
+}
+try {
+if (typeof cbtAssignExtractAssociateDeep === 'function') {
+var deep = cbtNormalizeAssociateName(cbtAssignExtractAssociateDeep(data, 0));
+if (deep) return deep;
+}
+} catch(e) {}
+return '';
 }
 function cbtEscHtml(v) {
 return String(v == null ? '' : v)
@@ -3924,18 +4044,30 @@ return (typeof cbtNowMs === 'function') ? cbtNowMs() : Date.now();
 function cbtSanitizeBatchEvent(e, fallbackId) {
 if (!e || typeof e !== 'object') return null;
 var assoc = cbtNormalizeAssociateName(e.assoc || '');
-var pkgs = Number(e.pkgs) || 0;
+var pkgs = Math.floor(Number(e.pkgs) || 0);
 var elapsedSec = Number(e.elapsedSec) || 0;
 var completedAt = Number(e.completedAt) || 0;
 if (!assoc) return null;
 if (!(pkgs > 0) || pkgs > 5000) return null;
 if (!(elapsedSec >= 30) || elapsedSec > 12 * 3600) return null;
 if (!(completedAt > 0) || !isFinite(completedAt)) return null;
-var rate = pkgs / (elapsedSec / 60);
-if (!(rate > 0) || !isFinite(rate) || rate > CBT_MAX_VALID_RATE) return null;
 var generation = String(e.generation || '').trim();
 var ref = String(e.ref || '').trim();
 var startMs = Number(e.startMs) || 0;
+if (startMs > 0) {
+if (!isFinite(startMs) || completedAt < startMs) return null;
+var spanSec = (completedAt - startMs) / 1000;
+if (!(spanSec >= 30) || spanSec > 12 * 3600) return null;
+// When both timestamps exist, they are the authoritative elapsed span. This
+// prevents one device's stale timer value from changing an associate's rate.
+if (Math.abs(spanSec - elapsedSec) > 1) elapsedSec = spanSec;
+}
+try {
+var nowMs = (typeof cbtNowMs === 'function') ? cbtNowMs() : Date.now();
+if (completedAt > nowMs + 10 * 60 * 1000) return null;
+} catch(eTime) {}
+var rate = pkgs / (elapsedSec / 60);
+if (!(rate > 0) || !isFinite(rate) || rate > CBT_MAX_VALID_RATE) return null;
 var canonicalId = cbtBatchEventId({
 shortClientRef: ref,
 ref: ref,
@@ -3945,6 +4077,8 @@ startMs: startMs
 var eventId = canonicalId || String(e.eventId || fallbackId || '').trim();
 if (!eventId) return null;
 var dateKey = cbtBatchEventDate(completedAt);
+var expected = Math.max(0, Math.floor(Number(e.expected) || 0));
+var missing = Math.max(0, Math.floor(Number(e.missing) || 0));
 var clean = {
 schema: CBT_BATCH_EVENT_SCHEMA,
 eventId: eventId,
@@ -3960,19 +4094,44 @@ weekStart: cbtWeekStartForDateKey(dateKey) || dateKey,
 pkgs: pkgs,
 elapsedSec: elapsedSec,
 rate: rate,
-expected: Math.max(0, Number(e.expected) || 0),
-missing: Math.max(0, Number(e.missing) || 0),
-quality: Math.max(1, Number(e.quality) || 1)
+expected: expected,
+missing: missing,
+quality: Math.max(1, Math.min(3, Math.floor(Number(e.quality) || 1)))
 };
 if (clean.missing > clean.expected && clean.expected > 0) clean.missing = clean.expected;
 return clean;
 }
+function cbtBatchEventFingerprint(e) {
+e = cbtSanitizeBatchEvent(e, e && e.eventId);
+if (!e) return '';
+if (e.ref && Number(e.startMs) > 0) {
+return 'ref:' + String(e.ref).trim().toLowerCase() + '|start5s:' + Math.round(Number(e.startMs) / 5000);
+}
+if (e.generation) return 'gen:' + String(e.generation).trim().toLowerCase();
+return 'id:' + String(e.eventId || '');
+}
+function cbtDedupBatchEventMap(events) {
+var byFingerprint = Object.create(null);
+for (var id in (events || {})) {
+var ev = cbtSanitizeBatchEvent(events[id], id);
+if (!ev) continue;
+var fp = cbtBatchEventFingerprint(ev) || ('id:' + ev.eventId);
+byFingerprint[fp] = cbtChooseBatchEvent(byFingerprint[fp], ev);
+}
+var out = {};
+for (var fp2 in byFingerprint) {
+var chosen = byFingerprint[fp2];
+if (chosen) out[chosen.eventId] = cbtChooseBatchEvent(out[chosen.eventId], chosen);
+}
+return out;
+}
 function cbtBatchEventScore(e) {
 if (!e) return -1;
+// Quality/completeness win conflicts. Elapsed time is intentionally NOT part
+// of the score: a longer stale timer must never beat an equally complete copy.
 return (Number(e.quality) || 0) * 1e12 +
 (Number(e.pkgs) || 0) * 1e7 +
-(Number(e.expected) || 0) * 1e3 +
-Math.min(999999, Number(e.elapsedSec) || 0);
+(Number(e.expected) || 0) * 1e3;
 }
 function cbtChooseBatchEvent(a, b) {
 a = cbtSanitizeBatchEvent(a, a && a.eventId);
@@ -4050,7 +4209,7 @@ if (!stats.totals) stats.totals = {};
 if (!stats.peaks) stats.peaks = {};
 if (!stats.latest) stats.latest = {};
 e = cbtSanitizeBatchEvent(e, e && e.eventId);
-if (!e) return stats;
+if (!e || (Number(e.quality) || 1) < 2) return stats;
 var key = hofKey(e.assoc);
 if (!key) return stats;
 var t = stats.totals[key];
@@ -4072,7 +4231,11 @@ return stats;
 }
 function cbtFastestStatsFromEvents(events) {
 var stats = { totals:{}, peaks:{}, latest:{} };
-for (var id in (events || {})) cbtApplyEventToFastestStats(stats, events[id]);
+var deduped = cbtDedupBatchEventMap(events || {});
+for (var id in deduped) {
+if ((Number(deduped[id].quality) || 1) < 2) continue;
+cbtApplyEventToFastestStats(stats, deduped[id]);
+}
 return stats;
 }
 function cbtLoadBatchEventMap(key) {
@@ -4121,7 +4284,7 @@ var remote = cbtLoadRemoteBatchEvents();
 var local = cbtLoadLocalBatchEvents();
 for (var rid in remote) out[rid] = remote[rid];
 for (var id in local) out[id] = cbtChooseBatchEvent(out[id], local[id]);
-_cbtAllBatchEventsCache = cbtPruneRecentEventMap(out);
+_cbtAllBatchEventsCache = cbtDedupBatchEventMap(cbtPruneRecentEventMap(out));
 return _cbtAllBatchEventsCache;
 }
 function cbtInvalidateEventViews() {
@@ -4366,6 +4529,7 @@ var ev = cbtSanitizeBatchEvent(raw[id], id);
 if (!ev) continue;
 canonical[ev.eventId] = cbtChooseBatchEvent(canonical[ev.eventId], ev);
 }
+canonical = cbtDedupBatchEventMap(canonical);
 } catch(e1) {
 if (cb) cb(false);
 return;
@@ -4398,7 +4562,7 @@ var outByKey = Object.create(null);
 var events = cbtAllBatchEvents();
 for (var id in events) {
 var e = events[id];
-if (!e || (dateFilter && e.dateKey !== dateFilter)) continue;
+if (!e || (Number(e.quality) || 1) < 2 || (dateFilter && e.dateKey !== dateFilter)) continue;
 var key = String(e.assoc || '').trim().toLowerCase();
 if (!key) continue;
 var r = outByKey[key];
@@ -4425,7 +4589,7 @@ function cbtAggregateWeeklyBatchEvents() {
 var out = {}, events = cbtAllBatchEvents();
 for (var id in events) {
 var e = events[id];
-if (!e || !cbtIsDateInCurrentWeek(e.dateKey)) continue;
+if (!e || (Number(e.quality) || 1) < 2 || !cbtIsDateInCurrentWeek(e.dateKey)) continue;
 var dk = e.dateKey, key = String(e.assoc || '').trim().toLowerCase();
 if (!key) continue;
 if (!out[dk]) out[dk] = {};
@@ -4516,14 +4680,25 @@ count++;
 }
 return count;
 }
-function cbtLiveWarmSave(bestByRef) {
+var _cbtLiveWarmLastWriteAt = 0;
+var _cbtLiveWarmLastPayload = '';
+function cbtLiveWarmSave(bestByRef, force) {
 var items = [];
 try {
 Object.keys(bestByRef || {}).forEach(function(ref){
 var row = bestByRef[ref] && bestByRef[ref].data;
 if (row && row.shortClientRef != null && cbtIsLiveBatch(row)) items.push(row);
 });
-var raw = JSON.stringify({ ts:Date.now(), items:items });
+var now = Date.now();
+// localStorage is synchronous. The old code wrote the full Live payload every
+// authoritative poll. Cap this to one write per 15s, and unchanged snapshots to
+// one write per minute. Reload still has a fresh warm cache without constant jank.
+if (!force && _cbtLiveWarmLastWriteAt && now - _cbtLiveWarmLastWriteAt < 15000) return;
+var payload = JSON.stringify(items);
+if (!force && payload === _cbtLiveWarmLastPayload && now - _cbtLiveWarmLastWriteAt < 60000) return;
+var raw = '{"ts":' + now + ',"items":' + payload + '}';
+_cbtLiveWarmLastPayload = payload;
+_cbtLiveWarmLastWriteAt = now;
 try { sessionStorage.setItem(cbtLiveWarmCacheKey(), raw); } catch(e0) {}
 try { localStorage.setItem(cbtLiveWarmCacheKey(), raw); } catch(e1) {}
 } catch(e2) {}
@@ -5003,7 +5178,7 @@ ontimeout: function(){ _namesPushQueued = true; }
 }
 function captureName(item) {
 if (!item || typeof item !== 'object') return false;
-var name = cbtNormalizeAssociateName(item.associateId || item.associate || item.driverAssignment || '');
+var name = cbtAssociateLogin(item);
 if (!name) return false;
 var key = name.toLowerCase();
 var all = loadAllNames();
@@ -5070,7 +5245,7 @@ function syncNamesFromAllTabs() {
 var all = loadAllNames();
 var added = false;
 taskCache.forEach(function(d){
-if (addNameToAll(all, d.associateId||d.associate||d.driverAssignment)) added = true;
+if (addNameToAll(all, cbtAssociateLogin(d))) added = true;
 });
 if (_cbtNamesLastSourceRevision !== _cbtNameSourceRevision) {
 try {
@@ -5591,11 +5766,11 @@ if (!data || !cbtIsLiveBatch(data)) return false;
 return captureName(data);
 }
 function recordCompletedBatch(data, elapsedSec, startMs, endMs, qualityOverride) {
-if (!data || (!data.associateId && !data.associate && !data.driverAssignment)) return;
-var pkgs = Number(data.packagesBatched) || 0;
-if (pkgs === 0 || !elapsedSec || elapsedSec < 30) return;
-var assoc = cbtNormalizeAssociateName(data.associateId || data.associate || data.driverAssignment || '');
+if (!data) return;
+var assoc = cbtAssociateLogin(data);
 if (!assoc) return;
+var pkgs = Math.floor(Number(data.packagesBatched) || 0);
+if (pkgs === 0 || !elapsedSec || elapsedSec < 30) return;
 var rate = pkgs / (elapsedSec / 60);
 if (!(rate > 0) || !isFinite(rate) || rate > CBT_MAX_VALID_RATE) return;
 var eventId = cbtBatchEventId(data, startMs);
@@ -5609,7 +5784,7 @@ var event = cbtSanitizeBatchEvent({
 schema:CBT_BATCH_EVENT_SCHEMA,eventId:eventId,storeId:CBT_HISTORY_STORE_SCOPE,
 assoc:assoc,ref:String(data.shortClientRef || ''),generation:cbtTaskGeneration(data),
 startMs:Number(startMs)||0,completedAt:completedAt,observedAt:observedAt,pkgs:pkgs,elapsedSec:Number(elapsedSec),
-expected:expected,missing:missing,quality:Math.max(1, Number(qualityOverride) || (Number(endMs)>0?2:1))
+expected:expected,missing:missing,quality:Math.max(1, Number(qualityOverride) || (Number(endMs)>0?3:1))
 }, eventId);
 if (!event) return;
 captureName(data);
@@ -5643,6 +5818,8 @@ String(incoming.state).toUpperCase() !== 'BATCHING') {
 var mergedDone = Object.assign({}, existing, incoming);
 mergedDone.packagesBatched = Math.max(Number(existing.packagesBatched)||0, Number(incoming.packagesBatched)||0);
 mergedDone.packagesCollected = Math.max(Number(existing.packagesCollected)||0, Number(incoming.packagesCollected)||0);
+var finalAssoc = cbtAssociateLogin(incoming) || cbtAssociateLogin(mergedDone);
+if (finalAssoc) mergedDone.associateId = finalAssoc;
 var finishedRow = computeRow(mergedDone, true);
 recordCompletedBatch(mergedDone, finishedRow.elapsedSec, finishedRow.startMs, finishedRow.endMs);
 taskCache.delete(ref);
@@ -5657,7 +5834,8 @@ merged.operationDetails = existing.operationDetails;
 }
 merged.packagesBatched = Math.max(Number(existing && existing.packagesBatched)||0, Number(incoming.packagesBatched)||0);
 merged.packagesCollected = Math.max(Number(existing && existing.packagesCollected)||0, Number(incoming.packagesCollected)||0);
-if (!merged.associateId && !merged.associate && merged.driverAssignment) merged.associate = merged.driverAssignment;
+var liveAssoc = cbtAssociateLogin(incoming) || cbtAssociateLogin(merged);
+if (liveAssoc) merged.associateId = liveAssoc;
 try { ensureActiveAssociateInToday(merged); } catch(e) {}
 taskCache.set(ref, merged);
 return true;
@@ -5697,10 +5875,96 @@ if (Array.isArray(d[k])) d[k].forEach(take);
 });
 }
 if (changed && !authoritative) requestLiveRender();
+return changed;
 }
-var CBT_PASSIVE_JSON_RE = /\"(?:shortClientRef|associateId|driverAssignment|associate)\"\s*:/i;
+var CBT_PASSIVE_JSON_RE = /\"(?:shortClientRef|associateId|associateID|driverAssignment|associate|assignedAssociate|assignedTo|assignee)\"\s*:/i;
 function cbtPassiveJsonMayMatter(raw) {
 return typeof raw === 'string' && CBT_PASSIVE_JSON_RE.test(raw);
+}
+// v23.9.217: apply one authoritative Live payload regardless of whether it came
+// from Amazon's own request or our fallback request. This prevents the old
+// duplicate fetch + duplicate parse + duplicate ingest cycle.
+function cbtApplyAuthoritativeLivePayload(freshData) {
+if (!freshData) return false;
+var changed = false;
+_cbtBackendLastOk = Date.now();
+var activeRefs = new Set();
+var items = Array.isArray(freshData) ? freshData.slice() : [];
+['summaries','tasks','results','items','jobs','data'].forEach(function(k) {
+if (freshData && Array.isArray(freshData[k])) items = items.concat(freshData[k]);
+});
+var bestByRef = Object.create(null);
+items.forEach(function(d) {
+if (!d || d.shortClientRef == null || !cbtIsLiveBatch(d)) return;
+var ref = String(d.shortClientRef);
+activeRefs.add(ref);
+var info = cbtBatchingOpInfo(d, true);
+var score = info && info.startMs ? info.startMs : -1;
+var prev = bestByRef[ref];
+if (!prev || score > prev.score) bestByRef[ref] = { data:d, score:score };
+});
+Object.keys(bestByRef).forEach(function(ref) {
+cbtObserveAuthoritativeLive(bestByRef[ref].data);
+});
+activeRefs.forEach(function(ref) {
+_cbtMissingPollsByRef[ref] = 0;
+try { _cbtWarmLiveRefs.delete(String(ref)); } catch(eWarmSeen) {}
+var locked = _cbtLiveStartByRef[ref];
+if (locked) {
+locked.lastSeen = cbtNowMs();
+locked.missingSince = 0;
+}
+});
+taskCache.forEach(function(val, key) {
+key = String(key);
+if (activeRefs.has(key)) {
+_cbtMissingPollsByRef[key] = 0;
+return;
+}
+if (_cbtWarmLiveRefs.has(key)) {
+_cbtWarmLiveRefs.delete(key);
+taskCache.delete(key);
+changed = true;
+try { delete _cbtMissingPollsByRef[key]; } catch(eWarmMiss) {}
+cbtForgetLiveStart(key);
+return;
+}
+cbtMarkLiveMissing(key);
+var misses = (_cbtMissingPollsByRef[key] || 0) + 1;
+_cbtMissingPollsByRef[key] = misses;
+if (misses >= CBT_MISSING_POLL_GRACE) {
+var lockedGone = _cbtLiveStartByRef[key] ? Object.assign({}, _cbtLiveStartByRef[key]) : null;
+try { cbtFinalizeMissingLiveTask(key, val, lockedGone); } catch(eFinalize) {}
+taskCache.delete(key);
+changed = true;
+delete _cbtMissingPollsByRef[key];
+cbtForgetLiveStart(key);
+}
+});
+try { if (ingestData(freshData, true)) changed = true; } catch(eIngest) {}
+try { cbtLiveWarmSave(bestByRef); } catch(eWarmSave) {}
+cbtPruneOldLiveStarts();
+if (isDashboardView() && _cbtLiveDashboardSyncPending) {
+try {
+if (cbtRecMainTasksSnapshot()) _cbtLiveDashboardSyncPending = false;
+} catch(eReturnSync) {}
+}
+try { cbtMaybeReloadStaleLive(); } catch(eStaleLive) {}
+if (changed) requestLiveRender();
+return changed;
+}
+function cbtApplyPassiveStatsPayload(data) {
+if (!Array.isArray(data)) return false;
+_cbtPassiveStatsLastAt = Date.now();
+_statsLastSummaryData = data;
+if (cbtIsActivelyScrolling()) {
+cbtRunAfterScroll('stats-passive-apply', function(){
+try { cbtApplyStatsData(_statsLastSummaryData || []); } catch(eStatsApply) {}
+});
+} else {
+try { cbtApplyStatsData(data); } catch(eStatsApply2) {}
+}
+return true;
 }
 var _origFetch = window.fetch;
 window.fetch = async function() {
@@ -5715,9 +5979,26 @@ catch(e) { throw e; }
 try {
 if ((resp.headers.get('content-type') || '').includes('json')) {
 resp.clone().text().then(function(raw){
-if (!raw || !cbtPassiveJsonMayMatter(raw)) return;
-var apply = function(){ try { ingestData(JSON.parse(raw)); } catch(e2) {} };
+var isCoreLiveResponse = /activeJobsWithSiteSummary|activeJobSummary/i.test(reqUrl);
+if (!raw || (!isCoreLiveResponse && !cbtPassiveJsonMayMatter(raw))) return;
+var apply = function(){
+try {
+var parsed = JSON.parse(raw);
 if (/activeJobsWithSiteSummary/i.test(reqUrl)) {
+_cbtPassiveLiveLastAt = Date.now();
+cbtApplyAuthoritativeLivePayload(parsed);
+return;
+}
+if (/activeJobSummary/i.test(reqUrl)) {
+cbtApplyPassiveStatsPayload(parsed);
+// Preserve name discovery from the old passive path without forcing a render.
+try { ingestData(parsed); } catch(eNames) {}
+return;
+}
+ingestData(parsed);
+} catch(e2) {}
+};
+if (/activeJobsWithSiteSummary|activeJobSummary/i.test(reqUrl)) {
 try { requestAnimationFrame(apply); } catch(eFast) { setTimeout(apply, 0); }
 } else {
 cbtIdle(apply, 700);
@@ -5744,14 +6025,27 @@ var payload;
 try {
 payload = xhr.responseType === 'json' ? xhr.response : xhr.responseText;
 } catch(e0) { return; }
-if (typeof payload === 'string' && !cbtPassiveJsonMayMatter(payload)) return;
+var isCoreLiveXhr = /activeJobsWithSiteSummary|activeJobSummary/i.test(String(xhr._cbtUrl || ''));
+if (typeof payload === 'string' && !isCoreLiveXhr && !cbtPassiveJsonMayMatter(payload)) return;
 var applyXhrLive = function(){
 try {
 var d = (typeof payload === 'string') ? JSON.parse(payload) : payload;
-if (d) ingestData(d);
+if (!d) return;
+var liveUrl = String(xhr._cbtUrl || '');
+if (/activeJobsWithSiteSummary/i.test(liveUrl)) {
+_cbtPassiveLiveLastAt = Date.now();
+cbtApplyAuthoritativeLivePayload(d);
+return;
+}
+if (/activeJobSummary/i.test(liveUrl)) {
+cbtApplyPassiveStatsPayload(d);
+try { ingestData(d); } catch(eNamesXhr) {}
+return;
+}
+ingestData(d);
 } catch(e1) {}
 };
-if (/activeJobsWithSiteSummary/i.test(String(xhr._cbtUrl || ''))) {
+if (/activeJobsWithSiteSummary|activeJobSummary/i.test(String(xhr._cbtUrl || ''))) {
 try { requestAnimationFrame(applyXhrLive); } catch(eFastXhr) { setTimeout(applyXhrLive, 0); }
 } else {
 cbtIdle(applyXhrLive, 700);
@@ -5842,7 +6136,7 @@ var stateRow = _cbtMissingFinalizeByKey[identity];
 if (!stateRow) return;
 stateRow.tries++;
 if (!jobId) {
-if (stateRow.tries >= 3) finishRecord(cached, 1, 0);
+if (stateRow.tries >= 3) delete _cbtMissingFinalizeByKey[identity];
 else setTimeout(attempt, POLL_MS);
 return;
 }
@@ -5858,7 +6152,8 @@ var merged = Object.assign({}, cached, info);
 merged.shortClientRef = cached.shortClientRef || info.shortClientRef || ref;
 merged.packagesBatched = Math.max(Number(cached.packagesBatched)||0, Number(info.packagesBatched)||0);
 merged.packagesCollected = Math.max(Number(cached.packagesCollected)||0, Number(info.packagesCollected)||0);
-if (!merged.associateId && !merged.associate) merged.associate = cached.associateId || cached.associate || cached.driverAssignment;
+var verifiedAssoc = cbtAssociateLogin(info) || cbtAssociateLogin(cached);
+if (verifiedAssoc) merged.associateId = verifiedAssoc;
 var op = cbtBatchingOpInfo(merged, false) || {};
 var explicitEnd = Number(op.endMs) || cbtNormalizeEpochMs(info.completedAt || info.completionTime || info.endedAt || info.endTime);
 var clearlyFinished = /COMPLETED|COMPLETE|DONE|STAGED|PICKUP|FINISHED/.test(state) || explicitEnd > 0;
@@ -5872,17 +6167,22 @@ return;
 if (state && !clearlyActive) { finishRecord(merged, 2, explicitEnd); return; }
 }
 if (stateRow.tries < 5) setTimeout(attempt, POLL_MS);
-else finishRecord(cached, 1, 0);
+else delete _cbtMissingFinalizeByKey[identity];
 }, function(){
 if (stateRow.tries < 5) setTimeout(attempt, POLL_MS);
-else finishRecord(cached, 1, 0);
+else delete _cbtMissingFinalizeByKey[identity];
 });
 }
 attempt();
 }
 var _cbtPollInFlight = false;
-async function pollActiveTasks() {
+async function pollActiveTasks(force) {
 if (_cbtPollInFlight || document.hidden) return;
+// Amazon's own dashboard already fetched this endpoint recently. Its response was
+// consumed by our passive hook, so another identical request here would only repeat
+// JSON parsing/ingestion/rendering on the main thread.
+if (!force && _cbtPassiveLiveLastAt &&
+Date.now() - _cbtPassiveLiveLastAt < CBT_PASSIVE_LIVE_FRESH_MS) return;
 _cbtPollInFlight = true;
 var pollCtrl = (typeof AbortController === 'function') ? new AbortController() : null;
 var pollTimeoutId = pollCtrl ? setTimeout(function(){ try { pollCtrl.abort(); } catch(eAbort) {} }, CBT_BACKEND_FETCH_TIMEOUT_MS) : 0;
@@ -5897,84 +6197,19 @@ var res = await _origFetch(liveUrl, liveFetchOptions);
 if (res.ok) {
 cbtCalibrateServerClock(res, requestPerf);
 var freshData = await res.json();
-_cbtBackendLastOk = Date.now();
-var activeRefs = new Set();
-var items = Array.isArray(freshData) ? freshData.slice() : [];
-['summaries','tasks','results','items','jobs','data'].forEach(function(k) {
-if (freshData && Array.isArray(freshData[k])) items = items.concat(freshData[k]);
-});
-var bestByRef = Object.create(null);
-items.forEach(function(d) {
-if (!d || d.shortClientRef == null || !cbtIsLiveBatch(d)) return;
-var ref = String(d.shortClientRef);
-activeRefs.add(ref);
-var info = cbtBatchingOpInfo(d, true);
-var score = info && info.startMs ? info.startMs : -1;
-var prev = bestByRef[ref];
-if (!prev || score > prev.score) bestByRef[ref] = { data:d, score:score };
-});
-Object.keys(bestByRef).forEach(function(ref) {
-cbtObserveAuthoritativeLive(bestByRef[ref].data);
-});
-activeRefs.forEach(function(ref) {
-_cbtMissingPollsByRef[ref] = 0;
-try { _cbtWarmLiveRefs.delete(String(ref)); } catch(eWarmSeen) {}
-var locked = _cbtLiveStartByRef[ref];
-if (locked) {
-locked.lastSeen = cbtNowMs();
-locked.missingSince = 0;
-}
-});
-taskCache.forEach(function(val, key) {
-key = String(key);
-if (activeRefs.has(key)) {
-_cbtMissingPollsByRef[key] = 0;
-return;
-}
-// A cached-on-reload Live row is provisional. The first successful
-// authoritative response is enough to remove it if it is no longer active.
-if (_cbtWarmLiveRefs.has(key)) {
-_cbtWarmLiveRefs.delete(key);
-taskCache.delete(key);
-try { delete _cbtMissingPollsByRef[key]; } catch(eWarmMiss) {}
-cbtForgetLiveStart(key);
-return;
-}
-cbtMarkLiveMissing(key);
-var misses = (_cbtMissingPollsByRef[key] || 0) + 1;
-_cbtMissingPollsByRef[key] = misses;
-if (misses >= CBT_MISSING_POLL_GRACE) {
-var lockedGone = _cbtLiveStartByRef[key] ? Object.assign({}, _cbtLiveStartByRef[key]) : null;
-try { cbtFinalizeMissingLiveTask(key, val, lockedGone); } catch(eFinalize) {}
-taskCache.delete(key);
-delete _cbtMissingPollsByRef[key];
-cbtForgetLiveStart(key);
-}
-});
-ingestData(freshData, true);
-Object.keys(bestByRef).forEach(function(ref) {
-// ingestItem(..., true) already performs cbtObserveAuthoritativeLive.
-ingestItem(bestByRef[ref].data, true);
-});
-try { cbtLiveWarmSave(bestByRef); } catch(eWarmSave) {}
-cbtPruneOldLiveStarts();
-if (isDashboardView() && _cbtLiveDashboardSyncPending) {
-try {
-if (cbtRecMainTasksSnapshot()) _cbtLiveDashboardSyncPending = false;
-} catch(eReturnSync) {}
-}
-try { cbtMaybeReloadStaleLive(); } catch(eStaleLive) {}
+cbtApplyAuthoritativeLivePayload(freshData);
 }
 } catch(e) {}
 finally {
 if (pollTimeoutId) clearTimeout(pollTimeoutId);
 _cbtPollInFlight = false;
-requestLiveRender();
 }
 }
 function buildPanel() {
 var panel2 = document.createElement('div');
 panel2.id = 'cbt-panel';
+var bootCollapsed = false;
+try { bootCollapsed = localStorage.getItem('cbt_panel_collapsed') === '1'; } catch(eBootCollapsed) {}
 var bootStats = cbtStatsPrimeStartupWarm();
 var bootIp = bootStats ? String(bootStats.inProgress) : '\u2014';
 var bootRec = bootStats ? String(bootStats.recommended) : '\u2014';
@@ -6012,7 +6247,7 @@ panel2.innerHTML =
 '<span id="cbt-afa-btn" title="Open cart actions">' +
 '<span class="cbt-afa-lbl">▶ Run</span>' +
 '</span>' +
-'<span id="cbt-collapse-btn" title="Collapse/Expand">🔼</span>' +
+'<span id="cbt-collapse-btn" data-cbt-collapse-state="' + (bootCollapsed ? 'collapsed' : 'expanded') + '" title="Collapse/Expand" aria-label="' + (bootCollapsed ? 'Expand dashboard' : 'Collapse dashboard') + '"></span>' +
 '</div>' +
 '</div>' +
 '<div id="cbt-stats-bar">' +
@@ -6136,7 +6371,96 @@ cbtKeepSingleRunButton(keep);
 return keep;
 }
 var _panel2Ref = null;
+var _cbtTempMountObserver = null;
+var _cbtTempMountFrame = 0;
 var PANEL_HEALTH_MS = 5000;
+
+function cbtStopTempMountWatcher() {
+try {
+if (_cbtTempMountObserver) _cbtTempMountObserver.disconnect();
+} catch(e) {}
+_cbtTempMountObserver = null;
+if (_cbtTempMountFrame) {
+try { cancelAnimationFrame(_cbtTempMountFrame); } catch(e2) {}
+_cbtTempMountFrame = 0;
+}
+}
+
+function cbtClearTempPanelStyle(panel) {
+if (!panel) return;
+try { panel.removeAttribute('data-cbt-temp-mount'); } catch(e0) {}
+panel.style.position = '';
+panel.style.top = '';
+panel.style.right = '';
+panel.style.width = '';
+panel.style.maxWidth = '';
+panel.style.zIndex = '';
+}
+
+function cbtPromoteTempPanel() {
+if (!isDashboardView()) return false;
+var panel = document.getElementById('cbt-panel');
+if (!panel || panel.getAttribute('data-cbt-temp-mount') !== '1') return false;
+var mount = findMountPoint();
+if (!mount || !mount.el || !mount.el.parentNode) return false;
+cbtClearTempPanelStyle(panel);
+mount.el.parentNode.insertBefore(panel, mount.el);
+cbtStopTempMountWatcher();
+try { cbtDedupeMainPanels(); cbtKeepSingleRunButton(panel); } catch(e1) {}
+return true;
+}
+
+function cbtStartTempMountWatcher() {
+if (_cbtTempMountObserver || !document.body || !isDashboardView()) return;
+try {
+_cbtTempMountObserver = new MutationObserver(function(mutations){
+if (!isDashboardView()) {
+cbtStopTempMountWatcher();
+return;
+}
+var relevant = false;
+for (var i = 0; i < mutations.length && !relevant; i++) {
+var added = mutations[i].addedNodes || [];
+for (var j = 0; j < added.length; j++) {
+var n = added[j];
+if (!n || n.nodeType !== 1) continue;
+try {
+if ((n.matches && n.matches('utilization.dashboard-utilization,utilization')) ||
+(n.querySelector && n.querySelector('utilization.dashboard-utilization,utilization'))) {
+relevant = true;
+break;
+}
+} catch(e0) {}
+}
+}
+if (!relevant) return;
+if (_cbtTempMountFrame) return;
+var raf = (typeof requestAnimationFrame === 'function') ? requestAnimationFrame : function(cb){ return setTimeout(cb, 16); };
+_cbtTempMountFrame = raf(function(){
+_cbtTempMountFrame = 0;
+try { cbtPromoteTempPanel(); } catch(e1) {}
+});
+});
+_cbtTempMountObserver.observe(document.body, { childList:true, subtree:true });
+} catch(e2) {
+_cbtTempMountObserver = null;
+}
+}
+
+function cbtTempMountPanel(panel) {
+if (!panel || !document.body || !isDashboardView()) return false;
+if (panel.isConnected && panel.getAttribute('data-cbt-temp-mount') !== '1') return false;
+panel.setAttribute('data-cbt-temp-mount', '1');
+panel.style.position = 'fixed';
+panel.style.top = '40px';
+panel.style.right = '8px';
+panel.style.width = 'min(640px, calc(100vw - 16px))';
+panel.style.maxWidth = 'calc(100vw - 16px)';
+panel.style.zIndex = '2147483000';
+if (!panel.isConnected) document.body.appendChild(panel);
+cbtStartTempMountWatcher();
+return true;
+}
 var _mountFails = 0;
 var _fastMountUntil = 0;
 function isComoSite() {
@@ -6162,6 +6486,7 @@ function boardIsMisplaced() {
 return !isDashboardView() && !!document.getElementById('cbt-panel');
 }
 function detachMainPanel() {
+cbtStopTempMountWatcher();
 var p = document.getElementById('cbt-panel');
 if (p) p.remove();
 }
@@ -6175,18 +6500,30 @@ return null;
 function injectPanel() {
 if (!isDashboardView()) { detachMainPanel(); return; }
 var existing = cbtDedupeMainPanels() || document.getElementById('cbt-panel');
-if (existing && existing.isConnected) { cbtKeepSingleRunButton(existing); return; }
+if (existing && existing.isConnected) {
+if (existing.getAttribute('data-cbt-temp-mount') === '1') {
+try { cbtPromoteTempPanel(); } catch(ePromoteExisting) {}
+}
+cbtKeepSingleRunButton(existing);
+return;
+}
 if (!_panel2Ref) {
 _panel2Ref = buildPanel();
 attachPanelEvents(_panel2Ref);
 }
 var mount = findMountPoint();
-if (!mount) return;
-_panel2Ref.style.position = '';
-_panel2Ref.style.top = '';
-_panel2Ref.style.right = '';
-_panel2Ref.style.width = '';
-_panel2Ref.style.zIndex = '';
+if (!mount) {
+if (cbtTempMountPanel(_panel2Ref)) {
+try { cbtStatsHydrateWarm(); } catch(eWarmTemp) {}
+try { if (_statsLastSummaryData) cbtApplyStatsData(_statsLastSummaryData); } catch(eStatsTemp) {}
+try { applyUiScale(); } catch(eScaleTemp) {}
+try { renderActiveSearchTab(); } catch(eRenderTemp) { try { renderLive(); } catch(eRenderTemp2) {} }
+if (activeTab === 'live' && taskCache.size) requestLiveRender();
+}
+return;
+}
+cbtStopTempMountWatcher();
+cbtClearTempPanelStyle(_panel2Ref);
 try {
 var savedH = localStorage.getItem('cbt_body_h');
 var collapsed0 = localStorage.getItem('cbt_panel_collapsed') === '1';
@@ -6205,13 +6542,13 @@ if (body0) { body0.style.display = 'none'; body0.style.minHeight = '0'; }
 if (tabs0) tabs0.style.display = 'none';
 if (search0) search0.style.display = 'none';
 if (drag0) drag0.style.display = 'none';
-if (collapse0) collapse0.textContent = '🔽';
+if (collapse0) { collapse0.setAttribute('data-cbt-collapse-state','collapsed'); collapse0.setAttribute('aria-label','Expand dashboard'); }
 } else {
 if (body0) { body0.style.display = ''; if (!body0.style.minHeight || body0.style.minHeight === '0px') body0.style.minHeight = (parseFloat(savedH) || 350) + 'px'; }
 if (tabs0) tabs0.style.display = '';
 if (search0) search0.style.display = '';
 if (drag0) drag0.style.display = '';
-if (collapse0) collapse0.textContent = '🔼';
+if (collapse0) { collapse0.setAttribute('data-cbt-collapse-state','expanded'); collapse0.setAttribute('aria-label','Collapse dashboard'); }
 }
 } catch(ex) {}
 mount.el.parentNode.insertBefore(_panel2Ref, mount.el);
@@ -6231,7 +6568,13 @@ var p = null;
 try { p = cbtDedupeMainPanels(); } catch(eDedupeHealth) {}
 if (!p) p = document.getElementById('cbt-panel');
 if (p) cbtKeepSingleRunButton(p);
-if (p && p.isConnected) { _mountFails = 0; return; }
+if (p && p.isConnected) {
+if (p.getAttribute('data-cbt-temp-mount') === '1') {
+try { cbtPromoteTempPanel(); } catch(ePromoteHealth) {}
+}
+_mountFails = 0;
+return;
+}
 injectPanel();
 if (!document.getElementById('cbt-panel')) {
 if (_mountFails < 1000) _mountFails++;
@@ -6412,7 +6755,7 @@ if (body) { body.style.display = 'none'; body.style.minHeight = '0'; }
 if (tabs) tabs.style.display = 'none';
 if (searchBar) searchBar.style.display = 'none';
 if (drag) drag.style.display = 'none';
-if (collapseBtn) collapseBtn.textContent = '🔽';
+if (collapseBtn) { collapseBtn.setAttribute('data-cbt-collapse-state','collapsed'); collapseBtn.setAttribute('aria-label','Expand dashboard'); }
 } else {
 if (body) {
 body.style.display = '';
@@ -6423,7 +6766,7 @@ body.style.minHeight = savedH + 'px';
 if (tabs) tabs.style.display = '';
 if (searchBar) searchBar.style.display = '';
 if (drag) drag.style.display = '';
-if (collapseBtn) collapseBtn.textContent = '🔼';
+if (collapseBtn) { collapseBtn.setAttribute('data-cbt-collapse-state','expanded'); collapseBtn.setAttribute('aria-label','Collapse dashboard'); }
 }
 }
 applyMainCollapseState();
@@ -6731,7 +7074,7 @@ if ((mainTasks.refs.size || mainTasks.ids.size) &&
 }
 }
 if (lowerTerm) {
-var nm = (d.associateId||d.associate||d.driverAssignment||d.shortClientRef||'').toLowerCase();
+var nm = (cbtAssociateLogin(d) || '').toLowerCase();
 if (nm.indexOf(lowerTerm) === -1) return;
 }
 rows.push({ d:d, r:computeRow(d) });
@@ -6749,8 +7092,8 @@ if (slowA && slowB) return (ra.scanRate||0) - (rb.scanRate||0);
 }
 var va, vb;
 if(liveSortKey==='assoc'){
-va=(a.associateId||a.associate||'').toLowerCase();
-vb=(b.associateId||b.associate||'').toLowerCase();
+va=(cbtAssociateLogin(a)||'').toLowerCase();
+vb=(cbtAssociateLogin(b)||'').toLowerCase();
 return liveSortAsc?va.localeCompare(vb):vb.localeCompare(va);
 } else if(liveSortKey==='rate'){
 var hasA = (ra.scanRate != null && !isNaN(ra.scanRate));
@@ -6775,7 +7118,7 @@ return;
 empty.style.display='none';
 function present(item) {
 var data=item.d, r=item.r;
-var assoc=data.associateId||data.associate||data.driverAssignment||data.shortClientRef||'';
+var assoc=cbtAssociateLogin(data)||'Unassigned';
 var shortRef=data.shortClientRef||'';
 var rateCls=r.scanRate!=null?(r.scanRate<ALERT_RATE?'alert':r.scanRate<WARN_RATE?'warn':''):'pending';
 var rateTxt=r.scanRate!=null?r.scanRate.toFixed(1):'\u2014';
@@ -10377,34 +10720,38 @@ addFromAnchor(anchors[j], j);
 return found;
 }
 function cbtAssignReadPartialRows() {
-// Partial-only assignment may use a cart only while BOTH conditions are true:
-// 1) the cart is still visibly/strictly verified in the current Partially Batched section; and
-// 2) this browser previously remembered that exact cart through the verified Partial workflow.
-// This prevents stale remembered carts from remaining assignable after Amazon moves them elsewhere.
-var forced = [];
+// v23.9.224: Assign Cart follows Amazon's current Partially Batched section.
+// A prior Force Assign is NOT required. The real job-details Assign to Associate
+// button is verified immediately before the normal assignment request.
 var strict = [];
-try { forced = cbtForcedPartialRows() || []; } catch(eForced) { forced = []; }
 try { strict = cbtAssignStrictPartialCandidates() || []; } catch(eStrict) { strict = []; }
-if (!forced.length || !strict.length) return [];
-var strictById = Object.create(null);
-for (var si = 0; si < strict.length; si++) {
-var s = strict[si] || {};
-var sid = String(s.id || s.key || '');
-var sref = cbtAssignNormText(s.ref || '').toLowerCase();
-if (!sid || !sref) continue;
-strictById[sid] = { ref: sref, rowOrder: Number(s.rowOrder) || si };
-}
-var ready = [];
+var forcedById = Object.create(null);
+try {
+var forced = cbtForcedPartialRows() || [];
 for (var fi = 0; fi < forced.length; fi++) {
 var f = forced[fi] || {};
 var fid = String(f.id || f.key || '');
-var current = strictById[fid];
-if (!current) continue;
-if (cbtAssignNormText(f.ref || '').toLowerCase() !== current.ref) continue;
-if (!cbtForcedPartialIdentity(fid, f.ref)) continue;
-f.rowOrder = current.rowOrder;
-f.partialSectionVerified = true;
-ready.push(f);
+if (fid) forcedById[fid] = f;
+}
+} catch(eForced) {}
+var ready = [];
+for (var si = 0; si < strict.length; si++) {
+var s = strict[si] || {};
+var id = String(s.id || s.key || '');
+var ref = cbtAssignNormText(s.ref || '');
+if (!id || !ref) continue;
+var remembered = forcedById[id] || null;
+ready.push({
+key: id,
+id: id,
+detailsUrl: COMO_BASE + '/store/' + encodeURIComponent(STORE_ID) + '/jobdetails?jobId=' + encodeURIComponent(id),
+ref: ref,
+partial: true,
+partialSectionVerified: true,
+explicitPartialId: true,
+partialOriginForced: !!remembered,
+rowOrder: Number(s.rowOrder) || si
+});
 }
 return ready;
 }
@@ -10428,8 +10775,8 @@ if (label) {
 label.style.opacity = available ? '1' : '0.45';
 label.style.cursor = available ? '' : 'not-allowed';
 label.title = available
-? 'Verified Partially Batched carts are ready to assign.'
-: 'No verified Partially Batched carts are ready to assign right now.';
+? 'Current Partially Batched carts are available for Assign Cart.'
+: 'No current Partially Batched carts are ready to assign right now.';
 }
 if (!available && box.checked) {
 box.checked = false;
@@ -10452,6 +10799,7 @@ var partialOnly = !!options.partialOnly;
 return {
 partialOnly: partialOnly,
 partialIds: options.partialIds || null,
+uiFallback: !!options.uiFallback,
 associate: cbtAssignNormText(options.associate || ''),
 name: !partialOnly,
 blank: !partialOnly,
@@ -10483,10 +10831,7 @@ function cbtAssignRowCanBeTried(r, options) {
 if (!r) return false;
 var scope = cbtAssignNormalizeTaskTypes(options);
 if (scope.partialOnly) {
-if (!r.partial ||
-!r.partialOriginForced ||
-!r.explicitPartialId ||
-!cbtForcedPartialIdentity(r.key, r.ref)) {
+if (!r.partial || !r.partialSectionVerified || !r.explicitPartialId) {
 return false;
 }
 if (scope.partialIds && !scope.partialIds[String(r.key)]) {
@@ -10546,6 +10891,36 @@ if (!hasA && hasB) return 1;
 return a.rowOrder - b.rowOrder;
 });
 }
+function cbtAssignUiFallbackRows(claimed, blocked, options) {
+claimed = claimed || Object.create(null);
+blocked = blocked || Object.create(null);
+options = cbtAssignNormalizeTaskTypes(options);
+if (options.partialOnly) return [];
+var rows = [];
+try { rows = cbtAssignReadRows() || []; } catch(e) { rows = []; }
+return rows.filter(function(r){
+return r &&
+!r.partial &&
+r.batchMs != null &&
+!claimed[r.key] &&
+!blocked[r.key] &&
+!cbtAssignIsProtected(r.key);
+}).map(function(r){
+var copy = Object.assign({}, r);
+copy.uiAssignFallback = true;
+return copy;
+}).sort(function(a, b){
+// Prefer what the Tasks table already says is assignable. Rows requiring the
+// UI-button fallback come after ordinary open rows, then use Batch Target.
+var ar = a.assignable ? 0 : (cbtAssignRowIsGrayCreatedAvailable(a) ? 1 : (a.unassignable ? 3 : 2));
+var br = b.assignable ? 0 : (cbtAssignRowIsGrayCreatedAvailable(b) ? 1 : (b.unassignable ? 3 : 2));
+if (ar !== br) return ar - br;
+var ab = Number(a.batchMs), bb = Number(b.batchMs);
+if (Number.isFinite(ab) && Number.isFinite(bb) && ab !== bb) return ab - bb;
+return a.rowOrder - b.rowOrder;
+});
+}
+
 function cbtAssignCurrentEligible(jobKey, options, ignoreReservationToken) {
 options = cbtAssignNormalizeTaskTypes(options);
 var rows = options.partialOnly
@@ -10554,6 +10929,11 @@ var rows = options.partialOnly
 for (var i = 0; i < rows.length; i++) {
 var r = rows[i];
 if (r.key !== String(jobKey)) continue;
+if (options.uiFallback && !options.partialOnly) {
+return !cbtAssignIsProtected(r.key, ignoreReservationToken) &&
+!r.partial &&
+r.batchMs != null;
+}
 return !cbtAssignIsProtected(r.key, ignoreReservationToken) &&
 cbtAssignRowCanBeTried(r, options);
 }
@@ -10664,10 +11044,120 @@ state === 'COMPLETE' ||
 state === 'DONE'
 );
 }
+var _cbtAssignUiProbeCache = Object.create(null);
+var CBT_ASSIGN_UI_PROBE_CACHE_MS = 1800;
+var CBT_ASSIGN_UI_PROBE_TIMEOUT_MS = 4200;
+function cbtAssignUiButtonStateFromDocument(doc) {
+if (!doc) return { ready: false, available: false, found: false };
+var bodyText = '';
+try { bodyText = cbtAssignNormText(doc.body && doc.body.textContent || ''); } catch(e0) {}
+var nodes = [];
+try {
+nodes = Array.prototype.slice.call(
+doc.querySelectorAll('button,a,input[type="button"],input[type="submit"]')
+);
+} catch(e1) { nodes = []; }
+for (var i = 0; i < nodes.length; i++) {
+var el = nodes[i];
+var label = '';
+try {
+label = cbtAssignNormText(
+el.textContent || el.value || el.getAttribute('aria-label') || el.getAttribute('title') || ''
+);
+} catch(e2) {}
+if (!/^Assign\s+to\s+Associate$/i.test(label)) continue;
+var disabled = false;
+try {
+disabled = !!(
+el.disabled ||
+el.hasAttribute('disabled') ||
+String(el.getAttribute('aria-disabled') || '').toLowerCase() === 'true' ||
+/\bdisabled\b/i.test(String(el.className || ''))
+);
+if (!disabled && el.ownerDocument && el.ownerDocument.defaultView) {
+var cs = el.ownerDocument.defaultView.getComputedStyle(el);
+if (cs && (cs.display === 'none' || cs.visibility === 'hidden' || cs.pointerEvents === 'none')) disabled = true;
+}
+} catch(e3) {}
+return { ready: true, available: !disabled, found: true };
+}
+var rendered = /Manager\s+Actions/i.test(bodyText) &&
+/(?:Force\s+Assignment|Skip\s+Packages|Complete\s+Task|Pull\s+QR\s+Codes)/i.test(bodyText);
+return { ready: rendered, available: false, found: false };
+}
+function cbtAssignProbeUiAssignable(jobId) {
+jobId = String(jobId || '');
+if (!jobId || !document.body) {
+return Promise.resolve({ available: false, found: false, reason: 'job details unavailable' });
+}
+var cached = _cbtAssignUiProbeCache[jobId];
+if (cached && (Date.now() - Number(cached.ts || 0)) <= CBT_ASSIGN_UI_PROBE_CACHE_MS) {
+return Promise.resolve({ available: !!cached.available, found: !!cached.found, cached: true });
+}
+return new Promise(function(resolve){
+var frame = document.createElement('iframe');
+var done = false;
+var started = Date.now();
+frame.setAttribute('aria-hidden', 'true');
+frame.className = 'cbt-assign-probe-frame';
+frame.tabIndex = -1;
+frame.style.cssText =
+'position:fixed!important;left:-10000px!important;top:-10000px!important;' +
+'width:1px!important;height:1px!important;opacity:0!important;' +
+'pointer-events:none!important;border:0!important;';
+function finish(result) {
+if (done) return;
+done = true;
+result = result || { available: false, found: false };
+_cbtAssignUiProbeCache[jobId] = {
+ts: Date.now(),
+available: !!result.available,
+found: !!result.found
+};
+try { frame.remove(); }
+catch(e0) { try { frame.parentNode && frame.parentNode.removeChild(frame); } catch(e1) {} }
+resolve(result);
+}
+function poll() {
+if (done) return;
+var elapsed = Date.now() - started;
+if (elapsed > CBT_ASSIGN_UI_PROBE_TIMEOUT_MS) {
+finish({ available: false, found: false, reason: 'Assign to Associate button could not be verified' });
+return;
+}
+var doc = null;
+try { doc = frame.contentDocument || (frame.contentWindow && frame.contentWindow.document); } catch(e2) {}
+if (doc) {
+var state = cbtAssignUiButtonStateFromDocument(doc);
+if (state.found) {
+finish({ available: !!state.available, found: true, reason: state.available ? 'Assign to Associate is enabled' : 'Assign to Associate is disabled' });
+return;
+}
+if (state.ready && elapsed > 1050) {
+finish({ available: false, found: false, reason: 'Assign to Associate button is not available on the rendered job page' });
+return;
+}
+}
+setTimeout(poll, 120);
+}
+frame.src = COMO_BASE + '/store/' + encodeURIComponent(STORE_ID) +
+'/jobdetails?jobId=' + encodeURIComponent(jobId) + '&cbtAssignProbe=1';
+document.body.appendChild(frame);
+setTimeout(poll, 100);
+});
+}
 function cbtAssignBackendPreflight(jobId, options) {
 options = options || {};
 return afaFetchJobInfo(jobId).then(function(info){
 if (!info) {
+if (options.requireUiAssignable) {
+return cbtAssignProbeUiAssignable(jobId).then(function(ui){
+if (ui && ui.available) {
+return { ok:true, verified:true, state:null, uiAssignable:true, reason:'Assign to Associate is enabled' };
+}
+return { ok:false, retryable:true, skipped:true, state:null, reason:(ui && ui.reason) || 'Assign to Associate could not be verified' };
+});
+}
 return {
 ok: true,
 verified: false,
@@ -10676,30 +11166,11 @@ reason: 'backend state unavailable — assignment API will decide'
 };
 }
 var state = cbtAssignOperationStateDeep(info, 0);
-var allowPartialReassign =
-!!options.allowPartialReassign;
-var allowGrayCreatedReassign =
-!!options.allowGrayCreatedReassign;
+var allowGrayCreatedReassign = !!options.allowGrayCreatedReassign;
 var assignability = null;
 try { assignability = afaAssignabilityDeep(info, 0); } catch(eAssignability) {}
-// A visible gray-name CREATED row is still eligible for the NORMAL Assign flow.
-// Amazon can report that already-named, not-yet-accepted job as UNASSIGNABLE even
-// though assignToAssociate can still be used on it. Only bypass that assignability
-// gate for this verified gray-CREATED case; accepted/BATCHING states stay blocked.
-if (assignability === 'UNASSIGNABLE' && !allowPartialReassign && !allowGrayCreatedReassign) {
-return {
-ok: false,
-retryable: true,
-skipped: true,
-unassignable: true,
-state: state || null,
-reason: 'task is UNASSIGNABLE — skipped before assignment request'
-};
-}
-// For a verified visible gray CREATED retry, do not use the generic recursive
-// state as the blocker: job details can contain COMPLETED states from unrelated
-// operations. Only an actually active BATCHING operation overrides the visible
-// gray CREATED row. The DOM guard is checked again after this request.
+// A visible gray-name CREATED row keeps the existing fast path. It is already
+// verified from the live Tasks row and still receives the final DOM guard.
 if (allowGrayCreatedReassign) {
 var grayAlreadyActive = false;
 try { grayAlreadyActive = cbtIsLiveBatch(info); } catch(eGrayLive) {}
@@ -10719,23 +11190,58 @@ state: state || null,
 grayCreatedRetry: true
 };
 }
-if (cbtAssignStateLooksAccepted(state) && !allowPartialReassign) {
+var backendWouldBlock =
+assignability === 'UNASSIGNABLE' ||
+cbtAssignStateLooksAccepted(state);
+// v23.9.224: Amazon's real enabled Assign to Associate control is authoritative
+// for the fallback path. This covers cases where the JSON says COMPLETE,
+// UNASSIGNABLE, or contains an accepted-looking nested state but the manager UI
+// still allows reassignment. We never Force Assign here; we still use the normal
+// assignToAssociate endpoint.
+if (options.requireUiAssignable || backendWouldBlock) {
+return cbtAssignProbeUiAssignable(jobId).then(function(ui){
+if (ui && ui.available) {
+return {
+ok: true,
+verified: true,
+state: state || null,
+uiAssignable: true,
+reassignAttempt: backendWouldBlock
+};
+}
+if (assignability === 'UNASSIGNABLE') {
+return {
+ok: false,
+retryable: true,
+skipped: true,
+unassignable: true,
+state: state || null,
+reason: (ui && ui.reason) || 'task is UNASSIGNABLE and Assign to Associate is not available'
+};
+}
+if (cbtAssignStateLooksAccepted(state)) {
 return {
 ok: false,
 retryable: true,
 accepted: true,
 state: state,
-reason: 'task already active/accepted' + (state ? ' — ' + state : '')
+reason: (ui && ui.reason) || ('task already active/accepted' + (state ? ' — ' + state : ''))
 };
+}
+return {
+ok: false,
+retryable: true,
+skipped: true,
+state: state || null,
+reason: (ui && ui.reason) || 'Assign to Associate is not available for this task'
+};
+});
 }
 return {
 ok: true,
 verified: true,
 state: state || null,
-reassignAttempt: !!(
-allowPartialReassign &&
-cbtAssignStateLooksAccepted(state)
-)
+reassignAttempt: false
 };
 });
 }
@@ -10894,7 +11400,7 @@ return Promise.resolve({
 ok: false,
 retryable: false,
 skipped: true,
-reason: 'blocked: job is not in the frozen Partially Batched whitelist'
+reason: 'blocked: job is not in the current Partially Batched whitelist'
 });
 }
 if (!guardFn || !guardFn()) {
@@ -10902,19 +11408,7 @@ return Promise.resolve({
 ok: false,
 retryable: true,
 skipped: true,
-reason: 'blocked: forced-partial job is no longer eligible for this run'
-});
-}
-if (!assignOptions.partialRef ||
-!cbtForcedPartialIdentity(
-jobId,
-assignOptions.partialRef
-)) {
-return Promise.resolve({
-ok: false,
-retryable: true,
-skipped: true,
-reason: 'blocked: job was not remembered as a successfully Force Assigned partial cart'
+reason: 'blocked: Partially Batched job is no longer eligible for this run'
 });
 }
 }
@@ -11103,39 +11597,26 @@ return submitDirectAssignment();
 }
 function cbtAssignNoEligibleMessage(taskTypes) {
 if (taskTypes && taskTypes.partialOnly) {
-var pending = [];
-try {
-pending = cbtLoadForcedPartialPending() || [];
-} catch(e0) {
-pending = [];
-}
-if (!pending.length) {
 return (
-'Not Assigned. Reason: No Forced Partial Cart Is Available. ' +
-'Use Force Assign On A Partially Batched Cart First, Then Try Again.'
-);
-}
-return (
-'Not Assigned. Reason: No Eligible Forced Partial Cart Is Available. ' +
-'It May Already Be Assigned, Rejected By Amazon, Or No Longer Ready.'
+'Not Assigned. Reason: No Current Partially Batched Cart Could Be Assigned. ' +
+'The Cart May Have Moved, Become Protected, Or Amazon’s Assign to Associate Button Was Not Available.'
 );
 }
 var state = cbtAssignSiteTaskState();
-if (!state.ready) {
+if (!state.ready && !cbtAssignHasNormalTasksNow()) {
 return (
 'Not Assigned. Reason: The Tasks Page Is Still Loading. ' +
 'Wait A Moment For The Page To Finish Loading, Then Try Again.'
 );
 }
-if (!state.hasTasks) {
+if (!state.hasTasks && !cbtAssignHasNormalTasksNow()) {
 return (
 'Not Assigned. Reason: No Task Cart Is Available Right Now.'
 );
 }
 return (
-'Not Assigned. Reason: No Eligible Cart Is Available For The Selected ' +
-'Assign Options. The Available Carts May Already Be Active, Assigned, ' +
-'Or Temporarily Protected.'
+'Not Assigned. Reason: No Available Cart Could Be Assigned. ' +
+'COMO Also Checked Amazon’s Assign to Associate availability for fallback carts.'
 );
 }
 function cbtAssignProgressView() {
@@ -11316,27 +11797,18 @@ names = Array.isArray(names)
 taskTypes = cbtAssignNormalizeTaskTypes(taskTypes);
 if (!names.length || _afaRunning) return;
 if (taskTypes.partialOnly) {
-var forcedPartialRows = cbtAssignReadPartialRows();
-var forcedPartialIds = Object.create(null);
-for (var spi = 0; spi < forcedPartialRows.length; spi++) {
-var forcedRow = forcedPartialRows[spi];
-if (!forcedRow ||
-!forcedRow.partialOriginForced ||
-!forcedRow.explicitPartialId ||
-!forcedRow.key ||
-!cbtForcedPartialIdentity(
-forcedRow.key,
-forcedRow.ref
-)) {
-continue;
+var partialRowsNow = cbtAssignReadPartialRows();
+var partialIdsNow = Object.create(null);
+for (var spi = 0; spi < partialRowsNow.length; spi++) {
+var partialRow = partialRowsNow[spi];
+if (!partialRow || !partialRow.explicitPartialId || !partialRow.key) continue;
+partialIdsNow[String(partialRow.key)] = true;
 }
-forcedPartialIds[String(forcedRow.key)] = true;
-}
-if (!Object.keys(forcedPartialIds).length) {
-cbtAssignStayOnPicker('Partially Batched carts are still refreshing or no verified Partially Batched cart is available yet. You are still in Assign.');
+if (!Object.keys(partialIdsNow).length) {
+cbtAssignStayOnPicker('Partially Batched carts are still refreshing or none are available right now. You are still in Assign.');
 return;
 }
-taskTypes.partialIds = forcedPartialIds;
+taskTypes.partialIds = partialIdsNow;
 } else if (!cbtAssignHasNormalTasksNow()) {
 cbtAssignStayOnPicker('Tasks are refreshing. You are still in Assign — wait a moment and press Assign again.');
 try { afaRefreshJobData(); } catch(eAssignWarmTasks) {}
@@ -11477,7 +11949,7 @@ return;
 }
 if (!taskTypes.partialOnly) {
 var siteState = cbtAssignSiteTaskState();
-if (!siteState.ready) {
+if (!siteState.ready && !cbtAssignHasNormalTasksNow()) {
 results.push({
 ref: associate,
 skip: true,
@@ -11502,6 +11974,13 @@ claimed,
 blocked,
 associateTaskTypes
 );
+if (!eligible.length && !taskTypes.partialOnly) {
+eligible = cbtAssignUiFallbackRows(
+claimed,
+blocked,
+associateTaskTypes
+);
+}
 if (!eligible.length) {
 results.push({
 ref: associate,
@@ -11527,12 +12006,15 @@ associate,
 target,
 results
 );
+var targetEligibilityTypes = target.uiAssignFallback
+? Object.assign({}, associateTaskTypes, { uiFallback: true })
+: associateTaskTypes;
 function targetStillEligible(ignoreReservationToken) {
 return !claimed[target.key] &&
 !blocked[target.key] &&
 cbtAssignCurrentEligible(
 target.key,
-associateTaskTypes,
+targetEligibilityTypes,
 ignoreReservationToken || ''
 );
 }
@@ -11545,12 +12027,8 @@ var targetType = cbtAssignTaskType(target);
 var allowPartialReassign =
 !!taskTypes.partialOnly &&
 targetType === 'partial' &&
-!!target.partialOriginForced &&
+!!target.partialSectionVerified &&
 !!target.explicitPartialId &&
-cbtForcedPartialIdentity(
-target.key,
-target.ref
-) &&
 !!(
 taskTypes.partialIds &&
 taskTypes.partialIds[String(target.key)]
@@ -11565,7 +12043,7 @@ ref: associate,
 id: target.id,
 skip: true,
 ok: false,
-msg: 'Not Assigned. Reason: The Cart Could Not Be Verified As A Partially Batched Cart.'
+msg: 'Not Assigned. Reason: The Cart Is No Longer In The Current Partially Batched List.'
 });
 cbtAssignProgress(
 nameIndex + 1,
@@ -11622,7 +12100,8 @@ allowGrayCreatedReassign: allowGrayCreatedReassign,
 requirePartialOnly: !!taskTypes.partialOnly,
 partialIds: taskTypes.partialIds,
 partialRef: taskTypes.partialOnly ? target.ref : '',
-targetRef: target.ref
+targetRef: target.ref,
+requireUiAssignable: !!taskTypes.partialOnly || !!target.uiAssignFallback
 }
 ).then(function(result){
 if (_afaStop) {
@@ -12112,8 +12591,8 @@ typeCart.disabled = partialOnly;
 typeBoth.disabled = partialOnly;
 normalTypes.style.opacity = partialOnly ? '0.45' : '1';
 modeNote.textContent = partialOnly
-? 'Partially Batched Only. Select an associate and press Assign normally. The button stays available. The run can use only exact carts remembered from Partially Batched Force Assign. If none are available, nothing is assigned. Normal Tasks are never used as a fallback.'
-: 'Normal Mode: Blank ASSIGNABLE tasks are tried first, earliest Batch Target first. UNASSIGNABLE tasks are always skipped. Time Left is ignored. Cart Only and Name + Cart remain optional. Each selected associate gets up to 5 real assignment attempts before moving to the next associate. An associate with an active 1-minute cooldown is skipped. A cart assigned by this script is protected for 1 minute.';
+? 'Partially Batched Only. Select an associate and press Assign. Any cart still in Amazon’s current Partially Batched section can be tried. Before assignment, COMO verifies that the real Assign to Associate button is enabled. Normal Tasks are never used as a fallback.'
+: 'Normal Mode: standard available Tasks are tried first, earliest Batch Target first. Cart Only and Name + Cart remain priority options. If none match, COMO may use another current cart only after verifying Amazon’s real Assign to Associate button is enabled. A cart assigned by this script is protected for 1 minute.';
 updateAssignStartState();
 }
 function renderSelected() {
@@ -13757,6 +14236,7 @@ setInterval(function(){ if (!document.hidden) syncPull(); }, 120000);
 // v23.9.213 lightweight To Accept/highlight sync: no event stream and no 1-second
 // Firebase loop. One conditional ETag request every 3 seconds while visible;
 // 304 responses do not trigger DOM scans or countdown rebinding.
+// v23.9.217: 5-second passive cross-computer snapshot cadence; assignment-time locks remain immediate.
 setTimeout(function(){
 if (!document.hidden && isComoSite() && isDashboardView()) {
 try { cbtAssignSharedProtectionPull(true); } catch(eProtectInitial) {}
@@ -13765,7 +14245,7 @@ try { cbtAssignSharedProtectionPull(true); } catch(eProtectInitial) {}
 setInterval(function(){
 if (document.hidden || !isComoSite() || !isDashboardView()) return;
 try { cbtAssignSharedProtectionPull(false); } catch(eProtectLight) {}
-}, 3000);
+}, 5000);
 
 document.addEventListener('visibilitychange', function(){
 if (document.hidden) return;
