@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.229
+// @version      23.9.233
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -23,7 +23,10 @@
 // - slows only redundant fallback cadence; timers/assignment protection remain responsive
 // v23.9.225 FINAL NOLAG DEBUG PASS:
 // - removes the once-per-second full task-card protection scan; countdown updates now touch only active protected cells
+// v23.9.230 deep no-lag audit: removes the last full-body timezone serialization, stops sort-induced timer observer feedback, moves Live render work to idle time, defers full localStorage name discovery until the Names tab is actually used, throttles unchanged event backfill work, and reuses Destination text measurements across Amazon row rebuilds.
 // v23.9.229: deeper NoLag pass: mutation-local To Accept rebinding (no full task-grid scan in the observer), settled sorting for Amazon DOM bursts, idle core API processing, and cached Live elapsed nodes.
+// v23.9.233 LOW-LAG STABLE ORDER: preserves the same Batch Target ordering behavior without re-appending the task list on Amazon refreshes. Stable visual order uses CSS order where safe; a task only changes rank when its real Batch Target changes. Assignment candidate priority remains independent.
+// v23.9.232 TARGET-DRIVEN STABLE ORDER: task cards keep their exact visual order through Amazon refresh/rebuild cycles. A card moves only when its real Batch Target changes (or a new task receives its first target), then it is placed once into the correct Batch Target position. Assignment candidate priority remains independent.
 // v23.9.228: pre-paint To Accept rebinding. When Amazon replaces a task row, the active orange protection is reapplied inside the MutationObserver callback before the browser paints the new row, preventing the brief blink that could repeat with Amazon's periodic refresh.
 // v23.9.226: stabilizes the orange To Accept visual so Amazon DOM repaints cannot make it blink/twitch; countdown text keeps a fixed visual slot.
 // - skips protection card indexing completely when no cart is protected
@@ -2142,7 +2145,10 @@ scope = sm && sm[1] ? sm[1] : (location.host + location.pathname);
 } catch(e0) {
 scope = location.host || '';
 }
-var tzCacheTtl = _storeTimezoneWasFallback ? 2000 : (10 * 60 * 1000);
+// A timezone never needs a 2-second retry loop. The previous fallback path could
+// serialize all of document.body (including innerHTML) every 30 seconds when the
+// page did not expose a timezone label, creating a periodic main-thread hitch.
+var tzCacheTtl = 10 * 60 * 1000;
 if (_storeTimezoneCache && _storeTimezoneCacheScope === scope &&
 nowMs - _storeTimezoneCacheAt < tzCacheTtl) {
 return _storeTimezoneCache;
@@ -2173,20 +2179,14 @@ tzEl.getAttribute && tzEl.getAttribute('timezone') || ''
 var match = tzCandidate.match(/([A-Za-z]+\/[A-Za-z_]+)/);
 if (match) tz = match[1];
 }
+// Never read/serialize the entire page just to discover timezone. If Amazon does
+// not expose one in a small dedicated element, use the browser's own IANA zone.
+// This is stable, instant, and preserves local wall-clock Batch Target parsing.
 if (!tz) {
-if (!_storeTimezoneBroadScanAt || nowMs - _storeTimezoneBroadScanAt >= 30000) {
-_storeTimezoneBroadScanAt = nowMs;
-_storeTimezoneBroadScanValue = null;
 try {
-var bodyText = document.body ? (document.body.textContent || '') : '';
-var tzMatch = bodyText.match(/America\/[A-Za-z_]+/);
-if (!tzMatch && document.body) {
-tzMatch = (document.body.innerHTML || '').match(/America\/[A-Za-z_]+/);
-}
-if (tzMatch) _storeTimezoneBroadScanValue = tzMatch[0];
+var browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+if (browserTz && /^[A-Za-z]+\/[A-Za-z_]+$/.test(browserTz)) tz = browserTz;
 } catch(e1) {}
-}
-if (_storeTimezoneBroadScanValue) tz = _storeTimezoneBroadScanValue;
 }
 _storeTimezoneWasFallback = !tz;
 _storeTimezoneCache = tz || 'America/New_York';
@@ -2256,12 +2256,13 @@ var times = matches.map(parseTime).filter(Boolean);
 return times.length ? Math.min.apply(null, times) : null;
 }
 function sortNow(container) {
-if (_sorting) return;
-var cards = Array.from(container.querySelectorAll(':scope > job-card'));
+if (_sorting || !container || !container.isConnected) return;
+var cards = cbtTaskOrderDirectCards(container);
 if (cards.length < 2) return;
 var data = cards.map(function (card, index) {
 return {
 card: card,
+key: cbtTaskOrderCardKey(card),
 btMs: getBatchTarget(card),
 rowOrder: index
 };
@@ -2276,27 +2277,302 @@ if (hasA) return -1;
 if (hasB) return 1;
 return a.rowOrder - b.rowOrder;
 });
-var current = Array.from(container.querySelectorAll(':scope > job-card'));
-if (data.every(function (item, i) { return item.card === current[i]; })) return;
+var nextOrder = [], seen = Object.create(null);
+for (var i = 0; i < data.length; i++) {
+var item = data[i];
+if (item.key && !seen[item.key]) {
+seen[item.key] = 1;
+nextOrder.push(item.key);
+_cbtStableTaskKnown[item.key] = 1;
+if (item.btMs != null && Number.isFinite(Number(item.btMs))) _cbtStableTaskTarget[item.key] = Number(item.btMs);
+}
+}
+if (nextOrder.length) _cbtStableTaskOrder = nextOrder;
 _sorting = true;
+try {
+// Preferred path: visual ordering only. This does not detach/re-append cards,
+// so Amazon refreshes do not create the old layout/repaint spike.
+if (!cbtTaskOrderApplyVisualOrder(container)) {
+// Rare fallback for a container that cannot safely use CSS order. This is only
+// the initial sort; normal refreshes do not run this full-list reorder.
+var current = cbtTaskOrderDirectCards(container);
+var desired = data.map(function(v){ return v.card; });
+var changed = desired.length === current.length;
+if (changed) {
+changed = false;
+for (var c = 0; c < desired.length; c++) {
+if (desired[c] !== current[c]) { changed = true; break; }
+}
+}
+if (changed) {
 var frag = document.createDocumentFragment();
-data.forEach(function (item) { frag.appendChild(item.card); });
+for (var d = 0; d < desired.length; d++) frag.appendChild(desired[d]);
 container.appendChild(frag);
-// The reorder above queues a childList record on our own sort observer. Drop
-// only those already-queued self records before releasing _sorting; Amazon's
-// later mutations are still observed normally.
+}
+}
 try { if (_sortObserver) _sortObserver.takeRecords(); } catch(eSortRecords) {}
+try { if (typeof timerWatcher !== 'undefined' && timerWatcher) timerWatcher.takeRecords(); } catch(eTimerSortRecords) {}
+} finally {
 _sorting = false;
+}
 }
 var _sortSchedulePending = false;
 var _sortScheduledContainer = null;
 var _sortSettleTimer = 0;
+var _cbtVisuallySortedContainers = (typeof WeakSet === 'function' ? new WeakSet() : null);
+
+// v23.9.233: keep the exact same Batch Target order semantics without physically
+// rebuilding the task list whenever Amazon refreshes/replaces job-card nodes.
+// CSS `order` is used for flex/grid task containers (and for a safe all-job-card
+// block container converted to a vertical flex column). The DOM itself stays put.
+var _cbtStableTaskOrder = [];
+var _cbtStableTaskTarget = Object.create(null);
+var _cbtStableTaskKnown = Object.create(null);
+var _cbtTargetMovePending = false;
+var _cbtTargetMoveTimer = 0;
+var _cbtTaskOrderApplying = false;
+var _cbtTaskOrderCssContainers = (typeof WeakSet === 'function' ? new WeakSet() : null);
+
+function cbtTaskOrderCardKey(card) {
+if (!card) return '';
+var row = null;
+try { row = card.querySelector('div.row') || card; } catch(e0) { row = card; }
+var key = '';
+try { key = cbtTimerIdentityFromRow(row) || ''; } catch(e1) { key = ''; }
+if (key) return key;
+try {
+var a = card.querySelector('a');
+var t = a ? String(a.textContent || '').trim().toLowerCase() : '';
+if (t) return 'ref:' + t;
+} catch(e2) {}
+return '';
+}
+function cbtTaskOrderDirectCards(container) {
+if (!container) return [];
+try { return Array.prototype.slice.call(container.querySelectorAll(':scope > job-card')); }
+catch(e) {
+var all = [];
+try { all = Array.prototype.slice.call(container.children || []).filter(function(n){ return n && String(n.tagName || '').toLowerCase() === 'job-card'; }); } catch(e2) {}
+return all;
+}
+}
+function cbtTaskOrderRememberKey(key) {
+if (!key || _cbtStableTaskKnown[key]) return;
+_cbtStableTaskKnown[key] = 1;
+_cbtStableTaskOrder.push(key);
+}
+function cbtTaskOrderEnsureCssLayout(container) {
+if (!container || !container.isConnected) return false;
+try {
+if (_cbtTaskOrderCssContainers && _cbtTaskOrderCssContainers.has(container)) return true;
+} catch(e0) {}
+var display = '';
+try { display = String(getComputedStyle(container).display || '').toLowerCase(); } catch(e1) {}
+var supportsOrder = /(?:flex|grid)/.test(display);
+if (!supportsOrder) {
+// Converting a plain block container to a vertical flex column is safe only
+// when its meaningful direct children are job-card elements. This preserves
+// the same one-card-per-row geometry while enabling CSS order.
+var children = [];
+try { children = Array.prototype.slice.call(container.children || []); } catch(e2) {}
+var hasCard = false, unsafeChild = false;
+for (var i = 0; i < children.length; i++) {
+var el = children[i];
+var tag = String(el && el.tagName || '').toLowerCase();
+if (tag === 'job-card') { hasCard = true; continue; }
+if (tag === 'script' || tag === 'style' || tag === 'template') continue;
+unsafeChild = true;
+break;
+}
+if (hasCard && !unsafeChild) {
+try {
+container.style.setProperty('display', 'flex', 'important');
+container.style.setProperty('flex-direction', 'column', 'important');
+container.style.setProperty('align-items', 'stretch', 'important');
+supportsOrder = true;
+} catch(e3) { supportsOrder = false; }
+}
+}
+if (supportsOrder) {
+try { if (_cbtTaskOrderCssContainers) _cbtTaskOrderCssContainers.add(container); } catch(e4) {}
+}
+return supportsOrder;
+}
+function cbtTaskOrderApplyVisualOrder(container) {
+if (!container || !container.isConnected) return false;
+if (!cbtTaskOrderEnsureCssLayout(container)) return false;
+var cards = cbtTaskOrderDirectCards(container);
+if (!cards.length) return true;
+var rank = Object.create(null);
+for (var r = 0; r < _cbtStableTaskOrder.length; r++) rank[_cbtStableTaskOrder[r]] = r;
+var nextRank = _cbtStableTaskOrder.length;
+for (var i = 0; i < cards.length; i++) {
+var card = cards[i];
+var key = cbtTaskOrderCardKey(card);
+if (!key) continue;
+if (!Object.prototype.hasOwnProperty.call(rank, key)) {
+cbtTaskOrderRememberKey(key);
+rank[key] = nextRank++;
+}
+var wanted = String(rank[key]);
+try {
+if (card.style.getPropertyValue('order') !== wanted || card.style.getPropertyPriority('order') !== 'important') {
+card.style.setProperty('order', wanted, 'important');
+}
+} catch(e0) {}
+}
+return true;
+}
+function cbtTaskOrderSnapshot(container) {
+var cards = cbtTaskOrderDirectCards(container);
+if (!cards.length) return;
+var initial = !_cbtStableTaskOrder.length;
+var firstOrder = [];
+var seen = Object.create(null);
+for (var i = 0; i < cards.length; i++) {
+var card = cards[i];
+var key = cbtTaskOrderCardKey(card);
+if (!key || seen[key]) continue;
+seen[key] = 1;
+_cbtStableTaskKnown[key] = 1;
+if (initial) firstOrder.push(key);
+else cbtTaskOrderRememberKey(key);
+var bt = null;
+try { bt = getBatchTarget(card); } catch(e0) { bt = null; }
+if (bt != null && Number.isFinite(Number(bt))) _cbtStableTaskTarget[key] = Number(bt);
+}
+if (initial && firstOrder.length) _cbtStableTaskOrder = firstOrder;
+cbtTaskOrderApplyVisualOrder(container);
+}
+function cbtTaskOrderRestoreStable(container) {
+if (!container || !container.isConnected || _cbtTaskOrderApplying || _sorting) return;
+var cards = cbtTaskOrderDirectCards(container);
+if (!cards.length) return;
+// Learn replacement/new card identities, but do not change logical rank simply
+// because Amazon supplied the DOM children in a different order.
+for (var i = 0; i < cards.length; i++) {
+var key = cbtTaskOrderCardKey(cards[i]);
+if (key) cbtTaskOrderRememberKey(key);
+}
+// Fast path: assigning CSS order to replacement nodes is a style write only;
+// there is no detach/append cycle and therefore no task-grid layout thrash.
+if (cbtTaskOrderApplyVisualOrder(container)) return;
+
+// Rare non-flex/grid fallback: move only cards that are actually out of stable
+// position. This path is intentionally not used on the normal COMO task layout.
+var stableRank = Object.create(null);
+for (var r = 0; r < _cbtStableTaskOrder.length; r++) stableRank[_cbtStableTaskOrder[r]] = r;
+var desired = cards.slice().sort(function(a,b){
+var ak = cbtTaskOrderCardKey(a), bk = cbtTaskOrderCardKey(b);
+var ar = Object.prototype.hasOwnProperty.call(stableRank, ak) ? stableRank[ak] : 1e9;
+var br = Object.prototype.hasOwnProperty.call(stableRank, bk) ? stableRank[bk] : 1e9;
+return ar - br;
+});
+var same = true;
+for (var s = 0; s < cards.length; s++) { if (cards[s] !== desired[s]) { same = false; break; } }
+if (same) return;
+_cbtTaskOrderApplying = true;
+try {
+var anchor = null;
+for (var p = desired.length - 1; p >= 0; p--) {
+var wanted = desired[p];
+if (wanted.nextSibling !== anchor) container.insertBefore(wanted, anchor);
+anchor = wanted;
+}
+try { if (_sortObserver) _sortObserver.takeRecords(); } catch(eTake) {}
+try { if (typeof timerWatcher !== 'undefined' && timerWatcher) timerWatcher.takeRecords(); } catch(eTimerTake) {}
+} finally {
+_cbtTaskOrderApplying = false;
+}
+}
+function cbtTaskOrderApplyTargets(container) {
+if (!container || !container.isConnected || _cbtTaskOrderApplying || _sorting) return;
+var cards = cbtTaskOrderDirectCards(container);
+if (cards.length < 2) return;
+var stableRank = Object.create(null);
+for (var r = 0; r < _cbtStableTaskOrder.length; r++) stableRank[_cbtStableTaskOrder[r]] = r;
+var data = [];
+for (var i = 0; i < cards.length; i++) {
+var key = cbtTaskOrderCardKey(cards[i]);
+if (!key) continue;
+cbtTaskOrderRememberKey(key);
+var bt = Object.prototype.hasOwnProperty.call(_cbtStableTaskTarget, key)
+? Number(_cbtStableTaskTarget[key]) : NaN;
+data.push({ card:cards[i], key:key, bt:bt, current:i, rank:Object.prototype.hasOwnProperty.call(stableRank,key) ? stableRank[key] : 1e9+i });
+}
+if (data.length < 2) return;
+data.sort(function(a,b){
+var ha = Number.isFinite(a.bt), hb = Number.isFinite(b.bt);
+if (ha && hb && a.bt !== b.bt) return a.bt - b.bt;
+if (ha && !hb) return -1;
+if (!ha && hb) return 1;
+return a.rank - b.rank;
+});
+var desiredKeys = data.map(function(v){ return v.key; });
+var changed = desiredKeys.length !== _cbtStableTaskOrder.length;
+if (!changed) {
+for (var c = 0; c < desiredKeys.length; c++) {
+if (desiredKeys[c] !== _cbtStableTaskOrder[c]) { changed = true; break; }
+}
+}
+_cbtStableTaskOrder = desiredKeys.slice();
+if (!changed) {
+cbtTaskOrderApplyVisualOrder(container);
+return;
+}
+// Normal path: one cheap style-order update. The task whose Batch Target
+// changed visually moves to the new correct rank, but DOM nodes are untouched.
+if (cbtTaskOrderApplyVisualOrder(container)) return;
+
+// Rare fallback: target changes are infrequent, so minimal DOM movement here is
+// acceptable and preserves ordering semantics when CSS order cannot be used.
+_cbtTaskOrderApplying = true;
+try {
+var anchor = null;
+for (var p = data.length - 1; p >= 0; p--) {
+var wanted = data[p].card;
+if (wanted.nextSibling !== anchor) container.insertBefore(wanted, anchor);
+anchor = wanted;
+}
+try { if (_sortObserver) _sortObserver.takeRecords(); } catch(eTake2) {}
+try { if (typeof timerWatcher !== 'undefined' && timerWatcher) timerWatcher.takeRecords(); } catch(eTimerTake2) {}
+} finally {
+_cbtTaskOrderApplying = false;
+}
+}
+function cbtTaskOrderTargetObserved(key, targetMs) {
+if (!key || !Number.isFinite(Number(targetMs))) return;
+targetMs = Number(targetMs);
+var had = Object.prototype.hasOwnProperty.call(_cbtStableTaskTarget, key);
+var old = had ? Number(_cbtStableTaskTarget[key]) : NaN;
+_cbtStableTaskTarget[key] = targetMs;
+cbtTaskOrderRememberKey(key);
+// Same target = no visual move. Amazon may rebuild the card, but the replacement
+// receives the same CSS rank and stays in the exact same visible position.
+if (had && Number.isFinite(old) && old === targetMs) return;
+if (_cbtTargetMoveTimer) clearTimeout(_cbtTargetMoveTimer);
+_cbtTargetMovePending = true;
+_cbtTargetMoveTimer = setTimeout(function runTargetMove(){
+_cbtTargetMoveTimer = 0;
+if (!_cbtTargetMovePending) return;
+if (cbtIsActivelyScrolling()) {
+cbtRunAfterScroll('task-target-change-sort', function(){
+_cbtTargetMovePending = false;
+try { cbtTaskOrderApplyTargets(_attached); } catch(e0) {}
+});
+return;
+}
+_cbtTargetMovePending = false;
+try { cbtTaskOrderApplyTargets(_attached); } catch(e1) {}
+}, 75);
+}
 function cbtScheduleSort(container) {
 if (!container || !container.isConnected) return;
+try {
+if (_cbtVisuallySortedContainers && _cbtVisuallySortedContainers.has(container)) return;
+} catch(eStableSort) {}
 _sortScheduledContainer = container;
 _sortSchedulePending = true;
-// Amazon often rebuilds several task rows in one short burst. Waiting for the
-// burst to settle avoids sorting the same grid on consecutive frames.
 if (_sortSettleTimer) clearTimeout(_sortSettleTimer);
 _sortSettleTimer = setTimeout(runScheduledSort, 55);
 function runScheduledSort() {
@@ -2309,30 +2585,61 @@ _sortSchedulePending = false;
 var target = _sortScheduledContainer;
 _sortScheduledContainer = null;
 if (!target || !target.isConnected || target !== _attached) return;
-var raf = (typeof requestAnimationFrame === 'function')
-? requestAnimationFrame
-: function(cb){ return setTimeout(cb, 16); };
-raf(function(){ try { sortNow(target); } catch(eSort) {} });
+cbtIdle(function(){
+try {
+if (!target || !target.isConnected || target !== _attached) return;
+sortNow(target);
+cbtTaskOrderSnapshot(target);
+try { if (_cbtVisuallySortedContainers) _cbtVisuallySortedContainers.add(target); } catch(eSortMark) {}
+} catch(eSort) {}
+}, 180);
 }
 }
 function attach(container) {
 if (_attached === container) return;
-if (_sortObserver) _sortObserver.disconnect();
+if (_sortObserver) {
+try { _sortObserver.disconnect(); } catch(eSortObserverStop) {}
+_sortObserver = null;
+}
 _attached = container;
 cbtMarkRelevantDomChanged();
-if (cbtIsActivelyScrolling()) cbtScheduleSort(container);
-else sortNow(container);
-_sortObserver = new MutationObserver(function (mutations) {
-if (_sorting) return;
+var alreadySorted = false;
+try { alreadySorted = !!(_cbtVisuallySortedContainers && _cbtVisuallySortedContainers.has(container)); } catch(eSortedCheck) {}
+if (!alreadySorted) {
+var doInitialSort = function(){
+if (!container || !container.isConnected || container !== _attached) return;
+try { sortNow(container); } catch(eInitialSort) {}
+try { cbtTaskOrderSnapshot(container); } catch(eOrderSnapshot) {}
+try { if (_cbtVisuallySortedContainers) _cbtVisuallySortedContainers.add(container); } catch(eSortedAdd) {}
+};
+if (cbtIsActivelyScrolling()) cbtRunAfterScroll('task-initial-sort', doInitialSort);
+else doInitialSort();
+} else {
+try { cbtTaskOrderSnapshot(container); } catch(eOrderSnapshot2) {}
+}
+// Extremely cheap direct-child observer: it does NOT watch the entire task DOM.
+// If Amazon replaces/reorders job-card children without a Batch Target change,
+// reapply the saved CSS rank to the changed cards. No full-list DOM re-append.
+try {
+_sortObserver = new MutationObserver(function(mutations){
+if (_sorting || _cbtTaskOrderApplying || container !== _attached || !container.isConnected) return;
+var directCardChange = false;
 for (var i = 0; i < mutations.length; i++) {
-if (mutations[i].type === 'childList') {
-cbtMarkRelevantDomChanged();
-cbtScheduleSort(container);
-return;
+var m = mutations[i];
+if (!m || m.type !== 'childList') continue;
+var nodes = [];
+try { nodes = nodes.concat(Array.prototype.slice.call(m.addedNodes || []), Array.prototype.slice.call(m.removedNodes || [])); } catch(e0) {}
+for (var j = 0; j < nodes.length; j++) {
+var node = nodes[j];
+if (node && node.nodeType === 1 && String(node.tagName || '').toLowerCase() === 'job-card') { directCardChange = true; break; }
 }
+if (directCardChange) break;
 }
+if (!directCardChange) return;
+try { cbtTaskOrderRestoreStable(container); } catch(eRestore) {}
 });
-_sortObserver.observe(container, { childList: true });
+_sortObserver.observe(container, { childList:true });
+} catch(eObserver) { _sortObserver = null; }
 try { cbtRetargetTimerWatcher(container); } catch(eTimerRoot) {}
 try {
 if (bodyWatcher) bodyWatcher.disconnect();
@@ -2468,8 +2775,14 @@ if (!row || !Number(targetMs)) return;
 cbtTimerLoadRouteCache();
 var key = cbtTimerIdentityFromRow(row);
 if (!key) return;
-_cbtTimerTargetCache.set(key, {targetMs:Number(targetMs), at:Date.now()});
+var numericTarget = Number(targetMs);
+_cbtTimerTargetCache.set(key, {targetMs:numericTarget, at:Date.now()});
 cbtTimerPruneRouteCache(Date.now());
+// The Time Left injector is the authoritative place where a real Batch Target
+// has been parsed from Amazon's task row. Feed that value into the stable-order
+// controller. Identical refreshes do nothing; a genuine time change moves the
+// task once to its newly correct position.
+try { cbtTaskOrderTargetObserved(key, numericTarget); } catch(eOrderTarget) {}
 }
 function cbtTimerCachedTarget(row) {
 if (!row) return null;
@@ -4436,6 +4749,7 @@ ontimeout: function(){ if (done) done(false); }
 } catch(e) { if (done) done(false); }
 }
 var _cbtBatchBackfillState = Object.create(null);
+var _cbtBatchBackfillLastUnchangedAt = 0;
 function cbtPushMissingLocalBatchEvents(remote) {
 remote = remote || {};
 var local = cbtLoadLocalBatchEvents();
@@ -4505,7 +4819,13 @@ onload:function(res){
 if (res.status === 304) {
 _cbtBatchEventPullInFlight = false;
 _cbtBatchEventLastPullAt = Date.now();
-cbtPushMissingLocalBatchEvents(cbtLoadRemoteBatchEvents());
+// Remote data is unchanged. Immediate completion pushes already handle new local
+// events, so a full local-vs-remote backfill walk every 60 seconds is redundant.
+// Keep a slow retry safety net for any earlier failed push.
+if (!_cbtBatchBackfillLastUnchangedAt || Date.now() - _cbtBatchBackfillLastUnchangedAt >= 5 * 60 * 1000) {
+_cbtBatchBackfillLastUnchangedAt = Date.now();
+cbtIdle(function(){ try { cbtPushMissingLocalBatchEvents(cbtLoadRemoteBatchEvents()); } catch(eBackfill304) {} }, 700);
+}
 if (cb) cb(false);
 return;
 }
@@ -4763,15 +5083,15 @@ if (cbtIsActivelyScrolling()) {
 cbtRunAfterScroll('live-dashboard-render', runLiveRender);
 return;
 }
-var raf = (typeof requestAnimationFrame === 'function')
-? requestAnimationFrame
-: function(cb){ return setTimeout(cb, 16); };
-raf(function(){
+// Live table rebuilds/sorts can be one of the larger dashboard tasks. Keep
+// them out of the pre-paint animation frame; a short idle handoff is visually
+// indistinguishable but avoids periodic frame drops when fresh API data lands.
+cbtIdle(function(){
 _liveRenderPending = false;
 if (activeTab === 'live' && document.getElementById('cbt-tbody')) {
 try { renderLive(); } catch(e) {}
 }
-});
+}, 160);
 }
 runLiveRender();
 }
@@ -5011,6 +5331,7 @@ if (el) el.classList.toggle('cbt-dark', dark);
 function setUiScale(v, skipSave) {
 _uiScale = clampUiScale(v);
 if (!skipSave) saveUiScale(_uiScale);
+try { if (typeof _cbtAssignDestinationTextMeasureCache !== 'undefined' && _cbtAssignDestinationTextMeasureCache) _cbtAssignDestinationTextMeasureCache.clear(); } catch(eMeasureScale) {}
 applyUiScale();
 }
 function stepUiScale(dir) { setUiScale(_uiScale + dir * UI_SCALE_STEP); }
@@ -5967,10 +6288,12 @@ if (Array.isArray(d[k])) d[k].forEach(take);
 if (changed && !authoritative) requestLiveRender();
 return changed;
 }
-var CBT_PASSIVE_JSON_RE = /\"(?:shortClientRef|associateId|associateID|driverAssignment|associate|assignedAssociate|assignedTo|assignee)\"\s*:/i;
-// v23.9.227: only inspect network responses that can actually contain
-// task/associate/batching data. This avoids cloning/parsing unrelated JSON.
-var CBT_PASSIVE_URL_RE = /(?:activeJobsWithSiteSummary|activeJobSummary|jobdetails|jobs?|tasks?|associate|assignment|batch(?:ing|es)?|operation)/i;
+var CBT_PASSIVE_JSON_RE = /\"shortClientRef\"\s*:/i;
+// Keep passive interception focused on the two core dashboard feeds and concrete
+// job/task/assignment endpoints. Broad words such as "operation" or "associate"
+// matched unrelated Amazon JSON and forced response.clone().text() work for data
+// this userscript never used.
+var CBT_PASSIVE_URL_RE = /(?:activeJobsWithSiteSummary|activeJobSummary|jobdetails|\/api\/store\/[^/?#]+\/job(?:\/|\?|$)|\/tasks?(?:\/|\?|$)|\/assignments?(?:\/|\?|$)|\/batch(?:ing|es)?(?:\/|\?|$))/i;
 function cbtPassiveUrlMayMatter(url) {
 return CBT_PASSIVE_URL_RE.test(String(url || ''));
 }
@@ -10193,12 +10516,24 @@ if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
 else setTimeout(run, 0);
 }
 var _cbtAssignDestinationMeasureCache = (typeof WeakMap === 'function' ? new WeakMap() : null);
+var _cbtAssignDestinationTextMeasureCache = (typeof Map === 'function' ? new Map() : null);
 function cbtAssignMeasureDestinationTextEnd(cell) {
 if (!cell || !cell.isConnected) return 0;
 var textSig = cbtAssignNormText(cell.textContent || '');
 if (_cbtAssignDestinationMeasureCache) {
 var cached = _cbtAssignDestinationMeasureCache.get(cell);
 if (cached && cached.text === textSig && isFinite(cached.end)) return cached.end;
+}
+// Amazon replaces the whole job-card periodically. A WeakMap keyed only by the
+// old DOM cell therefore missed every replacement and forced synchronous layout
+// again. Destination text uses the same column geometry, so reuse the last
+// measured text endpoint across replacement cells.
+if (textSig && _cbtAssignDestinationTextMeasureCache && _cbtAssignDestinationTextMeasureCache.has(textSig)) {
+var sharedEnd = Number(_cbtAssignDestinationTextMeasureCache.get(textSig));
+if (isFinite(sharedEnd)) {
+try { if (_cbtAssignDestinationMeasureCache) _cbtAssignDestinationMeasureCache.set(cell, {text:textSig, end:sharedEnd}); } catch(eSharedCache) {}
+return sharedEnd;
+}
 }
 var textEndLocal = 0;
 try {
@@ -10221,6 +10556,17 @@ textEndLocal = best ? Math.max(0, best.right - destRect.left) : 0;
 } catch(eMeasure) { textEndLocal = 0; }
 if (_cbtAssignDestinationMeasureCache) {
 try { _cbtAssignDestinationMeasureCache.set(cell, {text:textSig, end:textEndLocal}); } catch(eCache) {}
+}
+if (textSig && _cbtAssignDestinationTextMeasureCache && isFinite(textEndLocal)) {
+try {
+_cbtAssignDestinationTextMeasureCache.set(textSig, textEndLocal);
+// Tiny bounded cache: destinations repeat heavily, but never let arbitrary text
+// grow this map forever during a long-running dashboard session.
+if (_cbtAssignDestinationTextMeasureCache.size > 128) {
+var firstKey = _cbtAssignDestinationTextMeasureCache.keys().next().value;
+_cbtAssignDestinationTextMeasureCache.delete(firstKey);
+}
+} catch(eTextCache) {}
 }
 return textEndLocal;
 }
@@ -14115,6 +14461,7 @@ if (sig !== _acRect) { _acRect = sig; acPlace(); }
 window.addEventListener('resize', function(){
 try { applyUiScale(); } catch(e) {}
 try { _cbtAssignDestinationMeasureCache = (typeof WeakMap === 'function' ? new WeakMap() : null); } catch(eMeasureReset) {}
+try { if (_cbtAssignDestinationTextMeasureCache) _cbtAssignDestinationTextMeasureCache.clear(); } catch(eTextMeasureReset) {}
 });
 window.addEventListener('resize', function(){ if (_acDrop) acPlace(); });
 var _acScrollPlaceRAF = 0;
@@ -14338,6 +14685,12 @@ try { tickTimers(); } catch(eTimerTick) {}
 if (nowMs - hbLastHealth >= PANEL_HEALTH_MS) {
 hbLastHealth = nowMs;
 try { panelHealthCheck(); } catch(eHealth) {}
+// Cheap container health check only every 5s. This does not re-sort a healthy
+// grid; it only reconnects the scoped timer watcher if Amazon replaced the
+// whole task container.
+if (isDashboardView() && (!_attached || !_attached.isConnected)) {
+try { ensureSortAttachment(); } catch(eAttachHealth) {}
+}
 }
 if (nowMs - hbLastTaskPoll >= CBT_LIVE_REFRESH_MS) {
 hbLastTaskPoll = nowMs;
@@ -14508,7 +14861,9 @@ try { fetchAndUpdate(); } catch(eStatsStart) {}
 }
 });
 
-// Sorting behavior is unchanged; only startup timing is isolated.
+// Stable visible task order: initial Batch Target sort, then preserve exact
+// positions through Amazon refreshes. Only a real Batch Target change can move
+// a task after that.
 cbtIdle(function(){
 try { ensureSortAttachment(); } catch(e6) {}
 }, 850);
@@ -14549,10 +14904,10 @@ try { syncPull(function(){ syncPush(); }); } catch(e2) {}
 setTimeout(function(){ cbtIdle(function(){
 try { syncNamesFromAllTabs(); } catch(e3) {}
 }, 1800); }, 1700);
-// Full localStorage discovery remains the last startup fallback.
-setTimeout(function(){ cbtIdle(function(){
-try { scanLocalStorageForNames(); } catch(e4) {}
-}, 2500); }, 5000);
+// Full localStorage name discovery is intentionally NOT run during dashboard
+// startup. renderNames() performs the same scan on demand when the Names tab is
+// opened, avoiding a large JSON/localStorage parsing spike several seconds after
+// every reload while preserving the Names feature.
 
 setInterval(function(){
 if (document.hidden) return;
