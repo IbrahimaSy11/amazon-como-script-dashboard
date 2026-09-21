@@ -1,7 +1,7 @@
 // ==UserScript==
-// @name         COMO - Early Task In Order With Timer & Batcher Dashboard
-// @namespace    https://github.com/uny2-ops
-// @version      23.9.233
+// @name         no-lag-amazon-como-dashboard
+// @namespace    https://github.com/IbrahimaSy11/no-lag-amazon-como-dashboard
+// @version      23.9.94
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -10,67 +10,40 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
 // @grant        GM_getValue
-// @connect      drive.corp.amazon.com
 // @connect      como-sync-default-rtdb.firebaseio.com
 // ==/UserScript==
 
 (function () {
-'use strict';
-// v23.9.227 FINAL NOLAG DEBUG PASS:
-// - stops fallback Live polling away from Operations Dashboard
-// - ignores unrelated JSON/XHR traffic and dedupes identical core payloads before parsing
-// - removes duplicate startup route-observer work once the task container exists
-// - slows only redundant fallback cadence; timers/assignment protection remain responsive
-// v23.9.225 FINAL NOLAG DEBUG PASS:
-// - removes the once-per-second full task-card protection scan; countdown updates now touch only active protected cells
-// v23.9.230 deep no-lag audit: removes the last full-body timezone serialization, stops sort-induced timer observer feedback, moves Live render work to idle time, defers full localStorage name discovery until the Names tab is actually used, throttles unchanged event backfill work, and reuses Destination text measurements across Amazon row rebuilds.
-// v23.9.229: deeper NoLag pass: mutation-local To Accept rebinding (no full task-grid scan in the observer), settled sorting for Amazon DOM bursts, idle core API processing, and cached Live elapsed nodes.
-// v23.9.233 LOW-LAG STABLE ORDER: preserves the same Batch Target ordering behavior without re-appending the task list on Amazon refreshes. Stable visual order uses CSS order where safe; a task only changes rank when its real Batch Target changes. Assignment candidate priority remains independent.
-// v23.9.232 TARGET-DRIVEN STABLE ORDER: task cards keep their exact visual order through Amazon refresh/rebuild cycles. A card moves only when its real Batch Target changes (or a new task receives its first target), then it is placed once into the correct Batch Target position. Assignment candidate priority remains independent.
-// v23.9.228: pre-paint To Accept rebinding. When Amazon replaces a task row, the active orange protection is reapplied inside the MutationObserver callback before the browser paints the new row, preventing the brief blink that could repeat with Amazon's periodic refresh.
-// v23.9.226: stabilizes the orange To Accept visual so Amazon DOM repaints cannot make it blink/twitch; countdown text keeps a fixed visual slot.
-// - skips protection card indexing completely when no cart is protected
-// - avoids duplicate Live renders when the visible associate/package/timing data did not actually change
-// - core Live/stats responses use shallow name/job capture instead of recursively walking the same JSON payload multiple times
-// - removes a duplicate protection render after a successful Assign Cart operation
-// v23.9.224 ASSIGN CART AVAILABILITY:
-// - if Amazon's real job-details 'Assign to Associate' button is enabled, Assign Cart may use that task
-// - this fallback also covers current Partially Batched carts without requiring a prior Force Assign
-// - existing normal eligibility remains first priority; UI-button probing runs only during an Assign action
-// v23.9.223 FINAL CLEANUP + DATA ACCURACY:
-// - canonical associate extraction prevents placeholder/object values from becoming associate names
-// - completed-event timestamps are normalized against the trusted batching span
-// - low-confidence disappearance-only completions no longer affect associate statistics
-// - duplicate copies of the same cart completion are semantically deduped across devices
-// - event conflict resolution no longer rewards a longer/less accurate elapsed time
-// v23.9.217 INCREMENTAL NOLAG:
-// - reuses Amazon's own Live/summary responses instead of duplicating the same network polls
-// - manual Live/summary requests are now fallback-only when the site feed is stale
-// - Live warm-cache localStorage writes are throttled to avoid synchronous storage jank
-// - Live renders happen only when authoritative data actually changes
-// - cross-computer protection polling reduced slightly while preserving assignment safety
-// v23.9.219 UI: restored the exact stable v23.9.93 header button style (uniform height; Run + collapse solid blue).
-// v23.9.211 AGGRESSIVE NOLAG:
-// - no Run hover pre-scan or document-wide '*' fallback scans
-// - Run checks are frame-batched
-// - no continuous assignment Firebase stream/root polling
-// - 60-second cross-computer assignment lock remains silent at assignment time
-// - lightweight 60s To Accept + immediate pending highlight; waits for the assigned associate before accepting gray->black
-// - sticky per-assignment visual state prevents a cleared highlight from reappearing on the next assignment/render
-// - reduced observer, backend polling, timer safety-scan, Names and sync cadence
-if (window.top !== window.self &&
-/[?&](?:cbtAfaProbe|cbtMissingQrProbe|cbtAssignProbe)=1(?:&|$)/.test(window.location.search)) return;
-function cbtStoreIdFromLocation() {
-try {
-var m = String(window.location.href || '').match(/\/store\/([^/?#]+)/i);
-return m ? decodeURIComponent(m[1]) : '';
-} catch(e) { return ''; }
-}
-var STORE_ID = cbtStoreIdFromLocation();
-var DRIVE_URL = 'https://drive.corp.amazon.com/view/jsermar@/COMO_Dashboard_BatchRate_NA.json?download=true';
-var COMO_BASE = 'https://como-operations-dashboard-iad.iad.proxy.amazon.com';
-var style = document.createElement('style');
-style.textContent = `
+  'use strict';
+
+  /* v23.9.91 INSTANT ACCURATE RELOAD
+     - never paints the pre-Angular/incomplete Tasks snapshot
+     - waits for the real Tasks list to settle, then fetches one final fresh stat snapshot
+     - primes Live/stats at document-start to overlap network latency with page boot
+     - removes the full-body timezone HTML serialization that caused a reload hitch */
+
+  /* v23.9.88 NO-LAG DEEP CLEAN
+     - keeps the pre-Assign-Cart architecture
+     - uniform header control height; Run + main collapse stay solid blue
+     - canonical associate identity + numeric storage normalization
+     - cross-computer completed-batch claim prevents duplicate associate totals
+     - weighted Weekly missing percentage
+     - v23.9.89 clean v3 performance generation; zero-data rows removed
+     - stricter completed-batch timing/rate validation and atomic completion claims
+  */
+
+  /* Hidden eligibility / Missing Package probes load real job-details pages
+     in same-origin iframes. NEVER start a second copy of this full userscript
+     inside those probe frames. The Amazon page inside the frame still loads
+     normally, but duplicate timers, observers and polling are prevented. */
+  if (window.top !== window.self &&
+      /[?&](?:cbtAfaProbe|cbtMissingQrProbe)=1(?:&|$)/.test(window.location.search)) return;
+
+  var STORE_ID  = (window.location.href.split('store/')[1] || '').split('/')[0];
+  var COMO_BASE = 'https://como-operations-dashboard-iad.iad.proxy.amazon.com';
+
+  var style = document.createElement('style');
+  style.textContent = `
     /* ═══════════════════════════════════════════════════
        COMO DASHBOARD — Unified Design System v21.7
        Palette: Navy chrome · White body · Blue accent
@@ -151,71 +124,6 @@ style.textContent = `
       border: 1px solid var(--cb-border);
     }
     #cbt-controls span:hover { background: var(--cb-blue); color: #fff; border-color: var(--cb-blue); }
-
-    /* v23.9.222 — FIRST-PAINT HEADER CONTROLS
-       These rules live in the main stylesheet so the collapse control is already
-       fully sized/blue before the panel is inserted. This prevents the tiny
-       unstyled pill/line that was visible for a moment during reload. */
-    #cbt-controls > span {
-      height: 26px !important; min-height: 26px !important; max-height: 26px !important;
-      box-sizing: border-box !important;
-      display: inline-flex !important; align-items: center !important; justify-content: center !important;
-      padding-top: 0 !important; padding-bottom: 0 !important;
-      line-height: 1 !important; vertical-align: middle !important;
-      white-space: nowrap !important; flex-shrink: 0 !important;
-    }
-    #cbt-collapse-btn {
-      width: 26px !important; min-width: 26px !important; max-width: 26px !important;
-      padding: 0 !important; font-size: 0 !important;
-      position: relative !important;
-      background: #2979ff !important;
-      background-image: none !important;
-      border: 1px solid #2979ff !important;
-      color: #ffffff !important;
-      -webkit-text-fill-color: #ffffff !important;
-      outline: none !important;
-      box-shadow: none !important;
-      filter: none !important;
-      transform: none !important;
-      opacity: 1 !important;
-    }
-    #cbt-collapse-btn::before {
-      content: '' !important;
-      display: block !important;
-      width: 0 !important; height: 0 !important;
-      border-left: 4px solid transparent !important;
-      border-right: 4px solid transparent !important;
-      margin: 0 !important; padding: 0 !important;
-      transform: none !important;
-    }
-    #cbt-collapse-btn[data-cbt-collapse-state="expanded"]::before {
-      border-bottom: 6px solid #ffffff !important;
-      border-top: 0 !important;
-    }
-    #cbt-collapse-btn[data-cbt-collapse-state="collapsed"]::before {
-      border-top: 6px solid #ffffff !important;
-      border-bottom: 0 !important;
-    }
-    #cbt-collapse-btn:hover,
-    #cbt-collapse-btn:active,
-    #cbt-collapse-btn:focus,
-    #cbt-collapse-btn:focus-visible,
-    #cbt-panel.dark #cbt-collapse-btn,
-    #cbt-panel.dark #cbt-collapse-btn:hover,
-    #cbt-panel.dark #cbt-collapse-btn:active,
-    #cbt-panel.dark #cbt-collapse-btn:focus,
-    #cbt-panel.dark #cbt-collapse-btn:focus-visible {
-      background: #2979ff !important;
-      background-image: none !important;
-      border-color: #2979ff !important;
-      color: #ffffff !important;
-      -webkit-text-fill-color: #ffffff !important;
-      outline: none !important;
-      box-shadow: none !important;
-      filter: none !important;
-      transform: none !important;
-      opacity: 1 !important;
-    }
 
     /* ── Stats bar ── */
     #cbt-stats-bar {
@@ -676,10 +584,11 @@ style.textContent = `
        while clicking around. Editable fields are exempt below so typing,
        caret movement and text editing all behave normally.
     ══════════════════════════════════════ */
-    #cbt-panel, #cbt-qr-overlay, #cbt-afa-overlay, #cbt-ac-drop {
+    #cbt-panel, #cbt-tp, #cbt-qr-overlay, #cbt-afa-overlay, #cbt-ac-drop {
       -webkit-user-select: none; -moz-user-select: none; -ms-user-select: none; user-select: none;
     }
     #cbt-panel input, #cbt-panel textarea,
+    #cbt-tp input, #cbt-tp textarea,
     #cbt-qr-overlay input, #cbt-qr-overlay textarea,
     #cbt-afa-overlay input, #cbt-afa-overlay textarea,
     #cbt-ac-drop input {
@@ -828,9 +737,6 @@ style.textContent = `
     }
     #cbt-afa-overlay.cbt-dark .cbt-afa-opt:hover { background: #1c2333; border-color: #58a6ff; }
     #cbt-afa-overlay.cbt-dark .cbt-afa-opt.off:hover { background: #161b22; border-color: #30363d; }
-    #cbt-afa-overlay.cbt-dark #cbt-afa-assign-types .cbt-afa-opt b {
-      color: #e6edf3;
-    }
     #cbt-afa-overlay.cbt-dark .cbt-afa-note { color: #8b99aa; }
 
     /* ══════════════════════════════════════
@@ -972,12 +878,169 @@ style.textContent = `
     #cbt-panel.dark #cbt-drag-bottom { background-color: #21262d !important; }
     #cbt-panel.dark #cbt-drag-bottom:hover { background-color: #58a6ff !important; }
 
-    /* Retired floating task-detail Search Associate panel CSS removed. */
+    /* ══════════════════════════════════════
+       ASSOCIATE SEARCH PANEL (task page)
+    ══════════════════════════════════════ */
+    #cbt-tp {
+      position: fixed !important; top: 90px !important; right: 12px !important;
+      width: 420px !important; z-index: 9999 !important;
+      background: var(--cb-surface);
+      border: 1px solid var(--cb-border);
+      border-radius: var(--cb-radius);
+      box-shadow: 0 8px 32px rgba(13,27,42,0.18), 0 2px 8px rgba(13,27,42,0.10);
+      font-family: var(--cb-sans); color: var(--cb-text); overflow: hidden;
+    }
+    #cbt-tp-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 14px;
+      background: #f0f4f8;
+      border-bottom: 1px solid var(--cb-border);
+      cursor: move; user-select: none;
+    }
+    #cbt-tp.cbt-tp-dragging { transition: none; }
+    #cbt-tp.cbt-tp-dragging #cbt-tp-header { cursor: grabbing; }
+    #cbt-tp-title {
+      font-weight: 800; font-size: 12px; color: var(--cb-navy);
+      letter-spacing: 0.06em; text-transform: uppercase;
+      display: flex; align-items: center; gap: 6px;
+    }
+    #cbt-tp-title::before {
+      content: ''; display: inline-block; width: 2px; height: 14px;
+      background: var(--cb-blue); border-radius: 2px;
+    }
+    #cbt-tp-controls { display: flex; gap: 8px; align-items: center; }
+    #cbt-tp-font-dec, #cbt-tp-font-inc, #cbt-tp-collapse {
+      font-size: 11px; font-weight: 800; cursor: pointer; user-select: none;
+      color: var(--cb-text2); padding: 2px 6px; border-radius: 4px;
+      border: 1px solid var(--cb-border); transition: all 0.15s;
+    }
+    #cbt-tp-font-dec:hover, #cbt-tp-font-inc:hover, #cbt-tp-collapse:hover {
+      background: var(--cb-blue); color: #fff; border-color: var(--cb-blue);
+    }
+    /* Rolled up: header only, and the panel shrinks to fit it */
+    #cbt-tp.cbt-tp-rolled #cbt-tp-body { display: none; }
+    #cbt-tp-theme {
+      font-size: 14px; cursor: pointer; padding: 2px 5px; border-radius: 4px;
+      transition: all 0.15s;
+    }
+    #cbt-tp-theme:hover { background: var(--cb-border); }
+
+    #cbt-tp-body {
+      height: 220px; min-height: 220px; max-height: 220px;
+      overflow-y: auto; background: var(--cb-surface);
+      scrollbar-width: thin; scrollbar-color: var(--cb-border) transparent;
+    }
+    #cbt-tp-body::-webkit-scrollbar { width: 4px; }
+    #cbt-tp-body::-webkit-scrollbar-thumb { background: var(--cb-border); border-radius: 3px; }
+
+    /* search bar inside tp */
+    #cbt-tp-body > div:first-child {
+      padding: 8px 8px 4px; background: #f8fafc;
+      border-bottom: 1px solid var(--cb-border);
+      display: flex; align-items: center; gap: 6px;
+    }
+    #cbt-tp-search-input {
+      flex: 1; padding: 7px 12px 7px 32px; background-color: var(--cb-surface);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%238896a8' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: 11px center;
+      border: 1.5px solid var(--cb-border); border-radius: 8px;
+      color: var(--cb-text); font-size: 13px; outline: none;
+      font-family: var(--cb-sans);
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    #cbt-tp-search-input:focus {
+      border-color: var(--cb-blue);
+      box-shadow: 0 0 0 3px rgba(41,121,255,0.14);
+    }
+    #cbt-tp-search-clear {
+      font-size: 13px; border: none; background: none;
+      cursor: pointer; color: var(--cb-text3);
+      width: 24px; height: 24px; padding: 0; border-radius: 50%;
+      display: inline-flex; align-items: center; justify-content: center;
+      transition: color 0.15s, background 0.15s;
+    }
+    #cbt-tp-search-clear:hover { color: var(--cb-red); background: rgba(255,61,61,0.1); }
+
+    #cbt-tp-results { }
+    .cbt-tp-row {
+      display: table; width: 100%;
+      border-bottom: 1px solid var(--cb-border);
+      height: 38px; margin: 0; box-sizing: border-box;
+      transition: background 0.1s;
+    }
+    .cbt-tp-row:hover { background: #edf2fb; }
+    .cbt-tp-row-name {
+      display: table-cell; width: 55%; font-size: 13px; font-weight: 700;
+      color: var(--cb-text); vertical-align: middle; padding: 3px 4px 3px 12px;
+      cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      transition: color 0.15s;
+    }
+    .cbt-tp-row-name:hover { color: var(--cb-blue) !important; }
+    .cbt-tp-row-mid {
+      display: table-cell; width: 20%; font-size: 11px; color: var(--cb-text3);
+      text-align: center; vertical-align: middle; font-family: var(--cb-mono);
+    }
+    .cbt-tp-row-rate {
+      display: table-cell; width: 25%; font-size: 14px; font-weight: 800;
+      text-align: right; vertical-align: middle; padding: 3px 12px 3px 4px;
+      font-family: var(--cb-mono); font-variant-numeric: tabular-nums;
+    }
+
+    /* section headers in tp results */
+    .cbt-search-result-section { }   /* already defined above */
+
+    /* ── DARK MODE — Associate Search ── */
+    #cbt-tp.dark {
+      background: #0d1117 !important; border-color: #21262d !important;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.6) !important;
+    }
+    #cbt-tp.dark #cbt-tp-header {
+      background: linear-gradient(135deg,#0d1117,#161b22) !important;
+      border-bottom-color: #21262d !important;
+    }
+    #cbt-tp.dark #cbt-tp-title { color: #e6edf3 !important; }
+    #cbt-tp.dark #cbt-tp-title::before { background: #58a6ff !important; }
+    #cbt-tp.dark #cbt-tp-font-dec, #cbt-tp.dark #cbt-tp-font-inc, #cbt-tp.dark #cbt-tp-collapse {
+      color: #6e7b8d !important; border-color: rgba(110,123,141,0.2) !important;
+    }
+    #cbt-tp.dark #cbt-tp-font-dec:hover, #cbt-tp.dark #cbt-tp-font-inc:hover, #cbt-tp.dark #cbt-tp-collapse:hover {
+      background: #58a6ff !important; color: #fff !important; border-color: #58a6ff !important;
+    }
+    #cbt-tp.dark #cbt-tp-body {
+      background: #0d1117 !important; scrollbar-color: #21262d transparent !important;
+    }
+    #cbt-tp.dark #cbt-tp-body > div:first-child {
+      background: #161b22 !important; border-bottom-color: #21262d !important;
+    }
+    #cbt-tp.dark #cbt-tp-search-input {
+      background-color: #0d1117 !important; border-color: #21262d !important; color: #c9d1d9 !important;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%236e7b8d' stroke-width='2.5' stroke-linecap='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E") !important;
+    }
+    #cbt-tp.dark #cbt-tp-search-input:focus {
+      border-color: #58a6ff !important;
+      box-shadow: 0 0 0 3px rgba(88,166,255,0.14) !important;
+    }
+    #cbt-tp.dark .cbt-tp-row { border-bottom-color: #21262d !important; }
+    #cbt-tp.dark .cbt-tp-row:hover { background: #1c2333 !important; }
+    #cbt-tp.dark .cbt-tp-row-name { color: #c9d1d9 !important; }
+    #cbt-tp.dark .cbt-tp-row-name:hover { color: #58a6ff !important; }
+    #cbt-tp.dark .cbt-tp-row-mid { color: #7a8fa3 !important; }
+    #cbt-tp.dark .cbt-search-result-section {
+      background: linear-gradient(180deg,#1a2233,#161b22) !important;
+      border-top-color: #58a6ff !important; border-bottom-color: #21262d !important; color: #8faac0 !important;
+    }
+    #cbt-tp.dark .cbt-search-row { border-bottom-color: #21262d !important; }
+    #cbt-tp.dark .cbt-search-row:hover { background: #1c2333 !important; }
+    #cbt-tp.dark .cbt-search-row-name { color: #c9d1d9 !important; }
+    #cbt-tp.dark .cbt-search-row-name:hover { color: #58a6ff !important; }
+    #cbt-tp.dark .cbt-search-row-mid { color: #7a8fa3 !important; }
+    #cbt-tp.dark .cbt-hist-rate.good  { color: #3fb950 !important; background: rgba(0,200,83,0.07) !important; }
+    #cbt-tp.dark .cbt-hist-rate.warn  { color: #e3b341 !important; background: rgba(255,171,0,0.07) !important; }
+    #cbt-tp.dark .cbt-hist-rate.alert { color: #f85149 !important; background: rgba(255,61,61,0.07) !important; }
 
     /* ── UI polish (v21.10) ── */
     @keyframes cbtFadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
-    /* v23.9.179: keep other popup fades, but never animate the main dashboard on reload/remount. */
-    #cbt-panel { animation: none !important; }
+    #cbt-panel, #cbt-tp { animation: cbtFadeIn 0.28s ease-out; }
 
     /* row hover: left accent bar, no layout shift */
     #cbt-table tbody tr:hover td:first-child, #cbt-hist-table tbody tr:hover td:first-child,
@@ -988,10 +1051,12 @@ style.textContent = `
     #cbt-panel.dark #cbt-weekly-table tbody tr:hover td:first-child, #cbt-panel.dark #cbt-names-table tbody tr:hover td:first-child {
       box-shadow: inset 3px 0 0 #58a6ff;
     }
-    .cbt-search-row:hover .cbt-search-row-name {
+    .cbt-search-row:hover .cbt-search-row-name, .cbt-tp-row:hover .cbt-tp-row-name {
       box-shadow: inset 3px 0 0 var(--cb-blue);
     }
-    #cbt-panel.dark .cbt-search-row:hover .cbt-search-row-name {
+    #cbt-panel.dark .cbt-search-row:hover .cbt-search-row-name,
+    #cbt-tp.dark .cbt-search-row:hover .cbt-search-row-name,
+    #cbt-tp.dark .cbt-tp-row:hover .cbt-tp-row-name {
       box-shadow: inset 3px 0 0 #58a6ff;
     }
 
@@ -1011,7 +1076,8 @@ style.textContent = `
     /* Inline copy confirmation: the clicked name turns green and a
        small "Copied" tag appears right beside it */
     .cbt-copied-name, .cbt-copied-name:hover { color: #0a9e43 !important; }
-    #cbt-panel.dark .cbt-copied-name, #cbt-panel.dark .cbt-copied-name:hover { color: #3fb950 !important; }
+    #cbt-panel.dark .cbt-copied-name, #cbt-panel.dark .cbt-copied-name:hover,
+    #cbt-tp.dark .cbt-copied-name, #cbt-tp.dark .cbt-copied-name:hover { color: #3fb950 !important; }
     .cbt-copied-tag {
       display: inline-block; margin-left: 6px; padding: 1px 7px;
       background: #00c853; color: #fff; font-size: 10px; font-weight: 800;
@@ -1204,7 +1270,7 @@ style.textContent = `
       display: flex;
       align-items: center;
       justify-content: flex-start;
-      gap: 4px;
+      gap: 5px;
       width: 100%;
       min-width: 0;
       height: 18px;
@@ -1622,189 +1688,6 @@ style.textContent = `
       overflow-wrap: anywhere;
       word-break: normal;
     }
-    #cbt-afa-missing-copy {
-      font-size: 10px;
-      line-height: 1.30;
-    }
-
-    /* Assign associate picker — search/select only. */
-    #cbt-afa-assign-search {
-      width: 100%;
-      height: 42px;
-      box-sizing: border-box;
-      border: 1.5px solid var(--cb-border);
-      border-radius: 8px;
-      padding: 0 12px;
-      background: #fff;
-      color: var(--cb-text);
-      font-family: var(--cb-sans);
-      font-size: 14px;
-      font-weight: 600;
-      outline: none;
-    }
-    #cbt-afa-assign-search:focus {
-      border-color: var(--cb-blue);
-      box-shadow: 0 0 0 3px rgba(30,136,229,.12);
-    }
-    #cbt-afa-assign-results {
-      margin-top: 9px;
-      border: 1px solid var(--cb-border);
-      border-radius: 8px;
-      overflow-y: auto;
-      max-height: 240px;
-      background: var(--cb-row-alt);
-    }
-    .cbt-afa-assign-name {
-      display: grid;
-      grid-template-columns: 24px 1fr auto;
-      align-items: center;
-      gap: 10px;
-      padding: 9px 12px;
-      border-bottom: 1px solid var(--cb-border);
-      cursor: pointer;
-      font-family: var(--cb-mono);
-      font-size: 13px;
-      font-weight: 800;
-      color: var(--cb-navy);
-      user-select: none;
-    }
-    .cbt-afa-assign-name:last-child { border-bottom: none; }
-    .cbt-afa-assign-name:hover,
-    .cbt-afa-assign-name.on,
-    .cbt-afa-assign-name.selected {
-      background: rgba(30,136,229,.10);
-    }
-    .cbt-afa-assign-check {
-      width: 18px;
-      height: 18px;
-      margin: 0;
-      accent-color: var(--cb-blue);
-      pointer-events: none;
-    }
-    .cbt-afa-assign-order {
-      min-width: 24px;
-      height: 24px;
-      padding: 0 6px;
-      border-radius: 999px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      background: var(--cb-blue);
-      color: #fff;
-      font-family: var(--cb-sans);
-      font-size: 11px;
-      font-weight: 900;
-      line-height: 1;
-    }
-    .cbt-afa-assign-order.hidden { visibility: hidden; }
-    .cbt-afa-assign-empty {
-      padding: 12px;
-      color: var(--cb-text3);
-      font-size: 12px;
-      text-align: center;
-    }
-    #cbt-afa-assign-selected {
-      margin-top: 12px;
-      padding: 10px 12px;
-      display: flex;
-      flex-direction: row;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: 6px;
-      border-radius: 8px;
-      background: rgba(30,136,229,.10);
-      border: 1px solid rgba(30,136,229,.28);
-      color: var(--cb-text2);
-      font-size: 12px;
-      font-weight: 700;
-    }
-    #cbt-afa-assign-selected .cbt-afa-selected-title {
-      flex: 0 0 100%;
-      width: 100%;
-      margin-bottom: 2px;
-      color: var(--cb-text2);
-      font-family: var(--cb-sans);
-      font-size: 11px;
-      font-weight: 800;
-      text-transform: uppercase;
-      letter-spacing: .04em;
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 10px;
-    }
-    #cbt-afa-assign-clear {
-      border: 1px solid rgba(220,53,69,.55);
-      border-radius: 6px;
-      padding: 4px 9px;
-      background: rgba(220,53,69,.10);
-      color: #ffb9c1;
-      font-family: var(--cb-sans);
-      font-size: 10px;
-      font-weight: 900;
-      line-height: 1;
-      text-transform: none;
-      letter-spacing: 0;
-      cursor: pointer;
-    }
-    #cbt-afa-assign-clear:hover {
-      background: #dc3545;
-      border-color: #dc3545;
-      color: #fff;
-    }
-    #cbt-afa-assign-selected .cbt-afa-assign-empty {
-      flex: 0 0 100%;
-      width: 100%;
-    }
-    #cbt-afa-assign-selected .cbt-afa-selected-row {
-      display: inline-flex;
-      align-items: center;
-      gap: 7px;
-      width: auto;
-      max-width: 100%;
-      box-sizing: border-box;
-      padding: 6px 8px;
-      margin-top: 3px;
-      border-radius: 6px;
-      background: rgba(30,136,229,.08);
-      color: #eaf4ff;
-      font-family: var(--cb-mono);
-      font-size: 13px;
-      font-weight: 900;
-      cursor: pointer;
-      user-select: none;
-      flex: 0 1 auto;
-    }
-    #cbt-afa-assign-selected .cbt-afa-selected-row:hover {
-      background: rgba(220,53,69,.22);
-      box-shadow: inset 0 0 0 1px rgba(220,53,69,.65);
-    }
-    #cbt-afa-assign-selected .cbt-afa-selected-row:hover .cbt-afa-selected-num {
-      background: #dc3545;
-    }
-    #cbt-afa-assign-selected .cbt-afa-selected-row:hover .cbt-afa-selected-name {
-      color: #ffdfe3;
-    }
-    #cbt-afa-assign-selected .cbt-afa-selected-name {
-      flex: 1 1 auto;
-      min-width: 0;
-      color: #ffffff;
-      overflow-wrap: anywhere;
-    }
-    #cbt-afa-assign-selected .cbt-afa-selected-num {
-      width: 22px;
-      height: 22px;
-      border-radius: 999px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      background: var(--cb-blue);
-      color: #fff;
-      font-family: var(--cb-sans);
-      font-size: 11px;
-      font-weight: 900;
-      flex: 0 0 auto;
-    }
 
     /* Missing Package QR is a read-only helper inside the existing Run menu.
        It intentionally uses the same red alert language as the dashboard. */
@@ -1958,33 +1841,6 @@ style.textContent = `
     .cbt-afa-opt.off { opacity: .55; cursor: default; }
     .cbt-afa-opt.off:hover { border-color: var(--cb-border); background: var(--cb-row-alt); }
     .cbt-afa-opt input { margin-top: 2px; width: 15px; height: 15px; cursor: pointer; flex-shrink: 0; }
-
-    #cbt-afa-assign-types {
-      margin: 0 0 12px;
-      padding: 10px 11px;
-      border: 1px solid var(--cb-border);
-      border-radius: 8px;
-      background: var(--cb-row-alt);
-    }
-    .cbt-afa-assign-type-title {
-      color: var(--cb-navy);
-      font-size: 11px;
-      font-weight: 900;
-      text-transform: uppercase;
-      letter-spacing: .04em;
-      margin-bottom: 7px;
-    }
-    #cbt-afa-assign-types .cbt-afa-opt {
-      margin-top: 6px;
-      padding: 7px 8px;
-      gap: 5px;
-      font-size: 12px;
-      line-height: 1.35;
-    }
-    #cbt-afa-assign-types .cbt-afa-opt b {
-      color: var(--cb-navy);
-    }
-
     .cbt-afa-note {
       font-size: 12px; color: var(--cb-text2); line-height: 1.55;
       padding: 8px 13px 0; }
@@ -2027,12958 +1883,9821 @@ style.textContent = `
       background: #f8fafc; border-top: 1px solid var(--cb-border); text-align: center;
     }
 
+    /* v23.9.94 — one shared header-control box.
+       Only direct children are buttons. The nested Run label is reset below so
+       it cannot inherit a second layer of button padding/border. */
+    #cbt-controls {
+      display: flex !important;
+      align-items: center !important;
+    }
+    #cbt-controls > span {
+      height: 26px !important; min-height: 26px !important; max-height: 26px !important;
+      box-sizing: border-box !important;
+      display: inline-flex !important; align-items: center !important; justify-content: center !important;
+      padding: 0 7px !important;
+      line-height: 1 !important; vertical-align: middle !important;
+      white-space: nowrap !important; flex-shrink: 0 !important;
+    }
+    #cbt-controls > #cbt-afa-btn { padding: 0 9px !important; }
+    #cbt-controls > #cbt-scale-reset { min-width: 40px !important; }
+    #cbt-controls > #cbt-afa-btn > .cbt-afa-lbl {
+      display: inline !important;
+      width: auto !important; height: auto !important;
+      min-width: 0 !important; min-height: 0 !important;
+      max-width: none !important; max-height: none !important;
+      margin: 0 !important; padding: 0 !important;
+      border: 0 !important; border-radius: 0 !important;
+      background: transparent !important; box-shadow: none !important;
+      line-height: 1 !important;
+    }
+    #cbt-afa-btn, #cbt-collapse-btn,
+    #cbt-panel.dark #cbt-afa-btn, #cbt-panel.dark #cbt-collapse-btn,
+    #cbt-afa-btn:hover, #cbt-collapse-btn:hover,
+    #cbt-afa-btn:active, #cbt-collapse-btn:active,
+    #cbt-afa-btn:focus, #cbt-collapse-btn:focus,
+    #cbt-afa-btn:focus-visible, #cbt-collapse-btn:focus-visible,
+    #cbt-afa-btn.busy, #cbt-afa-btn.busy:hover,
+    #cbt-afa-btn.ok, #cbt-afa-btn.off, #cbt-afa-btn[disabled],
+    #cbt-panel.dark #cbt-afa-btn:hover, #cbt-panel.dark #cbt-collapse-btn:hover,
+    #cbt-panel.dark #cbt-afa-btn:active, #cbt-panel.dark #cbt-collapse-btn:active,
+    #cbt-panel.dark #cbt-afa-btn:focus, #cbt-panel.dark #cbt-collapse-btn:focus,
+    #cbt-panel.dark #cbt-afa-btn.busy, #cbt-panel.dark #cbt-afa-btn.ok,
+    #cbt-panel.dark #cbt-afa-btn.off {
+      background: #2979ff !important;
+      background-image: none !important;
+      border: 1px solid #2979ff !important;
+      color: #ffffff !important;
+      -webkit-text-fill-color: #ffffff !important;
+      outline: none !important;
+      box-shadow: none !important;
+      filter: none !important;
+      transform: none !important;
+      opacity: 1 !important;
+    }
+    #cbt-afa-btn *, #cbt-collapse-btn * {
+      color: #ffffff !important; -webkit-text-fill-color: #ffffff !important;
+    }
+
   `
-var _sorting = false, _sortObserver = null, _attached = null;
-function coalesced(fn, ms) {
-var pending = null;
-return function () {
-if (pending) return;
-pending = setTimeout(function () {
-pending = null;
-try { fn(); } catch (e) {}
-}, ms);
-};
-}
-function cbtIdle(fn, timeout) {
-timeout = timeout == null ? 700 : timeout;
-try {
-if (typeof requestIdleCallback === 'function') {
-requestIdleCallback(function(){ try { fn(); } catch(e) {} }, { timeout: timeout });
-return;
-}
-} catch(e) {}
-setTimeout(function(){ try { fn(); } catch(e2) {} }, Math.min(timeout, 120));
-}
-function cbtAfterFirstPaint(fn, delay) {
-delay = delay == null ? 140 : delay;
-var raf = (typeof requestAnimationFrame === 'function')
-? requestAnimationFrame
-: function(cb){ return setTimeout(cb, 16); };
-raf(function(){
-raf(function(){
-setTimeout(function(){ try { fn(); } catch(e) {} }, delay);
-});
-});
-}
-// v23.9.196 deep audit: preserve behavior while fixing hidden lock scope/race,
-// stale timer, hung backend request, repeated listener, and avoidable DOM-work bugs.
-// v23.9.195: keep non-urgent COMO work out of active scroll frames.
-var _cbtScrollActiveUntil = 0;
-var _cbtScrollIdleTimer = 0;
-var _cbtScrollIdleJobs = Object.create(null);
-function cbtIsActivelyScrolling() {
-return Date.now() < _cbtScrollActiveUntil;
-}
-function cbtFlushScrollIdleJobs() {
-if (cbtIsActivelyScrolling()) {
-clearTimeout(_cbtScrollIdleTimer);
-_cbtScrollIdleTimer = setTimeout(cbtFlushScrollIdleJobs, 90);
-return;
-}
-_cbtScrollIdleTimer = 0;
-var jobs = _cbtScrollIdleJobs;
-_cbtScrollIdleJobs = Object.create(null);
-Object.keys(jobs).forEach(function(key){
-try { jobs[key](); } catch(e) {}
-});
-}
-function cbtRunAfterScroll(key, fn) {
-if (!key || typeof fn !== 'function') return;
-_cbtScrollIdleJobs[key] = fn;
-if (!cbtIsActivelyScrolling()) {
-cbtFlushScrollIdleJobs();
-return;
-}
-if (!_cbtScrollIdleTimer) _cbtScrollIdleTimer = setTimeout(cbtFlushScrollIdleJobs, 90);
-}
-function cbtNoteScrollActivity() {
-_cbtScrollActiveUntil = Date.now() + 140;
-if (!_cbtScrollIdleTimer) _cbtScrollIdleTimer = setTimeout(cbtFlushScrollIdleJobs, 150);
-}
-try {
-window.addEventListener('scroll', cbtNoteScrollActivity, { capture:true, passive:true });
-} catch(eScrollPassive) {
-window.addEventListener('scroll', cbtNoteScrollActivity, true);
-}
-var CBT_OWN_UI_SELECTOR =
-'#cbt-panel,#cbt-qr-overlay,#cbt-afa-overlay,#cbt-ac-drop,.etf-col-cell,.cbt-missing-probe-frame,.cbt-assign-probe-frame';
-function cbtIsOwnUiNode(node) {
-if (!node) return false;
-var el = node.nodeType === 1 ? node : node.parentElement;
-if (!el || !el.matches) return false;
-try {
-if (el.matches(CBT_OWN_UI_SELECTOR)) return true;
-return !!(el.closest && el.closest(CBT_OWN_UI_SELECTOR));
-} catch(e) {
-return false;
-}
-}
-function cbtMutationIsOnlyOwnUi(mutation) {
-if (!mutation) return false;
-if (cbtIsOwnUiNode(mutation.target)) return true;
-if (mutation.type !== 'childList') return false;
-var touched = [];
-try {
-touched = touched.concat(Array.prototype.slice.call(mutation.addedNodes || []));
-touched = touched.concat(Array.prototype.slice.call(mutation.removedNodes || []));
-} catch(e) {}
-if (!touched.length) return false;
-for (var i = 0; i < touched.length; i++) {
-if (!cbtIsOwnUiNode(touched[i])) return false;
-}
-return true;
-}
-var _storeTimezoneCache = null;
-var _storeTimezoneCacheAt = 0;
-var _storeTimezoneCacheScope = '';
-var _storeTimezoneWasFallback = false;
-var _storeTimezoneBroadScanAt = 0;
-var _storeTimezoneBroadScanValue = null;
-var _parseTimeMemo = Object.create(null);
-var _parseTimeMemoDay = '';
-function getStoreTimezone() {
-var nowMs = Date.now();
-var scope = '';
-try {
-var sm = location.pathname.match(/\/store\/([^/]+)/i);
-scope = sm && sm[1] ? sm[1] : (location.host + location.pathname);
-} catch(e0) {
-scope = location.host || '';
-}
-// A timezone never needs a 2-second retry loop. The previous fallback path could
-// serialize all of document.body (including innerHTML) every 30 seconds when the
-// page did not expose a timezone label, creating a periodic main-thread hitch.
-var tzCacheTtl = 10 * 60 * 1000;
-if (_storeTimezoneCache && _storeTimezoneCacheScope === scope &&
-nowMs - _storeTimezoneCacheAt < tzCacheTtl) {
-return _storeTimezoneCache;
-}
-if (_storeTimezoneCacheScope !== scope) {
-_storeTimezoneCache = null;
-_storeTimezoneWasFallback = false;
-_storeTimezoneBroadScanAt = 0;
-_storeTimezoneBroadScanValue = null;
-_parseTimeMemo = Object.create(null);
-_parseTimeMemoDay = '';
-}
-var tz = null;
-var tzEl = document.querySelector(
-'[class*="timezone"], [class*="time-zone"], .store-time, .current-time,' +
-'[data-timezone], [data-time-zone], [timezone]'
-);
-if (tzEl) {
-var tzCandidate = '';
-try {
-tzCandidate = [
-tzEl.textContent || '',
-tzEl.getAttribute && tzEl.getAttribute('data-timezone') || '',
-tzEl.getAttribute && tzEl.getAttribute('data-time-zone') || '',
-tzEl.getAttribute && tzEl.getAttribute('timezone') || ''
-].join(' ');
-} catch(eTzAttr) { tzCandidate = tzEl.textContent || ''; }
-var match = tzCandidate.match(/([A-Za-z]+\/[A-Za-z_]+)/);
-if (match) tz = match[1];
-}
-// Never read/serialize the entire page just to discover timezone. If Amazon does
-// not expose one in a small dedicated element, use the browser's own IANA zone.
-// This is stable, instant, and preserves local wall-clock Batch Target parsing.
-if (!tz) {
-try {
-var browserTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
-if (browserTz && /^[A-Za-z]+\/[A-Za-z_]+$/.test(browserTz)) tz = browserTz;
-} catch(e1) {}
-}
-_storeTimezoneWasFallback = !tz;
-_storeTimezoneCache = tz || 'America/New_York';
-_storeTimezoneCacheAt = nowMs;
-_storeTimezoneCacheScope = scope;
-return _storeTimezoneCache;
-}
-function cbtWallTimeInZoneMs(dateStr, hour, minute, tz) {
-var dm = String(dateStr || '').match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
-if (!dm) return NaN;
-var targetUtc = Date.UTC(Number(dm[1]), Number(dm[2])-1, Number(dm[3]), Number(hour)||0, Number(minute)||0, 0, 0);
-var guess = targetUtc;
-try {
-var fmt = new Intl.DateTimeFormat('en-US', {
-timeZone: tz, hour12:false,
-year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit',
-hourCycle:'h23'
-});
-for (var n=0; n<3; n++) {
-var parts = fmt.formatToParts(new Date(guess)), got={};
-for (var i=0;i<parts.length;i++) got[parts[i].type]=parts[i].value;
-var represented = Date.UTC(Number(got.year), Number(got.month)-1, Number(got.day), Number(got.hour)%24, Number(got.minute), Number(got.second)||0, 0);
-var diff = represented - targetUtc;
-if (!diff) break;
-guess -= diff;
-}
-return guess;
-} catch(e) { return NaN; }
-}
-function parseTime(raw) {
-if (!raw) return null;
-var str = raw.replace(/[^\d:APMapm\s]/g, '').trim();
-var m = str.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
-if (!m) return null;
-var tz = getStoreTimezone();
-var nowMs = (typeof cbtNowMs === 'function') ? cbtNowMs() : Date.now();
-var now = new Date(nowMs);
-var dateStr;
-try { dateStr = now.toLocaleDateString('en-CA', { timeZone: tz }); }
-catch(e0) { dateStr = now.toLocaleDateString('en-CA'); }
-var hourBucket = Math.floor(nowMs / 3600000);
-if (_parseTimeMemoDay !== dateStr + '|' + tz + '|' + hourBucket) {
-_parseTimeMemoDay = dateStr + '|' + tz + '|' + hourBucket;
-_parseTimeMemo = Object.create(null);
-}
-var memoKey = str.toUpperCase();
-if (Object.prototype.hasOwnProperty.call(_parseTimeMemo, memoKey)) return _parseTimeMemo[memoKey];
-var h = parseInt(m[1], 10), mn = parseInt(m[2], 10);
-var ap = m[3] ? m[3].toUpperCase() : null;
-if (ap === 'PM' && h < 12) h += 12;
-if (ap === 'AM' && h === 12) h = 0;
-var result = cbtWallTimeInZoneMs(dateStr, h, mn, tz);
-if (!isFinite(result)) {
-var d = new Date(nowMs); d.setHours(h, mn, 0, 0); result = d.getTime();
-}
-var delta = result - nowMs;
-if (delta > 12 * 3600000) result -= 86400000;
-else if (delta < -12 * 3600000) result += 86400000;
-_parseTimeMemo[memoKey] = result;
-return result;
-}
-function getBatchTarget(card) {
-var text = card.textContent || '';
-var matches = text.match(/\b(\d{1,2}:\d{2}\s*(?:AM|PM))\b/gi);
-if (!matches) return null;
-var times = matches.map(parseTime).filter(Boolean);
-return times.length ? Math.min.apply(null, times) : null;
-}
-function sortNow(container) {
-if (_sorting || !container || !container.isConnected) return;
-var cards = cbtTaskOrderDirectCards(container);
-if (cards.length < 2) return;
-var data = cards.map(function (card, index) {
-return {
-card: card,
-key: cbtTaskOrderCardKey(card),
-btMs: getBatchTarget(card),
-rowOrder: index
-};
-});
-data.sort(function (a, b) {
-var hasA = a.btMs != null, hasB = b.btMs != null;
-if (hasA && hasB) {
-if (a.btMs !== b.btMs) return a.btMs - b.btMs;
-return a.rowOrder - b.rowOrder;
-}
-if (hasA) return -1;
-if (hasB) return 1;
-return a.rowOrder - b.rowOrder;
-});
-var nextOrder = [], seen = Object.create(null);
-for (var i = 0; i < data.length; i++) {
-var item = data[i];
-if (item.key && !seen[item.key]) {
-seen[item.key] = 1;
-nextOrder.push(item.key);
-_cbtStableTaskKnown[item.key] = 1;
-if (item.btMs != null && Number.isFinite(Number(item.btMs))) _cbtStableTaskTarget[item.key] = Number(item.btMs);
-}
-}
-if (nextOrder.length) _cbtStableTaskOrder = nextOrder;
-_sorting = true;
-try {
-// Preferred path: visual ordering only. This does not detach/re-append cards,
-// so Amazon refreshes do not create the old layout/repaint spike.
-if (!cbtTaskOrderApplyVisualOrder(container)) {
-// Rare fallback for a container that cannot safely use CSS order. This is only
-// the initial sort; normal refreshes do not run this full-list reorder.
-var current = cbtTaskOrderDirectCards(container);
-var desired = data.map(function(v){ return v.card; });
-var changed = desired.length === current.length;
-if (changed) {
-changed = false;
-for (var c = 0; c < desired.length; c++) {
-if (desired[c] !== current[c]) { changed = true; break; }
-}
-}
-if (changed) {
-var frag = document.createDocumentFragment();
-for (var d = 0; d < desired.length; d++) frag.appendChild(desired[d]);
-container.appendChild(frag);
-}
-}
-try { if (_sortObserver) _sortObserver.takeRecords(); } catch(eSortRecords) {}
-try { if (typeof timerWatcher !== 'undefined' && timerWatcher) timerWatcher.takeRecords(); } catch(eTimerSortRecords) {}
-} finally {
-_sorting = false;
-}
-}
-var _sortSchedulePending = false;
-var _sortScheduledContainer = null;
-var _sortSettleTimer = 0;
-var _cbtVisuallySortedContainers = (typeof WeakSet === 'function' ? new WeakSet() : null);
 
-// v23.9.233: keep the exact same Batch Target order semantics without physically
-// rebuilding the task list whenever Amazon refreshes/replaces job-card nodes.
-// CSS `order` is used for flex/grid task containers (and for a safe all-job-card
-// block container converted to a vertical flex column). The DOM itself stays put.
-var _cbtStableTaskOrder = [];
-var _cbtStableTaskTarget = Object.create(null);
-var _cbtStableTaskKnown = Object.create(null);
-var _cbtTargetMovePending = false;
-var _cbtTargetMoveTimer = 0;
-var _cbtTaskOrderApplying = false;
-var _cbtTaskOrderCssContainers = (typeof WeakSet === 'function' ? new WeakSet() : null);
+  /* ══════════════════════════════════════════
+     PART 1 — EARLIEST TASK SORTING
+  ══════════════════════════════════════════ */
+  var _sorting = false, _sortObserver = null, _attached = null;
 
-function cbtTaskOrderCardKey(card) {
-if (!card) return '';
-var row = null;
-try { row = card.querySelector('div.row') || card; } catch(e0) { row = card; }
-var key = '';
-try { key = cbtTimerIdentityFromRow(row) || ''; } catch(e1) { key = ''; }
-if (key) return key;
-try {
-var a = card.querySelector('a');
-var t = a ? String(a.textContent || '').trim().toLowerCase() : '';
-if (t) return 'ref:' + t;
-} catch(e2) {}
-return '';
-}
-function cbtTaskOrderDirectCards(container) {
-if (!container) return [];
-try { return Array.prototype.slice.call(container.querySelectorAll(':scope > job-card')); }
-catch(e) {
-var all = [];
-try { all = Array.prototype.slice.call(container.children || []).filter(function(n){ return n && String(n.tagName || '').toLowerCase() === 'job-card'; }); } catch(e2) {}
-return all;
-}
-}
-function cbtTaskOrderRememberKey(key) {
-if (!key || _cbtStableTaskKnown[key]) return;
-_cbtStableTaskKnown[key] = 1;
-_cbtStableTaskOrder.push(key);
-}
-function cbtTaskOrderEnsureCssLayout(container) {
-if (!container || !container.isConnected) return false;
-try {
-if (_cbtTaskOrderCssContainers && _cbtTaskOrderCssContainers.has(container)) return true;
-} catch(e0) {}
-var display = '';
-try { display = String(getComputedStyle(container).display || '').toLowerCase(); } catch(e1) {}
-var supportsOrder = /(?:flex|grid)/.test(display);
-if (!supportsOrder) {
-// Converting a plain block container to a vertical flex column is safe only
-// when its meaningful direct children are job-card elements. This preserves
-// the same one-card-per-row geometry while enabling CSS order.
-var children = [];
-try { children = Array.prototype.slice.call(container.children || []); } catch(e2) {}
-var hasCard = false, unsafeChild = false;
-for (var i = 0; i < children.length; i++) {
-var el = children[i];
-var tag = String(el && el.tagName || '').toLowerCase();
-if (tag === 'job-card') { hasCard = true; continue; }
-if (tag === 'script' || tag === 'style' || tag === 'template') continue;
-unsafeChild = true;
-break;
-}
-if (hasCard && !unsafeChild) {
-try {
-container.style.setProperty('display', 'flex', 'important');
-container.style.setProperty('flex-direction', 'column', 'important');
-container.style.setProperty('align-items', 'stretch', 'important');
-supportsOrder = true;
-} catch(e3) { supportsOrder = false; }
-}
-}
-if (supportsOrder) {
-try { if (_cbtTaskOrderCssContainers) _cbtTaskOrderCssContainers.add(container); } catch(e4) {}
-}
-return supportsOrder;
-}
-function cbtTaskOrderApplyVisualOrder(container) {
-if (!container || !container.isConnected) return false;
-if (!cbtTaskOrderEnsureCssLayout(container)) return false;
-var cards = cbtTaskOrderDirectCards(container);
-if (!cards.length) return true;
-var rank = Object.create(null);
-for (var r = 0; r < _cbtStableTaskOrder.length; r++) rank[_cbtStableTaskOrder[r]] = r;
-var nextRank = _cbtStableTaskOrder.length;
-for (var i = 0; i < cards.length; i++) {
-var card = cards[i];
-var key = cbtTaskOrderCardKey(card);
-if (!key) continue;
-if (!Object.prototype.hasOwnProperty.call(rank, key)) {
-cbtTaskOrderRememberKey(key);
-rank[key] = nextRank++;
-}
-var wanted = String(rank[key]);
-try {
-if (card.style.getPropertyValue('order') !== wanted || card.style.getPropertyPriority('order') !== 'important') {
-card.style.setProperty('order', wanted, 'important');
-}
-} catch(e0) {}
-}
-return true;
-}
-function cbtTaskOrderSnapshot(container) {
-var cards = cbtTaskOrderDirectCards(container);
-if (!cards.length) return;
-var initial = !_cbtStableTaskOrder.length;
-var firstOrder = [];
-var seen = Object.create(null);
-for (var i = 0; i < cards.length; i++) {
-var card = cards[i];
-var key = cbtTaskOrderCardKey(card);
-if (!key || seen[key]) continue;
-seen[key] = 1;
-_cbtStableTaskKnown[key] = 1;
-if (initial) firstOrder.push(key);
-else cbtTaskOrderRememberKey(key);
-var bt = null;
-try { bt = getBatchTarget(card); } catch(e0) { bt = null; }
-if (bt != null && Number.isFinite(Number(bt))) _cbtStableTaskTarget[key] = Number(bt);
-}
-if (initial && firstOrder.length) _cbtStableTaskOrder = firstOrder;
-cbtTaskOrderApplyVisualOrder(container);
-}
-function cbtTaskOrderRestoreStable(container) {
-if (!container || !container.isConnected || _cbtTaskOrderApplying || _sorting) return;
-var cards = cbtTaskOrderDirectCards(container);
-if (!cards.length) return;
-// Learn replacement/new card identities, but do not change logical rank simply
-// because Amazon supplied the DOM children in a different order.
-for (var i = 0; i < cards.length; i++) {
-var key = cbtTaskOrderCardKey(cards[i]);
-if (key) cbtTaskOrderRememberKey(key);
-}
-// Fast path: assigning CSS order to replacement nodes is a style write only;
-// there is no detach/append cycle and therefore no task-grid layout thrash.
-if (cbtTaskOrderApplyVisualOrder(container)) return;
+  /* Collapses a burst of MutationObserver callbacks into one call.
+     Four observers watch the whole document; on this dashboard a single
+     Angular render can fire hundreds of records, and each callback did a
+     full DOM sweep. The work is identical, just done once per burst
+     instead of once per mutation. Intervals still cover the same jobs, so
+     nothing is lost if a burst is coalesced. */
+  function coalesced(fn, ms) {
+    var pending = null;
+    return function () {
+      if (pending) return;
+      pending = setTimeout(function () {
+        pending = null;
+        try { fn(); } catch (e) {}
+      }, ms);
+    };
+  }
 
-// Rare non-flex/grid fallback: move only cards that are actually out of stable
-// position. This path is intentionally not used on the normal COMO task layout.
-var stableRank = Object.create(null);
-for (var r = 0; r < _cbtStableTaskOrder.length; r++) stableRank[_cbtStableTaskOrder[r]] = r;
-var desired = cards.slice().sort(function(a,b){
-var ak = cbtTaskOrderCardKey(a), bk = cbtTaskOrderCardKey(b);
-var ar = Object.prototype.hasOwnProperty.call(stableRank, ak) ? stableRank[ak] : 1e9;
-var br = Object.prototype.hasOwnProperty.call(stableRank, bk) ? stableRank[bk] : 1e9;
-return ar - br;
-});
-var same = true;
-for (var s = 0; s < cards.length; s++) { if (cards[s] !== desired[s]) { same = false; break; } }
-if (same) return;
-_cbtTaskOrderApplying = true;
-try {
-var anchor = null;
-for (var p = desired.length - 1; p >= 0; p--) {
-var wanted = desired[p];
-if (wanted.nextSibling !== anchor) container.insertBefore(wanted, anchor);
-anchor = wanted;
-}
-try { if (_sortObserver) _sortObserver.takeRecords(); } catch(eTake) {}
-try { if (typeof timerWatcher !== 'undefined' && timerWatcher) timerWatcher.takeRecords(); } catch(eTimerTake) {}
-} finally {
-_cbtTaskOrderApplying = false;
-}
-}
-function cbtTaskOrderApplyTargets(container) {
-if (!container || !container.isConnected || _cbtTaskOrderApplying || _sorting) return;
-var cards = cbtTaskOrderDirectCards(container);
-if (cards.length < 2) return;
-var stableRank = Object.create(null);
-for (var r = 0; r < _cbtStableTaskOrder.length; r++) stableRank[_cbtStableTaskOrder[r]] = r;
-var data = [];
-for (var i = 0; i < cards.length; i++) {
-var key = cbtTaskOrderCardKey(cards[i]);
-if (!key) continue;
-cbtTaskOrderRememberKey(key);
-var bt = Object.prototype.hasOwnProperty.call(_cbtStableTaskTarget, key)
-? Number(_cbtStableTaskTarget[key]) : NaN;
-data.push({ card:cards[i], key:key, bt:bt, current:i, rank:Object.prototype.hasOwnProperty.call(stableRank,key) ? stableRank[key] : 1e9+i });
-}
-if (data.length < 2) return;
-data.sort(function(a,b){
-var ha = Number.isFinite(a.bt), hb = Number.isFinite(b.bt);
-if (ha && hb && a.bt !== b.bt) return a.bt - b.bt;
-if (ha && !hb) return -1;
-if (!ha && hb) return 1;
-return a.rank - b.rank;
-});
-var desiredKeys = data.map(function(v){ return v.key; });
-var changed = desiredKeys.length !== _cbtStableTaskOrder.length;
-if (!changed) {
-for (var c = 0; c < desiredKeys.length; c++) {
-if (desiredKeys[c] !== _cbtStableTaskOrder[c]) { changed = true; break; }
-}
-}
-_cbtStableTaskOrder = desiredKeys.slice();
-if (!changed) {
-cbtTaskOrderApplyVisualOrder(container);
-return;
-}
-// Normal path: one cheap style-order update. The task whose Batch Target
-// changed visually moves to the new correct rank, but DOM nodes are untouched.
-if (cbtTaskOrderApplyVisualOrder(container)) return;
+  /* Run non-visual/background work when the browser has breathing room.
+     The timeout guarantees the work still happens even on a constantly busy
+     dashboard. This is used for duplicated passive API processing and startup
+     background syncs, never for the visible Live clock itself. */
+  function cbtIdle(fn, timeout) {
+    timeout = timeout == null ? 700 : timeout;
+    try {
+      if (typeof requestIdleCallback === 'function') {
+        requestIdleCallback(function(){ try { fn(); } catch(e) {} }, { timeout: timeout });
+        return;
+      }
+    } catch(e) {}
+    setTimeout(function(){ try { fn(); } catch(e2) {} }, Math.min(timeout, 120));
+  }
 
-// Rare fallback: target changes are infrequent, so minimal DOM movement here is
-// acceptable and preserves ordering semantics when CSS order cannot be used.
-_cbtTaskOrderApplying = true;
-try {
-var anchor = null;
-for (var p = data.length - 1; p >= 0; p--) {
-var wanted = data[p].card;
-if (wanted.nextSibling !== anchor) container.insertBefore(wanted, anchor);
-anchor = wanted;
-}
-try { if (_sortObserver) _sortObserver.takeRecords(); } catch(eTake2) {}
-try { if (typeof timerWatcher !== 'undefined' && timerWatcher) timerWatcher.takeRecords(); } catch(eTimerTake2) {}
-} finally {
-_cbtTaskOrderApplying = false;
-}
-}
-function cbtTaskOrderTargetObserved(key, targetMs) {
-if (!key || !Number.isFinite(Number(targetMs))) return;
-targetMs = Number(targetMs);
-var had = Object.prototype.hasOwnProperty.call(_cbtStableTaskTarget, key);
-var old = had ? Number(_cbtStableTaskTarget[key]) : NaN;
-_cbtStableTaskTarget[key] = targetMs;
-cbtTaskOrderRememberKey(key);
-// Same target = no visual move. Amazon may rebuild the card, but the replacement
-// receives the same CSS rank and stays in the exact same visible position.
-if (had && Number.isFinite(old) && old === targetMs) return;
-if (_cbtTargetMoveTimer) clearTimeout(_cbtTargetMoveTimer);
-_cbtTargetMovePending = true;
-_cbtTargetMoveTimer = setTimeout(function runTargetMove(){
-_cbtTargetMoveTimer = 0;
-if (!_cbtTargetMovePending) return;
-if (cbtIsActivelyScrolling()) {
-cbtRunAfterScroll('task-target-change-sort', function(){
-_cbtTargetMovePending = false;
-try { cbtTaskOrderApplyTargets(_attached); } catch(e0) {}
-});
-return;
-}
-_cbtTargetMovePending = false;
-try { cbtTaskOrderApplyTargets(_attached); } catch(e1) {}
-}, 75);
-}
-function cbtScheduleSort(container) {
-if (!container || !container.isConnected) return;
-try {
-if (_cbtVisuallySortedContainers && _cbtVisuallySortedContainers.has(container)) return;
-} catch(eStableSort) {}
-_sortScheduledContainer = container;
-_sortSchedulePending = true;
-if (_sortSettleTimer) clearTimeout(_sortSettleTimer);
-_sortSettleTimer = setTimeout(runScheduledSort, 55);
-function runScheduledSort() {
-_sortSettleTimer = 0;
-if (cbtIsActivelyScrolling()) {
-cbtRunAfterScroll('task-sort', runScheduledSort);
-return;
-}
-_sortSchedulePending = false;
-var target = _sortScheduledContainer;
-_sortScheduledContainer = null;
-if (!target || !target.isConnected || target !== _attached) return;
-cbtIdle(function(){
-try {
-if (!target || !target.isConnected || target !== _attached) return;
-sortNow(target);
-cbtTaskOrderSnapshot(target);
-try { if (_cbtVisuallySortedContainers) _cbtVisuallySortedContainers.add(target); } catch(eSortMark) {}
-} catch(eSort) {}
-}, 180);
-}
-}
-function attach(container) {
-if (_attached === container) return;
-if (_sortObserver) {
-try { _sortObserver.disconnect(); } catch(eSortObserverStop) {}
-_sortObserver = null;
-}
-_attached = container;
-cbtMarkRelevantDomChanged();
-var alreadySorted = false;
-try { alreadySorted = !!(_cbtVisuallySortedContainers && _cbtVisuallySortedContainers.has(container)); } catch(eSortedCheck) {}
-if (!alreadySorted) {
-var doInitialSort = function(){
-if (!container || !container.isConnected || container !== _attached) return;
-try { sortNow(container); } catch(eInitialSort) {}
-try { cbtTaskOrderSnapshot(container); } catch(eOrderSnapshot) {}
-try { if (_cbtVisuallySortedContainers) _cbtVisuallySortedContainers.add(container); } catch(eSortedAdd) {}
-};
-if (cbtIsActivelyScrolling()) cbtRunAfterScroll('task-initial-sort', doInitialSort);
-else doInitialSort();
-} else {
-try { cbtTaskOrderSnapshot(container); } catch(eOrderSnapshot2) {}
-}
-// Extremely cheap direct-child observer: it does NOT watch the entire task DOM.
-// If Amazon replaces/reorders job-card children without a Batch Target change,
-// reapply the saved CSS rank to the changed cards. No full-list DOM re-append.
-try {
-_sortObserver = new MutationObserver(function(mutations){
-if (_sorting || _cbtTaskOrderApplying || container !== _attached || !container.isConnected) return;
-var directCardChange = false;
-for (var i = 0; i < mutations.length; i++) {
-var m = mutations[i];
-if (!m || m.type !== 'childList') continue;
-var nodes = [];
-try { nodes = nodes.concat(Array.prototype.slice.call(m.addedNodes || []), Array.prototype.slice.call(m.removedNodes || [])); } catch(e0) {}
-for (var j = 0; j < nodes.length; j++) {
-var node = nodes[j];
-if (node && node.nodeType === 1 && String(node.tagName || '').toLowerCase() === 'job-card') { directCardChange = true; break; }
-}
-if (directCardChange) break;
-}
-if (!directCardChange) return;
-try { cbtTaskOrderRestoreStable(container); } catch(eRestore) {}
-});
-_sortObserver.observe(container, { childList:true });
-} catch(eObserver) { _sortObserver = null; }
-try { cbtRetargetTimerWatcher(container); } catch(eTimerRoot) {}
-try {
-if (bodyWatcher) bodyWatcher.disconnect();
-_bodyWatcherStarted = false;
-} catch(e) {}
-}
-function getContainer() {
-var c = document.querySelector('div.container-fluid.job-cards');
-if (c) return c;
-var first = document.querySelector('job-card');
-return first ? first.parentElement : null;
-}
-var _bodyWatcherStarted = false;
-var bodyWatcher = new MutationObserver(coalesced(function () {
-cbtMarkRelevantDomChanged();
-var c = getContainer();
-if (c) attach(c);
-}, 80));
-function ensureSortAttachment() {
-if (!isComoSite() || !isDashboardView()) {
-try { bodyWatcher.disconnect(); } catch(e) {}
-_bodyWatcherStarted = false;
-return;
-}
-var c = getContainer();
-if (c) {
-if (_attached !== c || !_attached || !_attached.isConnected) attach(c);
-return;
-}
-if (!_bodyWatcherStarted) {
-try {
-bodyWatcher.observe(document.documentElement, { childList: true, subtree: true });
-_bodyWatcherStarted = true;
-} catch(e2) {}
-}
-}
-function fmtTimeLeft(targetMs) {
-var diffMs = targetMs - ((typeof cbtNowMs === 'function') ? cbtNowMs() : Date.now());
-var diffMin = Math.floor(Math.abs(diffMs) / 60000);
-var diffSec = Math.floor((Math.abs(diffMs) % 60000) / 1000);
-if (diffMs < 0) return { text: 'Overdue ' + diffMin + 'm', cls: 'overdue' };
-if (diffMin < 10) return { text: diffMin + ':' + String(diffSec).padStart(2,'0') + ' left', cls: 'critical' };
-return { text: diffMin + ' min left', cls: 'ok' };
-}
-function findBatchTargetCol(row) {
-var cols = row.querySelectorAll(':scope > div[class*="col-"]');
-for (var i = 0; i < cols.length; i++) {
-if (/\d{1,2}:\d{2}\s*(AM|PM)/i.test(cols[i].textContent) ||
-/batch\s*target/i.test(cols[i].textContent)) {
-return { col: cols[i], idx: i };
-}
-}
-return null;
-}
-var _cbtTimerElements = new Set();
-// v23.9.200: keep Time Left stable across opening a task and returning to the
-// dashboard. Amazon fully destroys/recreates the task list on that navigation,
-// so an in-place DOM grace period alone cannot preserve the injected column.
-// Remember the last valid target by real job id and rehydrate it while the new
-// job-card DOM is being created, before the browser gets a chance to paint it.
-var CBT_TIMER_ROUTE_CACHE_TTL_MS = 10 * 60 * 1000;
-var CBT_TIMER_ROUTE_REHYDRATE_GRACE_MS = 5000;
-var CBT_TIMER_ROUTE_REPAIR_MS = 6500;
-var _cbtTimerTargetCache = new Map();
-var _cbtTimerRouteCacheLoaded = false;
-var _cbtTimerRouteRepairObserver = null;
-var _cbtTimerRouteRepairStopTimer = null;
-function cbtTimerRouteCacheKey() {
-return 'cbt_timer_route_targets_v1_' + String(STORE_ID || 'unknown');
-}
-function cbtTimerIdentityFromRow(row) {
-if (!row) return '';
-var root = row;
-try { root = row.closest('job-card') || row; } catch(e0) {}
-var jobId = '';
-try { jobId = cbtAssignExplicitJobIdFromNode(root) || ''; } catch(e1) { jobId = ''; }
-if (jobId) return 'job:' + String(jobId);
-var link = null;
-try { link = root.querySelector('a[href*="jobId="]'); } catch(e2) {}
-if (link) {
-var href = '';
-try { href = link.getAttribute('href') || ''; } catch(e3) {}
-var m = String(href).match(/jobId=([^&#"']+)/i);
-if (m) {
-try { return 'job:' + decodeURIComponent(m[1]); }
-catch(e4) { return 'job:' + m[1]; }
-}
-}
-return '';
-}
-function cbtTimerPruneRouteCache(now) {
-now = Number(now) || Date.now();
-var stale = [];
-_cbtTimerTargetCache.forEach(function(entry, key){
-if (!entry || !Number(entry.targetMs) || now - Number(entry.at || 0) > CBT_TIMER_ROUTE_CACHE_TTL_MS) stale.push(key);
-});
-for (var i = 0; i < stale.length; i++) _cbtTimerTargetCache.delete(stale[i]);
-while (_cbtTimerTargetCache.size > 300) {
-var first = _cbtTimerTargetCache.keys().next();
-if (!first || first.done) break;
-_cbtTimerTargetCache.delete(first.value);
-}
-}
-function cbtTimerLoadRouteCache() {
-if (_cbtTimerRouteCacheLoaded) return;
-_cbtTimerRouteCacheLoaded = true;
-try {
-var raw = sessionStorage.getItem(cbtTimerRouteCacheKey());
-if (!raw) return;
-var parsed = JSON.parse(raw);
-if (!parsed || typeof parsed !== 'object') return;
-var items = parsed.items || {};
-var now = Date.now();
-Object.keys(items).forEach(function(key){
-var entry = items[key];
-if (!entry || !Number(entry.targetMs)) return;
-if (now - Number(entry.at || 0) > CBT_TIMER_ROUTE_CACHE_TTL_MS) return;
-_cbtTimerTargetCache.set(key, {targetMs:Number(entry.targetMs), at:Number(entry.at)||now});
-});
-cbtTimerPruneRouteCache(now);
-} catch(e) {}
-}
-function cbtTimerPersistRouteCache() {
-try {
-cbtTimerPruneRouteCache(Date.now());
-var items = Object.create(null);
-_cbtTimerTargetCache.forEach(function(entry, key){ items[key] = entry; });
-sessionStorage.setItem(cbtTimerRouteCacheKey(), JSON.stringify({at:Date.now(), items:items}));
-} catch(e) {}
-}
-function cbtTimerRememberTarget(row, targetMs) {
-if (!row || !Number(targetMs)) return;
-cbtTimerLoadRouteCache();
-var key = cbtTimerIdentityFromRow(row);
-if (!key) return;
-var numericTarget = Number(targetMs);
-_cbtTimerTargetCache.set(key, {targetMs:numericTarget, at:Date.now()});
-cbtTimerPruneRouteCache(Date.now());
-// The Time Left injector is the authoritative place where a real Batch Target
-// has been parsed from Amazon's task row. Feed that value into the stable-order
-// controller. Identical refreshes do nothing; a genuine time change moves the
-// task once to its newly correct position.
-try { cbtTaskOrderTargetObserved(key, numericTarget); } catch(eOrderTarget) {}
-}
-function cbtTimerCachedTarget(row) {
-if (!row) return null;
-cbtTimerLoadRouteCache();
-var key = cbtTimerIdentityFromRow(row);
-if (!key) return null;
-var entry = _cbtTimerTargetCache.get(key);
-if (!entry || !Number(entry.targetMs)) return null;
-if (Date.now() - Number(entry.at || 0) > CBT_TIMER_ROUTE_CACHE_TTL_MS) {
-_cbtTimerTargetCache.delete(key);
-return null;
-}
-return Number(entry.targetMs);
-}
-function cbtTimerSnapshotVisibleTargets() {
-cbtTimerLoadRouteCache();
-var els = [];
-try { els = Array.prototype.slice.call(document.querySelectorAll('job-card .etf-timeleft[data-target]')); }
-catch(e0) { els = []; }
-for (var i = 0; i < els.length; i++) {
-var targetMs = parseInt(els[i].dataset.target || '', 10);
-if (!targetMs) continue;
-var row = null;
-try { row = els[i].closest('div.row'); } catch(e1) {}
-if (row) cbtTimerRememberTarget(row, targetMs);
-}
-cbtTimerPersistRouteCache();
-}
-function cbtStopTimerRouteRepair() {
-if (_cbtTimerRouteRepairObserver) {
-try { _cbtTimerRouteRepairObserver.disconnect(); } catch(e0) {}
-_cbtTimerRouteRepairObserver = null;
-}
-if (_cbtTimerRouteRepairStopTimer) {
-try { clearTimeout(_cbtTimerRouteRepairStopTimer); } catch(e1) {}
-_cbtTimerRouteRepairStopTimer = null;
-}
-}
-function cbtTimerQueueRepairFlush() {
-if (_timerMutationPending) return;
-_timerMutationPending = true;
-if (typeof queueMicrotask === 'function') queueMicrotask(flushTimerMutationHosts);
-else Promise.resolve().then(flushTimerMutationHosts);
-}
-function cbtStartTimerRouteRepair() {
-cbtStopTimerRouteRepair();
-if (!isDashboardView()) return;
-cbtTimerLoadRouteCache();
-var stopAt = Date.now() + CBT_TIMER_ROUTE_REPAIR_MS;
-function queueNode(node) {
-if (!node || node.nodeType !== 1) return;
-_timerMutationNodes.add(node);
-}
-function catchCurrentRows() {
-if (!isDashboardView()) return false;
-var container = null;
-try { container = getContainer(); } catch(e0) {}
-if (!container || !container.isConnected) return false;
-try { cbtRetargetTimerWatcher(container); } catch(e1) {}
-queueNode(container);
-cbtTimerQueueRepairFlush();
-return true;
-}
-// If Amazon already mounted the task container, the normal container-scoped
-// timer MutationObserver is enough. Do not also run a document-wide observer.
-if (catchCurrentRows()) return;
-try {
-_cbtTimerRouteRepairObserver = new MutationObserver(function(mutations){
-if (!isDashboardView() || Date.now() >= stopAt) {
-cbtStopTimerRouteRepair();
-return;
-}
-// As soon as the real task container exists, hand off to the normal scoped
-// watcher and immediately disconnect this temporary document-wide watcher.
-if (catchCurrentRows()) {
-cbtStopTimerRouteRepair();
-return;
-}
-var relevant = false;
-for (var i = 0; i < mutations.length; i++) {
-var added = (mutations[i] && mutations[i].addedNodes) || [];
-for (var j = 0; j < added.length; j++) {
-var node = added[j];
-if (!node || node.nodeType !== 1) continue;
-try {
-if ((node.matches && node.matches('div.container-fluid.job-cards,job-card,div.row.job-card-header')) ||
-(node.querySelector && node.querySelector('div.container-fluid.job-cards,job-card,div.row.job-card-header'))) {
-queueNode(node);
-relevant = true;
-}
-} catch(e2) {}
-}
-}
-if (relevant) cbtTimerQueueRepairFlush();
-});
-_cbtTimerRouteRepairObserver.observe(document.documentElement, {childList:true, subtree:true});
-_cbtTimerRouteRepairStopTimer = setTimeout(cbtStopTimerRouteRepair, CBT_TIMER_ROUTE_REPAIR_MS + 50);
-} catch(e3) {
-_cbtTimerRouteRepairObserver = null;
-}
-}
-// Keep the last valid Batch Target through Amazon's very short row-rebuild gap.
-// This prevents Time Left from flashing away/into a dash when the source cell is
-// temporarily detached or emptied and then restored a few milliseconds later.
-var CBT_TIMER_TARGET_GRACE_MS = 1250;
-var _cbtTimerGraceRetry = (typeof WeakMap === 'function' ? new WeakMap() : null);
-function cbtCancelTimerGraceRetry(row) {
-if (!_cbtTimerGraceRetry || !row) return;
-var id = _cbtTimerGraceRetry.get(row);
-if (!id) return;
-try { clearTimeout(id); } catch(e0) {}
-try { _cbtTimerGraceRetry.delete(row); } catch(e1) {}
-}
-function cbtScheduleTimerGraceRetry(row, delayMs) {
-if (!_cbtTimerGraceRetry || !row || !row.isConnected) return;
-if (_cbtTimerGraceRetry.get(row)) return;
-var id = setTimeout(function(){
-try { _cbtTimerGraceRetry.delete(row); } catch(e0) {}
-if (!row || !row.isConnected || !isDashboardView()) return;
-var host = row;
-try { host = row.closest('job-card') || row; } catch(e1) {}
-try { refreshTimerHost(host); } catch(e2) {}
-}, Math.max(40, Number(delayMs) || CBT_TIMER_TARGET_GRACE_MS));
-_cbtTimerGraceRetry.set(row, id);
-}
-function injectRowTimer(row) {
-var isHeader = row.classList.contains('job-card-header');
-var found = findBatchTargetCol(row);
-var existingTimerCol = row.querySelector('.etf-col-cell');
-if (existingTimerCol) {
-if (isHeader) return;
-var existingTimerEl = null;
-try { existingTimerEl = existingTimerCol.querySelector('.etf-timeleft'); } catch(eExistingTimer) {}
-if (!existingTimerEl) return;
-var existingTargetMs = null;
-if (found && found.col) {
-var existingRaw = found.col.textContent.replace(/[^\d:APMapm\s]/g, '').trim();
-var existingMatch = existingRaw.match(/\d{1,2}:\d{2}\s*(?:AM|PM)/i);
-existingTargetMs = existingMatch ? parseTime(existingMatch[0]) : null;
-}
-if (existingTargetMs) {
-cbtTimerRememberTarget(row, existingTargetMs);
-cbtCancelTimerGraceRetry(row);
-existingTimerEl.removeAttribute('data-cbt-target-missing-since');
-var existingResult = fmtTimeLeft(existingTargetMs);
-var targetText = String(existingTargetMs);
-if (existingTimerEl.dataset.target !== targetText) existingTimerEl.dataset.target = targetText;
-var existingClass = 'etf-timeleft ' + existingResult.cls;
-if (existingTimerEl.className !== existingClass) existingTimerEl.className = existingClass;
-if (existingTimerEl.textContent !== existingResult.text) existingTimerEl.textContent = existingResult.text;
-_cbtTimerElements.add(existingTimerEl);
-} else {
-var cachedTargetMs = cbtTimerCachedTarget(row);
-var previousTargetMs = parseInt(existingTimerEl.dataset.target || '', 10) || cachedTargetMs;
-if (previousTargetMs) {
-if (!parseInt(existingTimerEl.dataset.target || '', 10) && cachedTargetMs) {
-existingTimerEl.dataset.target = String(cachedTargetMs);
-var cachedResult = fmtTimeLeft(cachedTargetMs);
-var cachedClass = 'etf-timeleft ' + cachedResult.cls;
-if (existingTimerEl.className !== cachedClass) existingTimerEl.className = cachedClass;
-if (existingTimerEl.textContent !== cachedResult.text) existingTimerEl.textContent = cachedResult.text;
-}
-var missingSince = Number(existingTimerEl.getAttribute('data-cbt-target-missing-since')) || 0;
-if (!missingSince) {
-missingSince = Date.now();
-existingTimerEl.setAttribute('data-cbt-target-missing-since', String(missingSince));
-}
-var missingFor = Date.now() - missingSince;
-var allowedGrace = cachedTargetMs ? CBT_TIMER_ROUTE_REHYDRATE_GRACE_MS : CBT_TIMER_TARGET_GRACE_MS;
-if (missingFor < allowedGrace) {
-// Do not blank a good timer during Amazon's transient DOM refresh or while a
-// just-returned task row is finishing its asynchronous field hydration.
-_cbtTimerElements.add(existingTimerEl);
-cbtScheduleTimerGraceRetry(row, allowedGrace - missingFor + 25);
-return;
-}
-}
-cbtCancelTimerGraceRetry(row);
-existingTimerEl.removeAttribute('data-cbt-target-missing-since');
-_cbtTimerElements.delete(existingTimerEl);
-existingTimerEl.removeAttribute('data-target');
-if (existingTimerEl.className !== 'etf-timeleft ok') existingTimerEl.className = 'etf-timeleft ok';
-if (existingTimerEl.textContent !== '—') existingTimerEl.textContent = '—';
-}
-return;
-}
-if (!found) return;
-var btCol = found.col;
-var newCol = document.createElement('div');
-newCol.className = 'col-lg-2 etf-col-cell';
-newCol.style.cssText = 'padding-left:5px;padding-right:5px;';
-if (isHeader) {
-newCol.innerHTML = '<span class="etf-col-header">\u23F1 Time Left</span>';
-} else {
-var btRaw = btCol.textContent.replace(/[^\d:APMapm\s]/g, '').trim();
-var m2 = btRaw.match(/\d{1,2}:\d{2}\s*(?:AM|PM)/i);
-var btMs = m2 ? parseTime(m2[0]) : cbtTimerCachedTarget(row);
-if (btMs) {
-cbtTimerRememberTarget(row, btMs);
-var result = fmtTimeLeft(btMs);
-newCol.innerHTML = '<span class="etf-timeleft ' + result.cls + '" data-target="' + btMs + '">' + result.text + '</span>';
-} else {
-newCol.innerHTML = '<span class="etf-timeleft ok">—</span>';
-}
-}
-btCol.parentNode.insertBefore(newCol, btCol.nextSibling);
-try {
-var timerEl = newCol.querySelector('.etf-timeleft[data-target]');
-if (timerEl) _cbtTimerElements.add(timerEl);
-} catch(eTimerTrack) {}
-}
-var EXCLUDED_SECTION_RE = /problem\s*solve|partially\s*batched|staged\s*for\s*pickup/i;
-var _cbtRelevantDomVersion = 1;
-var _excludedTurnCache = new WeakMap();
-var _cbtMainTasksSnapshotCache = null;
-var _cbtPartialCheckboxRefreshPending = false;
-function cbtSchedulePartialCheckboxRefresh() {
-var box = document.getElementById('cbt-afa-type-partial');
-if (!box || _cbtPartialCheckboxRefreshPending) return;
-_cbtPartialCheckboxRefreshPending = true;
-function runPartialRefresh() {
-if (cbtIsActivelyScrolling()) {
-cbtRunAfterScroll('partial-checkbox-refresh', runPartialRefresh);
-return;
-}
-_cbtPartialCheckboxRefreshPending = false;
-try { cbtAssignRefreshPartialCheckboxState(); } catch(e) {}
-}
-setTimeout(runPartialRefresh, 60);
-}
-function cbtMarkRelevantDomChanged() {
-_cbtRelevantDomVersion++;
-_cbtMainTasksSnapshotCache = null;
-cbtSchedulePartialCheckboxRefresh();
-}
-function isInExcludedSection(el) {
-if (!el || el.nodeType !== 1) return false;
-var cached = _excludedTurnCache.get(el);
-if (cached && cached.version === _cbtRelevantDomVersion &&
-Date.now() - Number(cached.at || 0) < 5000) {
-return cached.value;
-}
-var node = el;
-var excluded = false;
-while (node && node !== document.body) {
-var prev = node.previousElementSibling;
-while (prev) {
-if (EXCLUDED_SECTION_RE.test(prev.textContent || '')) {
-excluded = true;
-break;
-}
-prev = prev.previousElementSibling;
-}
-if (excluded) break;
-if (node.parentElement) {
-var parentPrev = node.parentElement.previousElementSibling;
-if (parentPrev &&
-EXCLUDED_SECTION_RE.test(parentPrev.textContent || '')) {
-excluded = true;
-break;
-}
-}
-node = node.parentElement;
-}
-_excludedTurnCache.set(el, {
-version: _cbtRelevantDomVersion,
-at: Date.now(),
-value: excluded
-});
-return excluded;
-}
-function injectAllTimers() {
-// Process each job-card once. The old combined selector returned both the
-// job-card and its nested header row, so the same row was inspected twice.
-var cards = document.querySelectorAll('job-card');
-for (var i = 0; i < cards.length; i++) {
-var card = cards[i];
-if (isInExcludedSection(card)) {
-try { card.querySelectorAll('.etf-col-cell').forEach(function(col){ col.remove(); }); } catch(e0) {}
-continue;
-}
-var row = null;
-try { row = card.querySelector('div.row'); } catch(e1) {}
-if (row) injectRowTimer(row);
-}
-// Keep support for any standalone header row Amazon may render outside a
-// job-card, without re-processing headers already covered above.
-var headers = document.querySelectorAll('div.row.job-card-header');
-for (var j = 0; j < headers.length; j++) {
-var header = headers[j];
-var insideCard = null;
-try { insideCard = header.closest('job-card'); } catch(e2) {}
-if (insideCard) continue;
-if (isInExcludedSection(header)) {
-try { header.querySelectorAll('.etf-col-cell').forEach(function(col){ col.remove(); }); } catch(e3) {}
-continue;
-}
-injectRowTimer(header);
-}
-}
-// v23.9.216: restored the exact v23.9.206 assignment highlight/To Accept acceptance logic while preserving the No-Lag infrastructure.
-function tickTimers() {
-if (document.hidden || !isDashboardView()) return;
-_cbtTimerElements.forEach(function (el) {
-if (!el || !el.isConnected) {
-_cbtTimerElements.delete(el);
-return;
-}
-var targetMs = parseInt(el.dataset.target, 10);
-if (!targetMs) return;
-var result = fmtTimeLeft(targetMs);
-var nextClass = 'etf-timeleft ' + result.cls;
-if (el.textContent !== result.text) el.textContent = result.text;
-if (el.className !== nextClass) el.className = nextClass;
-});
-if (cbtIsActivelyScrolling()) {
-cbtRunAfterScroll('assign-protection-tick', function(){
-try { cbtAssignTickProtectionCountdown(); } catch(eCooldownScroll) {}
-});
-} else {
-try { cbtAssignTickProtectionCountdown(); } catch(eCooldown) {}
-}
-}
-var _timerMutationHosts = new Set();
-var _timerMutationNodes = new Set();
-var _timerMutationPending = false;
-function cbtMutationRemovedTimerColumn(mutation) {
-if (!mutation || mutation.type !== 'childList') return false;
-var removed = mutation.removedNodes || [];
-for (var i = 0; i < removed.length; i++) {
-var node = removed[i];
-if (!node || node.nodeType !== 1) continue;
-try {
-if (node.matches && node.matches('.etf-col-cell')) return true;
-if (node.querySelector && node.querySelector('.etf-col-cell')) return true;
-} catch(e) {}
-}
-return false;
-}
-function queueTimerHost(node) {
-if (!node || node.nodeType !== 1) return;
-function addHost(candidate) {
-if (!candidate || candidate.nodeType !== 1) return;
-var normalized = candidate;
-try {
-if (!(candidate.matches && candidate.matches('job-card'))) {
-normalized = candidate.closest ? (candidate.closest('job-card') || candidate) : candidate;
-}
-} catch(eNorm) { normalized = candidate; }
-if (normalized) _timerMutationHosts.add(normalized);
-}
-var host = null;
-try {
-if (node.matches && node.matches('job-card')) host = node;
-else if (node.matches && node.matches('div.row.job-card-header')) host = node.closest('job-card') || node;
-else if (node.closest) host = node.closest('job-card') || node.closest('div.row.job-card-header');
-} catch(e) {}
-if (host) addHost(host);
-try {
-node.querySelectorAll('job-card').forEach(addHost);
-node.querySelectorAll('div.row.job-card-header').forEach(function(h){
-var parentCard = null;
-try { parentCard = h.closest('job-card'); } catch(eHeader) {}
-if (!parentCard) addHost(h);
-});
-} catch(e2) {}
-}
-function refreshTimerHost(host) {
-if (!host || !host.isConnected) return;
-if (isInExcludedSection(host)) {
-try { host.querySelectorAll('.etf-col-cell').forEach(function(col){ col.remove(); }); } catch(e) {}
-return;
-}
-var row = null;
-if (host.matches && host.matches('div.row.job-card-header')) row = host;
-else {
-try { row = host.querySelector('div.row'); } catch(e2) {}
-}
-if (row) injectRowTimer(row);
-}
-function flushTimerMutationHosts() {
-_timerMutationPending = false;
-if (!isDashboardView()) {
-_timerMutationNodes.clear();
-_timerMutationHosts.clear();
-return;
-}
-var pendingNodes = Array.from(_timerMutationNodes);
-_timerMutationNodes.clear();
-for (var n = 0; n < pendingNodes.length; n++) queueTimerHost(pendingNodes[n]);
-var hosts = Array.from(_timerMutationHosts);
-_timerMutationHosts.clear();
-// Time Left is visible-critical. Refresh only the task rows Amazon actually
-// touched and do it before paint, even while scrolling, so the injected column
-// does not briefly disappear during Amazon's own row replacement.
-for (var i = 0; i < hosts.length; i++) refreshTimerHost(hosts[i]);
-}
-var _timerWatchRoot = null;
-function cbtRetargetTimerWatcher(root) {
-if (typeof timerWatcher === 'undefined' || !timerWatcher) return;
-root = root && root.isConnected ? root : document.documentElement;
-if (_timerWatchRoot === root) return;
-try { timerWatcher.disconnect(); } catch(e0) {}
-_timerWatchRoot = root;
-try { timerWatcher.observe(root, { childList:true, subtree:true }); } catch(e1) {}
-}
-var timerWatcher = new MutationObserver(function(mutations) {
-if (!isDashboardView()) return;
-var foundRelevant = false;
-for (var i = 0; i < mutations.length; i++) {
-var removedTimerColumn = cbtMutationRemovedTimerColumn(mutations[i]);
-// Our own insertion is ignored, but if Amazon removes our Time Left column as
-// part of rebuilding a row that removal must be repaired immediately.
-if (!removedTimerColumn && cbtMutationIsOnlyOwnUi(mutations[i])) continue;
-foundRelevant = true;
-var target = mutations[i].target;
-if (target && target.nodeType === 1) _timerMutationNodes.add(target);
-var added = mutations[i].addedNodes || [];
-for (var j = 0; j < added.length; j++) {
-if (added[j] && added[j].nodeType === 1) _timerMutationNodes.add(added[j]);
-}
-}
-if (!foundRelevant) return;
-cbtMarkRelevantDomChanged();
-// v23.9.228: Amazon periodically replaces task-row DOM. Rebind an ACTIVE
-// To Accept visual immediately in this MutationObserver microtask, before the
-// browser paints the replacement row. The old rAF-only path allowed one bare
-// frame to appear every refresh, which looked like a fast blink. This runs only
-// while at least one cart has active visual protection.
-try {
-// Rebind only task cards touched by this Amazon mutation. The previous path
-// rebuilt an index for the entire task grid inside the MutationObserver, which
-// could add a visible hitch to Amazon's periodic refresh.
-cbtAssignPrePaintRebindMutations(mutations);
-} catch(eCooldownPrePaint) {}
-if (_timerMutationPending) return;
-_timerMutationPending = true;
-// v23.9.211 NoLag: one repair pass per animation frame prevents MutationObserver
-// bursts from monopolizing the main thread while Amazon rebuilds many task rows.
-if (typeof requestAnimationFrame === 'function') requestAnimationFrame(flushTimerMutationHosts);
-else setTimeout(flushTimerMutationHosts, 16);
-});
-var CBT_REC_RELEASE_MINUTE = 55;
-var CBT_REC_RELEASE_FREEZE_START = 55;
-var CBT_REC_FIRST_DROP_HOUR = 2;
-var CBT_REC_LAST_DROP_HOUR = 20;
-var CBT_REC_QUIET_START_HOUR = 21;
-var CBT_REC_CART_MINUTES = 20;
-var CBT_REC_DEADLINE_BUFFER_MIN = 5;
-var CBT_REC_OVERDUE_WINDOW_MIN = 8;
-var CBT_REC_RUSH_RATIO = 0.12;
-var CBT_REC_RUSH_MIN = 1;
-var CBT_REC_RUSH_MAX = 4;
-var CBT_REC_MAX_BATCHERS = 38;
-var CBT_REC_STATE_PREFIX = 'cbt_hourly_recommend_v4_release55_';
-var batchRateCache = 120;
-function cbtRecStoreKey() {
-return String(STORE_ID || 'unknown').replace(/[.$#\[\]\/]/g, '_');
-}
-function cbtRecStateKey() {
-return CBT_REC_STATE_PREFIX + cbtRecStoreKey();
-}
-function cbtRecLoadState() {
-var key = cbtRecStateKey();
-var raw = gmGet(key, null);
-if (raw == null) {
-try { raw = localStorage.getItem(key); } catch(e) {}
-}
-if (!raw) return null;
-try {
-var s = (typeof raw === 'string') ? JSON.parse(raw) : raw;
-return s && typeof s === 'object' ? s : null;
-} catch(e2) { return null; }
-}
-function cbtRecSaveState(state) {
-if (!state) return;
-var key = cbtRecStateKey();
-var json = JSON.stringify(state);
-gmSet(key, json);
-try { localStorage.setItem(key, json); } catch(e) {}
-}
-function cbtRecStoreClock(nowMs) {
-var now = new Date(nowMs || Date.now());
-try {
-var parts = new Intl.DateTimeFormat('en-US', {
-timeZone: getStoreTimezone(),
-hour12: false,
-year: 'numeric', month: '2-digit', day: '2-digit',
-hour: '2-digit', minute: '2-digit', second: '2-digit'
-}).formatToParts(now);
-var o = { year:0, month:0, day:0, hour:0, minute:0, second:0 };
-for (var i = 0; i < parts.length; i++) {
-var p = parts[i];
-if (p.type === 'year') o.year = parseInt(p.value,10)||0;
-else if (p.type === 'month') o.month = parseInt(p.value,10)||0;
-else if (p.type === 'day') o.day = parseInt(p.value,10)||0;
-else if (p.type === 'hour') o.hour = parseInt(p.value,10)||0;
-else if (p.type === 'minute') o.minute = parseInt(p.value,10)||0;
-else if (p.type === 'second') o.second = parseInt(p.value,10)||0;
-}
-if (o.hour === 24) o.hour = 0;
-return o;
-} catch(e) {
-return {
-year: now.getFullYear(), month: now.getMonth()+1, day: now.getDate(),
-hour: now.getHours(), minute: now.getMinutes(), second: now.getSeconds()
-};
-}
-}
-function cbtRecPad2(n) { return String(n).padStart(2, '0'); }
-function cbtRecIsScheduledDropHour(hour) {
-hour = Number(hour);
-return hour >= CBT_REC_FIRST_DROP_HOUR && hour <= CBT_REC_LAST_DROP_HOUR;
-}
-function cbtRecIsQuietHours(clock) {
-if (!clock) return false;
-var h = Number(clock.hour) || 0;
-var m = Number(clock.minute) || 0;
-if (h >= CBT_REC_QUIET_START_HOUR || h < CBT_REC_FIRST_DROP_HOUR) return true;
-if (h === CBT_REC_FIRST_DROP_HOUR && m < CBT_REC_RELEASE_FREEZE_START) return true;
-return false;
-}
-function cbtRecCycleInfo(nowMs) {
-var p = cbtRecStoreClock(nowMs);
-var releaseSerial = Date.UTC(p.year, p.month - 1, p.day, p.hour, 0, 0);
-if (p.minute < CBT_REC_RELEASE_MINUTE) releaseSerial -= 3600000;
-var rd = new Date(releaseSerial);
-var cycleKey =
-rd.getUTCFullYear() + '-' +
-cbtRecPad2(rd.getUTCMonth()+1) + '-' +
-cbtRecPad2(rd.getUTCDate()) + 'T' +
-cbtRecPad2(rd.getUTCHours()) + ':' +
-cbtRecPad2(CBT_REC_RELEASE_MINUTE);
-var minutesIntoCycle;
-if (p.minute >= CBT_REC_RELEASE_MINUTE) {
-minutesIntoCycle = (p.minute - CBT_REC_RELEASE_MINUTE) + p.second / 60;
-} else {
-minutesIntoCycle = (p.minute + (60 - CBT_REC_RELEASE_MINUTE)) + p.second / 60;
-}
-var toNextRelease = Math.max(0.25, 60 - minutesIntoCycle);
-var scheduledDropHour = cbtRecIsScheduledDropHour(p.hour);
-var quietHours = cbtRecIsQuietHours(p);
-var inReleaseWindow = false;
-return {
-key: cycleKey,
-hour: p.hour,
-minute: p.minute,
-minutesInto: minutesIntoCycle,
-minutesToNextRelease: toNextRelease,
-scheduledDropHour: scheduledDropHour,
-quietHours: quietHours,
-inReleaseWindow: inReleaseWindow
-};
-}
-function cbtRecJobDeadlineMs(job) {
-if (!job || typeof job !== 'object') return null;
-var fields = [
-'jobBatchTarget', 'batchTarget', 'batchTargetTime',
-'targetTime', 'targetTimestamp', 'deadline'
-];
-for (var i = 0; i < fields.length; i++) {
-var ms = cbtNormalizeEpochMs(job[fields[i]]);
-if (ms) return ms;
-}
-return null;
-}
-function cbtRecIsBatchingWork(job) {
-if (!job || typeof job !== 'object') return false;
-var state = String(job.operationState || job.state || '').toUpperCase();
-var open =
-state === 'IN_PROGRESS' ||
-state === 'NONE' ||
-state === 'BATCHING' ||
-state === 'NOT_STARTED' ||
-state === 'CREATED' ||
-state === 'ASSIGNABLE' ||
-state === 'UNASSIGNABLE';
-if (!open) return false;
-var typeText = [
-job.destinationType, job.jobType, job.taskType,
-job.operationType, job.workflowType
-].filter(Boolean).join(' ').toUpperCase();
-if (typeText.indexOf('UNPACK') !== -1) return false;
-if (typeText.indexOf('PROBLEM') !== -1 && typeText.indexOf('SOLVE') !== -1) return false;
-return true;
-}
-function cbtRecMainTasksSnapshot() {
-if (!isDashboardView()) return null;
-var container = null;
-if (_attached && _attached.isConnected) {
-container = _attached;
-} else {
-try { container = getContainer(); } catch(e) {}
-}
-if (!container || !container.isConnected) return null;
-if (_cbtMainTasksSnapshotCache &&
-_cbtMainTasksSnapshotCache.version === _cbtRelevantDomVersion &&
-_cbtMainTasksSnapshotCache.container === container &&
-Date.now() - Number(_cbtMainTasksSnapshotCache.at || 0) < 1200) {
-return _cbtMainTasksSnapshotCache.snapshot;
-}
-var cards = [];
-try {
-cards = Array.prototype.slice.call(
-container.querySelectorAll(':scope > job-card')
-);
-} catch(e2) {
-cards = Array.prototype.slice.call(container.children || []).filter(function(el){
-return el && el.tagName && el.tagName.toLowerCase() === 'job-card';
-});
-}
-var refs = new Set();
-var ids = new Set();
-var mainCount = 0;
-for (var i = 0; i < cards.length; i++) {
-var card = cards[i];
-try { if (isInExcludedSection(card)) continue; } catch(e3) {}
-mainCount++;
-var a = null;
-try { a = card.querySelector('a[href*="jobdetails"], a'); } catch(e4) {}
-if (!a) continue;
-var ref = String(a.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
-if (ref) refs.add(ref);
-var href = a.getAttribute('href') || '';
-var m = href.match(/jobId=([^&#]+)/i);
-if (m) {
-try { ids.add(decodeURIComponent(m[1])); }
-catch(e5) { ids.add(m[1]); }
-}
-}
-var snapshot = {
-count: mainCount,
-refs: refs,
-ids: ids
-};
-_cbtMainTasksSnapshotCache = {
-version: _cbtRelevantDomVersion,
-at: Date.now(),
-container: container,
-snapshot: snapshot
-};
-return snapshot;
-}
-function cbtRecJobMatchesMainTasks(job, snapshot) {
-if (!job || !snapshot) return false;
-var jobId = job.jobId != null ? String(job.jobId) : '';
-if (jobId && snapshot.ids.has(jobId)) return true;
-var refFields = [
-job.shortClientRef,
-job.clientRef,
-job.clientReference,
-job.reference
-];
-for (var i = 0; i < refFields.length; i++) {
-if (refFields[i] == null) continue;
-var ref = String(refFields[i]).replace(/\s+/g, ' ').trim().toLowerCase();
-if (ref && snapshot.refs.has(ref)) return true;
-}
-return false;
-}
-function cbtRecScopeJobsToMainTasks(jobs, snapshot) {
-jobs = Array.isArray(jobs) ? jobs.slice() : [];
-if (!snapshot) return null;
-if (snapshot.count === 0) return [];
-if (snapshot.refs.size || snapshot.ids.size) {
-var matched = jobs.filter(function(job){
-return cbtRecJobMatchesMainTasks(job, snapshot);
-});
-if (!matched.length && jobs.length) return null;
-if (matched.length) jobs = matched;
-}
-if (jobs.length > snapshot.count) {
-jobs = jobs.slice(0, snapshot.count);
-}
-return jobs;
-}
-function cbtRecRushReserve(openCount) {
-if (!(openCount > 0)) return 0;
-var r = Math.ceil(openCount * CBT_REC_RUSH_RATIO);
-r = Math.max(CBT_REC_RUSH_MIN, r);
-r = Math.min(CBT_REC_RUSH_MAX, r);
-return r;
-}
-function cbtRecNeedForCount(count, availableMinutes) {
-if (!(count > 0)) return 0;
-var mins = Number(availableMinutes);
-if (!isFinite(mins)) mins = CBT_REC_OVERDUE_WINDOW_MIN;
-if (mins <= 0) mins = CBT_REC_OVERDUE_WINDOW_MIN;
-var effective = Math.max(1, mins - CBT_REC_DEADLINE_BUFFER_MIN);
-var need = Math.ceil((count * CBT_REC_CART_MINUTES) / effective);
-if (need > count) need = count;
-if (need < 1) need = 1;
-return need;
-}
-function cbtRecCalculate(data, nowMs, mainTasks) {
-nowMs = Number(nowMs) || Date.now();
-var cycle = cbtRecCycleInfo(nowMs);
-if (mainTasks === undefined) {
-mainTasks = cbtRecMainTasksSnapshot();
-}
-var jobs = Array.isArray(data)
-? data.filter(cbtRecIsBatchingWork)
-: [];
-jobs = cbtRecScopeJobsToMainTasks(jobs, mainTasks);
-if (jobs === null) {
-return {
-ready: false,
-raw: null, urgentRaw: null, openCount: 0, rushReserve: 0,
-overdue: 0, dueByNextRelease: 0, earliestMinutes: null,
-cycle: cycle
-};
-}
-var openCount = jobs.length;
-if (!openCount) {
-return {
-ready: true,
-raw: 0, urgentRaw: 0, openCount: 0, rushReserve: 0,
-overdue: 0, dueByNextRelease: 0, earliestMinutes: null,
-cycle: cycle
-};
-}
-var fallbackDeadline = nowMs + cycle.minutesToNextRelease * 60000;
-var rows = [];
-for (var i = 0; i < jobs.length; i++) {
-var dl = cbtRecJobDeadlineMs(jobs[i]) || fallbackDeadline;
-rows.push({ deadline: dl, job: jobs[i] });
-}
-rows.sort(function(a,b){ return a.deadline - b.deadline; });
-var maxNeed = 0;
-var urgentNeed = 0;
-var overdue = 0;
-var dueByNextRelease = 0;
-var nextReleaseMs = nowMs + cycle.minutesToNextRelease * 60000;
-var urgentCutoff = nextReleaseMs + 3 * 60000;
-for (var r = 0; r < rows.length; r++) {
-var count = r + 1;
-var minutes = (rows[r].deadline - nowMs) / 60000;
-if (minutes <= 0) overdue++;
-var need = cbtRecNeedForCount(count, minutes);
-if (need > maxNeed) maxNeed = need;
-if (rows[r].deadline <= urgentCutoff) {
-dueByNextRelease = count;
-if (need > urgentNeed) urgentNeed = need;
-}
-}
-var allowRushReserve = !cycle.inReleaseWindow && !cycle.quietHours;
-var rushReserve = allowRushReserve ? cbtRecRushReserve(openCount) : 0;
-if (allowRushReserve) {
-var plannedCount = openCount + rushReserve;
-var horizonNeed = cbtRecNeedForCount(plannedCount, cycle.minutesToNextRelease);
-if (horizonNeed > maxNeed) maxNeed = horizonNeed;
-}
-var taskCap = Math.max(0, Math.min(CBT_REC_MAX_BATCHERS, openCount));
-maxNeed = Math.max(1, Math.min(taskCap, maxNeed));
-urgentNeed = Math.max(0, Math.min(taskCap, urgentNeed));
-return {
-ready: true,
-raw: maxNeed,
-urgentRaw: urgentNeed,
-openCount: openCount,
-rushReserve: rushReserve,
-overdue: overdue,
-dueByNextRelease: dueByNextRelease,
-earliestMinutes: (rows[0].deadline - nowMs) / 60000,
-cycle: cycle
-};
-}
-function cbtRecLockedValue(calc, mainTasks) {
-if (!calc || !calc.cycle || calc.ready === false) return null;
-if (mainTasks === undefined) {
-mainTasks = cbtRecMainTasksSnapshot();
-}
-if (!mainTasks) return null;
-var state = cbtRecLoadState();
-var cycleKey = calc.cycle.key;
-var taskCap = Math.max(0, Math.min(CBT_REC_MAX_BATCHERS, Number(calc.openCount) || 0));
-taskCap = Math.min(taskCap, Math.max(0, Number(mainTasks.count) || 0));
-if (!state || state.cycleKey !== cycleKey) {
-var firstLocked = Math.max(0, Math.min(taskCap, Number(calc.raw) || 0));
-state = {
-cycleKey: cycleKey,
-locked: firstLocked,
-baseline: firstLocked,
-maxRaw: firstLocked,
-startedAt: Date.now(),
-updatedAt: Date.now()
-};
-cbtRecSaveState(state);
-return state.locked;
-}
-var currentLocked = Math.max(0, Math.min(taskCap, Number(state.locked) || 0));
-if (currentLocked !== Number(state.locked)) {
-state.locked = currentLocked;
-state.updatedAt = Date.now();
-cbtRecSaveState(state);
-}
-var candidate = calc.cycle.inReleaseWindow ? calc.urgentRaw : calc.raw;
-candidate = Math.max(0, Math.min(taskCap, Number(candidate) || 0));
-if (candidate > (Number(state.locked) || 0)) {
-state.locked = candidate;
-state.maxRaw = Math.max(Number(state.maxRaw)||0, candidate);
-state.updatedAt = Date.now();
-cbtRecSaveState(state);
-}
-return Math.max(0, Math.min(taskCap, Number(state.locked) || 0));
-}
-function cbtRecTooltip(calc, recommended) {
-if (!calc) return '';
-if (calc.ready === false || recommended == null) {
-return 'Waiting for current normal Tasks to finish loading…';
-}
-var parts = [];
-parts.push('Locked hourly target: ' + recommended);
-parts.push('slow-plan: 20m/cart · batchers reuse capacity after each cart');
-parts.push(calc.openCount + ' open cart' + (calc.openCount === 1 ? '' : 's'));
-if (calc.overdue > 0) {
-parts.push(calc.overdue + ' overdue');
-} else if (calc.earliestMinutes != null && isFinite(calc.earliestMinutes)) {
-parts.push('earliest due in ' + Math.max(0, Math.round(calc.earliestMinutes)) + 'm');
-}
-if (calc.rushReserve > 0) parts.push('+' + calc.rushReserve + ' rush reserve');
-if (calc.cycle && calc.cycle.quietHours) parts.push('overnight: no normal hourly drop expected');
-parts.push('resets at next :55 store time');
-return parts.join(' · ');
-}
-var CBT_STATS_WARM_MAX_AGE_MS = 120000;
-var CBT_STATS_WARM_CYCLE_GRACE_MS = 30000;
-var CBT_STATS_WARM_WRITE_MIN_MS = 15000;
-var _statsWarmLastSerialized = '';
-var _statsWarmLastWriteAt = 0;
-var _statsLastSummaryData = null;
-var _statsLastRequestAt = 0;
-var _statsStartupRecheckTimer = 0;
-var _statsStartupRecheckTries = 0;
-var _statsStartupWarm = null;
-var _statsStartupWarmChecked = false;
-var _statsStartupGraceUntil = 0;
-function cbtStatsCacheKey() {
-return 'cbt_stats_warm_v1_' + String(STORE_ID || 'unknown');
-}
-function cbtStatsCurrentCycleKey() {
-try {
-var c = cbtRecCycleInfo(Date.now());
-return c && c.key ? String(c.key) : '';
-} catch(e) {}
-return '';
-}
-function cbtStatsReadWarmRaw() {
-var raw = null;
-try { raw = sessionStorage.getItem(cbtStatsCacheKey()); } catch(e0) {}
-if (!raw) {
-try { raw = localStorage.getItem(cbtStatsCacheKey()); } catch(e1) {}
-}
-if (!raw) return null;
-try {
-var s = JSON.parse(raw);
-return s && s.ts ? s : null;
-} catch(e2) {
-return null;
-}
-}
-function cbtStatsLoadWarm(allowFreshCycleMismatch) {
-var s = cbtStatsReadWarmRaw();
-if (!s || !s.ts) return null;
-var age = Date.now() - Number(s.ts);
-if (!isFinite(age) || age < 0 || age > CBT_STATS_WARM_MAX_AGE_MS) {
-return null;
-}
-var cycleKey = cbtStatsCurrentCycleKey();
-if (cycleKey && s.cycleKey && String(s.cycleKey) !== cycleKey) {
-if (!allowFreshCycleMismatch || age > CBT_STATS_WARM_CYCLE_GRACE_MS) {
-return null;
-}
-}
-if (s.inProgress == null ||
-s.remaining == null ||
-s.recommended == null) {
-return null;
-}
-return s;
-}
-function cbtStatsSaveWarm(inProgress, remaining, recommended, dotColor, recTitle, cycleKey) {
-if (inProgress == null || remaining == null || recommended == null) return;
-var payload = {
-ts: Date.now(),
-cycleKey: cycleKey || cbtStatsCurrentCycleKey(),
-inProgress: Number(inProgress),
-remaining: Number(remaining),
-recommended: Number(recommended),
-dotColor: dotColor || 'gray',
-recTitle: recTitle || ''
-};
-var valueKey = JSON.stringify({
-cycleKey: payload.cycleKey,
-inProgress: payload.inProgress,
-remaining: payload.remaining,
-recommended: payload.recommended,
-dotColor: payload.dotColor,
-recTitle: payload.recTitle
-});
-var nowMs = Date.now();
-if (valueKey === _statsWarmLastSerialized &&
-nowMs - _statsWarmLastWriteAt < CBT_STATS_WARM_WRITE_MIN_MS) {
-return;
-}
-var raw = JSON.stringify(payload);
-_statsWarmLastSerialized = valueKey;
-_statsWarmLastWriteAt = nowMs;
-try { sessionStorage.setItem(cbtStatsCacheKey(), raw); } catch(e0) {}
-try { localStorage.setItem(cbtStatsCacheKey(), raw); } catch(e1) {}
-}
-function cbtStatsPrimeStartupWarm() {
-if (_statsStartupWarmChecked) return _statsStartupWarm;
-_statsStartupWarmChecked = true;
-try {
-_statsStartupWarm = cbtStatsLoadWarm(true);
-} catch(e) {
-_statsStartupWarm = null;
-}
-return _statsStartupWarm;
-}
-function cbtStatsHydrateWarm() {
-var s = cbtStatsPrimeStartupWarm();
-if (!s) return false;
-updateStats(
-s.inProgress,
-s.remaining,
-s.recommended,
-s.dotColor || 'gray',
-'Refreshing current dashboard…' + (s.recTitle ? ' · ' + s.recTitle : ''),
-false
-);
-return true;
-}
-function cbtStatsScheduleStartupRecheck() {
-if (!_statsLastSummaryData || _statsStartupRecheckTimer) return;
-if (_statsStartupRecheckTries >= 8) return;
-_statsStartupRecheckTimer = setTimeout(function(){
-_statsStartupRecheckTimer = 0;
-_statsStartupRecheckTries++;
-var ready = false;
-try { ready = !!cbtRecMainTasksSnapshot(); } catch(e) {}
-if (ready) {
-_statsStartupRecheckTries = 8;
-try { cbtApplyStatsData(_statsLastSummaryData); } catch(e2) {}
-return;
-}
-cbtStatsScheduleStartupRecheck();
-}, 150);
-}
-var _statsDomCache = {
-inProgress: null,
-remaining: null,
-recommended: null,
-deltaText: null,
-deltaClass: null,
-dotColor: null,
-recTitle: null
-};
-function updateStats(inProgress, remaining, recommended, dotColor, recTitle, provisional) {
-var elIP = document.getElementById('cbt-stat-ip');
-var elRem = document.getElementById('cbt-stat-rem');
-var elRec = document.getElementById('cbt-stat-rec');
-var elDot = document.getElementById('cbt-stat-dot');
-var elDelta = document.getElementById('cbt-stat-delta');
-var ipText = (inProgress !== null && inProgress !== undefined) ? String(inProgress) : '—';
-var recText = recommended != null ? String(recommended) : '—';
-var actualNum =
-(inProgress !== null && inProgress !== undefined && inProgress !== '—')
-? Number(inProgress)
-: NaN;
-var recNum =
-(recommended !== null && recommended !== undefined && recommended !== '—')
-? Number(recommended)
-: NaN;
-var deltaText = '';
-var deltaClass = '';
-var deltaTitle = '';
-if (!provisional && isFinite(actualNum) && isFinite(recNum) && recNum >= 0) {
-var diff = recNum - actualNum;
-if (diff > 0) {
-deltaText = '+' + diff;
-deltaClass = 'need-more';
-deltaTitle = 'Need ' + diff + ' more batcher' + (diff === 1 ? '' : 's');
-} else if (diff < 0) {
-var extra = Math.abs(diff);
-deltaText = '-' + extra;
-deltaClass = 'extra';
-deltaTitle = extra + ' extra batcher' + (extra === 1 ? '' : 's');
-}
-}
-if (elIP &&
-(_statsDomCache.inProgress !== ipText || elIP.textContent !== ipText)) {
-elIP.textContent = ipText;
-_statsDomCache.inProgress = ipText;
-}
-var remText = (remaining !== null && remaining !== undefined) ? String(remaining) : '—';
-if (elRem &&
-(_statsDomCache.remaining !== remText || elRem.textContent !== remText)) {
-elRem.textContent = remText;
-_statsDomCache.remaining = remText;
-}
-if (elRec &&
-(_statsDomCache.recommended !== recText || elRec.textContent !== recText)) {
-elRec.textContent = recText;
-_statsDomCache.recommended = recText;
-}
-if (elDelta &&
-(_statsDomCache.deltaText !== deltaText ||
-_statsDomCache.deltaClass !== deltaClass ||
-elDelta.textContent !== deltaText ||
-elDelta.className !== deltaClass)) {
-elDelta.textContent = deltaText;
-elDelta.className = deltaClass;
-elDelta.title = deltaTitle;
-_statsDomCache.deltaText = deltaText;
-_statsDomCache.deltaClass = deltaClass;
-}
-if (elRec && recTitle && _statsDomCache.recTitle !== recTitle) {
-elRec.title = recTitle;
-_statsDomCache.recTitle = recTitle;
-}
-if (elDot && dotColor && _statsDomCache.dotColor !== dotColor) {
-elDot.style.background = dotColor;
-elDot.style.boxShadow = '0 0 6px ' + dotColor;
-_statsDomCache.dotColor = dotColor;
-}
-var old = document.getElementById('etf-ps-stats');
-if (old) old.remove();
-}
-function removeFromHeader() {
-var old = document.getElementById('etf-stats');
-if (old) old.remove();
-}
-function cbtApplyStatsData(data) {
-if (!Array.isArray(data)) data = [];
-var staffingJobs = data.filter(cbtRecIsBatchingWork);
-var mainTasks = cbtRecMainTasksSnapshot();
-var scopedStaffingJobs = cbtRecScopeJobsToMainTasks(staffingJobs, mainTasks);
-var inProgress = null;
-if (scopedStaffingJobs !== null) {
-inProgress = scopedStaffingJobs.filter(function (j) {
-var st = String(j.operationState || j.state || '').toUpperCase();
-return st === 'IN_PROGRESS' || st === 'BATCHING';
-}).length;
-}
-var expected = staffingJobs.reduce(function (s, j) {
-return s + (Number(j.totalExpectedPackages) || 0);
-}, 0);
-var batched = staffingJobs.reduce(function (s, j) {
-return s + (Number(j.packagesBatched) || 0);
-}, 0);
-var collected = staffingJobs.reduce(function (s, j) {
-return s + (Number(j.packagesCollected) || 0);
-}, 0);
-var remaining = Math.max(0, expected - (batched + collected));
-var calc = cbtRecCalculate(data, Date.now(), mainTasks);
-var recommended = cbtRecLockedValue(calc, mainTasks);
-var warm = null;
-var startupZeroTransition =
-Date.now() < _statsStartupGraceUntil &&
-mainTasks &&
-mainTasks.count === 0 &&
-staffingJobs.length > 0;
-var provisional =
-startupZeroTransition ||
-!mainTasks ||
-scopedStaffingJobs === null ||
-!calc ||
-calc.ready === false;
-if (provisional) {
-warm = cbtStatsPrimeStartupWarm() || cbtStatsLoadWarm(false);
-if (warm) {
-inProgress = warm.inProgress;
-remaining = warm.remaining;
-recommended = warm.recommended;
-}
-}
-if (inProgress == null || recommended == null) {
-if (!warm) warm = cbtStatsLoadWarm(false);
-if (warm) {
-if (inProgress == null) inProgress = warm.inProgress;
-if (recommended == null) recommended = warm.recommended;
-}
-if (inProgress == null) {
-inProgress = staffingJobs.filter(function (j) {
-var st = String(j.operationState || j.state || '').toUpperCase();
-return st === 'IN_PROGRESS' || st === 'BATCHING';
-}).length;
-}
-if (recommended == null) {
-try {
-var recState = cbtRecLoadState();
-var currentCycle = cbtStatsCurrentCycleKey();
-if (recState &&
-recState.cycleKey &&
-currentCycle &&
-String(recState.cycleKey) === String(currentCycle) &&
-recState.locked != null) {
-recommended = Math.max(0, Number(recState.locked) || 0);
-}
-} catch(eRecWarm) {}
-}
-}
-var dotColor = warm && warm.dotColor ? warm.dotColor : 'gray';
-if (recommended != null && inProgress != null && recommended > 0) {
-if (inProgress >= recommended) {
-dotColor = '#3fb950';
-} else {
-var deficit = recommended - inProgress;
-var coverage = recommended > 0 ? inProgress / recommended : 1;
-dotColor = (deficit >= 3 || coverage < 0.75) ? '#f85149' : '#e3b341';
-}
-}
-var recTitle = provisional
-? 'Refreshing current dashboard…'
-: cbtRecTooltip(calc, recommended);
-updateStats(
-inProgress,
-remaining,
-recommended,
-dotColor,
-recTitle,
-provisional
-);
-if (!startupZeroTransition &&
-mainTasks &&
-scopedStaffingJobs !== null &&
-calc &&
-calc.ready !== false &&
-inProgress != null &&
-recommended != null) {
-cbtStatsSaveWarm(
-inProgress,
-remaining,
-recommended,
-dotColor,
-cbtRecTooltip(calc, recommended),
-calc.cycle && calc.cycle.key
-);
-} else {
-cbtStatsScheduleStartupRecheck();
-}
-removeFromHeader();
-}
-var _statsFetchInFlight = false;
-function fetchAndUpdate(force) {
-if (_statsFetchInFlight || document.hidden || !isDashboardView()) return;
-if (!force && _cbtPassiveStatsLastAt &&
-Date.now() - _cbtPassiveStatsLastAt < CBT_PASSIVE_STATS_FRESH_MS) return;
-_statsFetchInFlight = true;
-_statsLastRequestAt = Date.now();
-removeFromHeader();
-var ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
-var timeoutId = ctrl ? setTimeout(function(){ try { ctrl.abort(); } catch(eAbort) {} }, CBT_BACKEND_FETCH_TIMEOUT_MS) : 0;
-var fetchOptions = {
-cache: 'no-store',
-credentials: 'include'
-};
-if (ctrl) fetchOptions.signal = ctrl.signal;
-_origFetch(COMO_BASE + '/api/store/' + STORE_ID + '/activeJobSummary?_cbt=' + Date.now(), fetchOptions)
-.then(function (r) {
-if (!r || !r.ok) throw new Error('activeJobSummary HTTP ' + (r ? r.status : 0));
-return r.text();
-})
-.then(function (rawStats) {
-if (rawStats === _cbtLastCoreStatsRaw && _cbtLastCoreStatsDomVersion === _cbtRelevantDomVersion) return;
-_cbtLastCoreStatsRaw = rawStats || '';
-var data = rawStats ? JSON.parse(rawStats) : [];
-if (!Array.isArray(data)) throw new Error('activeJobSummary returned a non-array payload');
-_statsLastSummaryData = data;
-_cbtLastCoreStatsDomVersion = _cbtRelevantDomVersion;
-var statsSeq = ++_cbtCoreStatsSeq;
-if (cbtIsActivelyScrolling()) {
-cbtRunAfterScroll('stats-apply', function(){
-try {
-if (statsSeq < _cbtCoreStatsAppliedSeq) return;
-_cbtCoreStatsAppliedSeq = statsSeq;
-cbtApplyStatsData(_statsLastSummaryData || []);
-} catch(eStatsApply) {}
-});
-} else {
-cbtIdle(function(){
-try {
-if (statsSeq < _cbtCoreStatsAppliedSeq) return;
-_cbtCoreStatsAppliedSeq = statsSeq;
-cbtApplyStatsData(_statsLastSummaryData || data || []);
-} catch(eStatsApplyIdle) {}
-}, 120);
-}
-})
-.catch(function () {})
-.then(function(){
-if (timeoutId) clearTimeout(timeoutId);
-_statsFetchInFlight = false;
-});
-}
-var CBT_BACKEND_FETCH_TIMEOUT_MS = 15000;
-var POLL_MS = 2000;
-var WARN_ELAPSED_MIN = 15, ALERT_ELAPSED_MIN = 25;
-var WARN_RATE = 2.1, ALERT_RATE = 1.5;
-var CBT_MAX_VALID_RATE = 20;
-var CBT_OBS_RATE_MIN_WINDOW_MS = 30000;
-var _cbtObservedProgressByRef = Object.create(null);
-var _cbtBackendLastOk = 0;
-// v23.9.217: Amazon already requests the same Live/summary endpoints. Reuse those
-// responses and keep our own requests as a fallback instead of doing duplicate work.
-var _cbtPassiveLiveLastAt = 0;
-var _cbtPassiveStatsLastAt = 0;
-var CBT_PASSIVE_LIVE_FRESH_MS = 7000;
-var CBT_PASSIVE_STATS_FRESH_MS = 10000;
-var _cbtLiveStartByRef = Object.create(null);
-var _cbtMissingPollsByRef = Object.create(null);
-var CBT_MISSING_POLL_GRACE = 3;
-var CBT_STALE_LIVE_RELOAD_POLLS = 3;
-var CBT_STALE_LIVE_RELOAD_COOLDOWN_MS = 15 * 60 * 1000;
-var _cbtStaleLiveZeroTaskPolls = 0;
-var CBT_START_RETAIN_AFTER_MISSING_MS = 30000;
-var CBT_START_CACHE_TTL_MS = 15 * 60 * 1000;
-var CBT_MAX_LIVE_AGE_MS = 12 * 60 * 60 * 1000;
-var _cbtClockAnchorServerMs = null;
-var _cbtClockAnchorPerfMs = null;
-var _cbtClockLastNowMs = 0;
-function cbtPerfNow() {
-try {
-if (typeof performance !== 'undefined' && performance && typeof performance.now === 'function') {
-return performance.now();
-}
-} catch(e) {}
-return Date.now();
-}
-function cbtNowMs() {
-var now;
-if (_cbtClockAnchorServerMs != null && _cbtClockAnchorPerfMs != null) {
-now = _cbtClockAnchorServerMs + (cbtPerfNow() - _cbtClockAnchorPerfMs);
-} else {
-now = Date.now();
-}
-if (!isFinite(now)) now = Date.now();
-if (now < _cbtClockLastNowMs) now = _cbtClockLastNowMs;
-else _cbtClockLastNowMs = now;
-return now;
-}
-function cbtCalibrateServerClock(response, requestPerfMs) {
-try {
-if (!response || !response.headers || typeof response.headers.get !== 'function') return;
-var raw = response.headers.get('date') || response.headers.get('Date');
-if (!raw) return;
-var serverMs = Date.parse(raw);
-if (!isFinite(serverMs)) return;
-var receivePerf = cbtPerfNow();
-var halfRtt = Math.max(0, Math.min(2000, (receivePerf - requestPerfMs) / 2));
-var candidateNow = serverMs + halfRtt;
-if (_cbtClockAnchorServerMs == null || _cbtClockAnchorPerfMs == null) {
-_cbtClockAnchorServerMs = candidateNow;
-_cbtClockAnchorPerfMs = receivePerf;
-_cbtClockLastNowMs = candidateNow;
-return;
-}
-var anchoredNow = _cbtClockAnchorServerMs + (receivePerf - _cbtClockAnchorPerfMs);
-if (Math.abs(candidateNow - anchoredNow) > 5000) {
-_cbtClockAnchorServerMs = candidateNow;
-_cbtClockAnchorPerfMs = receivePerf;
-if (candidateNow > _cbtClockLastNowMs) _cbtClockLastNowMs = candidateNow;
-}
-} catch(e) {}
-}
-function cbtNormalizeEpochMs(value) {
-if (value == null || value === '') return null;
-if (typeof value === 'string' && !/^[-+]?\d+(?:\.\d+)?$/.test(value.trim())) {
-var parsed = Date.parse(value);
-return isFinite(parsed) && parsed > 0 ? parsed : null;
-}
-var n = Number(value);
-if (!isFinite(n) || n <= 0) return null;
-if (n >= 1e17) n = n / 1000000;
-else if (n >= 1e14) n = n / 1000;
-else if (n < 1e11) n = n * 1000;
-return isFinite(n) && n > 0 ? n : null;
-}
-function cbtTaskGeneration(data) {
-if (!data || typeof data !== 'object') return '';
-var fields = ['jobId','jobID','taskId','taskID','jobUuid','jobUUID','taskUuid','taskUUID'];
-for (var i = 0; i < fields.length; i++) {
-var v = data[fields[i]];
-if (v != null && String(v).trim()) return 'job:' + String(v).trim();
-}
-var createdFields = ['created','createdAt','creationTime','createdTime'];
-for (var c = 0; c < createdFields.length; c++) {
-var createdMs = cbtNormalizeEpochMs(data[createdFields[c]]);
-if (createdMs) return 'created:' + Math.round(createdMs);
-}
-var ops = Array.isArray(data.operationDetails) ? data.operationDetails : [];
-var earliest = Infinity;
-for (var j = 0; j < ops.length; j++) {
-var op = ops[j];
-if (!op || String(op.name || '').toUpperCase() !== 'BATCHING') continue;
-var ms = cbtNormalizeEpochMs(op.start);
-if (ms && ms < earliest) earliest = ms;
-}
-return isFinite(earliest) ? 'batch:' + Math.round(earliest) : '';
-}
-function cbtBatchingOpInfo(data, liveOnly) {
-if (!data || typeof data !== 'object') return null;
-var ops = Array.isArray(data.operationDetails) ? data.operationDetails : [];
-var wholeState = String(data.state || '').toUpperCase();
-var candidates = [];
-var hasLiveEvidence = wholeState === 'BATCHING';
-for (var i = 0; i < ops.length; i++) {
-var op = ops[i];
-if (!op || String(op.name || '').toUpperCase() !== 'BATCHING') continue;
-var startMs = cbtNormalizeEpochMs(op.start);
-if (!startMs) continue;
-var endMs = cbtNormalizeEpochMs(op.end);
-var opState = String(op.state || op.operationState || '').toUpperCase();
-var explicitActive =
-opState === 'IN_PROGRESS' ||
-opState === 'STARTED' ||
-opState === 'ACTIVE';
-var explicitDone =
-opState === 'COMPLETED' ||
-opState === 'COMPLETE' ||
-opState === 'FINISHED' ||
-opState === 'DONE';
-if (explicitActive) hasLiveEvidence = true;
-var credible = true;
-if (liveOnly && _cbtClockAnchorServerMs != null) {
-var nowMs = cbtNowMs();
-if (startMs > nowMs + 5 * 60 * 1000) credible = false;
-if (startMs < nowMs - CBT_MAX_LIVE_AGE_MS) credible = false;
-}
-if (!credible) continue;
-candidates.push({
-op: op,
-startMs: startMs,
-endMs: endMs,
-explicitActive: explicitActive,
-explicitDone: explicitDone,
-state: opState
-});
-}
-if (!candidates.length) return null;
-if (liveOnly && !hasLiveEvidence) return null;
-var earliest = candidates[0];
-var latestEnd = null;
-for (var j = 0; j < candidates.length; j++) {
-if (candidates[j].startMs < earliest.startMs) earliest = candidates[j];
-if (candidates[j].endMs && (!latestEnd || candidates[j].endMs > latestEnd)) {
-latestEnd = candidates[j].endMs;
-}
-}
-return {
-op: earliest.op,
-startMs: earliest.startMs,
-endMs: latestEnd,
-live: !!liveOnly,
-state: earliest.state
-};
-}
-function cbtRawBatchingStartMs(data, liveOnly) {
-var info = cbtBatchingOpInfo(data, !!liveOnly);
-return info ? info.startMs : null;
-}
-function cbtIsLiveBatch(data) {
-if (!data || typeof data !== 'object') return false;
-if (String(data.state || '').toUpperCase() === 'BATCHING') return true;
-var ops = Array.isArray(data.operationDetails) ? data.operationDetails : [];
-for (var i = 0; i < ops.length; i++) {
-var op = ops[i];
-if (!op || String(op.name || '').toUpperCase() !== 'BATCHING') continue;
-var st = String(op.state || op.operationState || '').toUpperCase();
-if (st === 'IN_PROGRESS' || st === 'STARTED' || st === 'ACTIVE') return true;
-}
-return false;
-}
-function cbtObserveAuthoritativeLive(data) {
-if (!cbtIsLiveBatch(data) || !data.shortClientRef) return null;
-var ref = String(data.shortClientRef);
-var info = cbtBatchingOpInfo(data, true);
-if (!info || !info.startMs) return null;
-var now = cbtNowMs();
-var generation = cbtTaskGeneration(data);
-var cur = _cbtLiveStartByRef[ref];
-var replace = !cur;
-if (cur) {
-var oldGen = String(cur.generation || '');
-var newGen = String(generation || '');
-var bothBatchFallbacks =
-oldGen.indexOf('batch:') === 0 &&
-newGen.indexOf('batch:') === 0;
-if (generation && cur.generation && generation !== cur.generation) {
-if (!(bothBatchFallbacks && !cur.missingSince)) replace = true;
-}
-if (!replace && cur.missingSince && Math.abs(info.startMs - cur.ms) > 1000) {
-replace = true;
-}
-}
-if (replace) {
-cur = _cbtLiveStartByRef[ref] = {
-ms: info.startMs,
-generation: generation,
-lastSeen: now,
-missingSince: 0,
-source: 'api-earliest'
-};
-delete _cbtObservedProgressByRef[ref];
-} else {
-if (info.startMs < cur.ms - 1000) {
-cur.ms = info.startMs;
-cur.source = 'api-corrected-earlier';
-}
-if (!cur.generation && generation) cur.generation = generation;
-else if (generation && String(cur.generation || '').indexOf('batch:') === 0 &&
-String(generation).indexOf('batch:') === 0) {
-cur.generation = generation;
-}
-cur.lastSeen = now;
-cur.missingSince = 0;
-}
-return cur.ms;
-}
-function cbtStableLiveStartMs(data, isLive) {
-if (!data || typeof data !== 'object') return null;
-var ref = data.shortClientRef != null ? String(data.shortClientRef) : '';
-var generation = cbtTaskGeneration(data);
-var cur = ref ? _cbtLiveStartByRef[ref] : null;
-if (cur) {
-if (!generation || !cur.generation || generation === cur.generation) return cur.ms;
-}
-if (isLive) {
-var info = cbtBatchingOpInfo(data, true);
-if (info && info.startMs) {
-if (!ref) return info.startMs;
-var now = cbtNowMs();
-var fresh = {
-ms: info.startMs,
-generation: generation,
-lastSeen: now,
-missingSince: 0,
-source: 'observed-live'
-};
-if (!cur || (generation && cur.generation && generation !== cur.generation)) {
-_cbtLiveStartByRef[ref] = fresh;
-return fresh.ms;
-}
-return cur.ms;
-}
-return null;
-}
-var opMs = cbtRawBatchingStartMs(data, false);
-if (opMs) return opMs;
-return cbtNormalizeEpochMs(data.created);
-}
-function cbtForgetLiveStart(ref) {
-if (ref == null) return;
-ref = String(ref);
-try { delete _cbtLiveStartByRef[ref]; } catch(e) {}
-try { delete _cbtMissingPollsByRef[ref]; } catch(e) {}
-try { delete _cbtObservedProgressByRef[ref]; } catch(e) {}
-}
-function cbtMarkLiveMissing(ref) {
-ref = String(ref);
-var cur = _cbtLiveStartByRef[ref];
-if (cur && !cur.missingSince) cur.missingSince = cbtNowMs();
-}
-function cbtPruneOldLiveStarts() {
-var now = cbtNowMs();
-Object.keys(_cbtLiveStartByRef).forEach(function(ref) {
-var e = _cbtLiveStartByRef[ref];
-var expiredMissing = e && e.missingSince && (now - e.missingSince > CBT_START_RETAIN_AFTER_MISSING_MS);
-var expiredIdle = !e || !e.lastSeen || (now - e.lastSeen > CBT_START_CACHE_TTL_MS);
-if (expiredMissing || expiredIdle) {
-try { delete _cbtLiveStartByRef[ref]; } catch(err) {}
-try { delete _cbtMissingPollsByRef[ref]; } catch(err2) {}
-try { delete _cbtObservedProgressByRef[ref]; } catch(err3) {}
-}
-});
-}
-function cbtHistoryStoreScope() {
-return String(STORE_ID || 'unknown')
-.trim()
-.toUpperCase()
-.replace(/[.$#\[\]\/]/g, '_') || 'UNKNOWN';
-}
-var CBT_HISTORY_STORE_SCOPE = cbtHistoryStoreScope();
-var STORAGE_KEY = 'cbt_history_v3_' + CBT_HISTORY_STORE_SCOPE;
-var DATE_KEY = 'cbt_history_date_v3_' + CBT_HISTORY_STORE_SCOPE;
-var WEEKLY_KEY = 'cbt_weekly_history_v3_' + CBT_HISTORY_STORE_SCOPE;
-var WEEKLY_DAYS = 7;
-var ALL_NAMES_KEY = 'cbt_all_names';
-var DEVICE_ID_KEY = 'cbt_device_id';
-function getDeviceId() {
-var id = gmGet(DEVICE_ID_KEY, null);
-if (!id) {
-id = 'dev_' + Math.random().toString(36).slice(2, 10) + '_' + Date.now().toString(36);
-gmSet(DEVICE_ID_KEY, id);
-}
-return id;
-}
-var MY_DEVICE_ID = null;
-var FIREBASE_URL = 'https://como-sync-default-rtdb.firebaseio.com';
-var CBT_FIREBASE_SYNC_TIMEOUT_MS = 12000;
-var FIREBASE_NAMES_PATH = '/como_names.json';
-function syncEnabled() { return true; }
-function syncUrl() { return FIREBASE_URL + FIREBASE_NAMES_PATH; }
-var OWN_WEEKLY_KEY = 'cbt_own_weekly_v3_' + CBT_HISTORY_STORE_SCOPE;
-var WEEKLY_PERIOD_KEY = 'cbt_weekly_period_start_v3_' + CBT_HISTORY_STORE_SCOPE;
-var REMOTE_HISTORY_KEY = 'cbt_remote_history_cache_v3_' + CBT_HISTORY_STORE_SCOPE;
-var REMOTE_HISTORY_DATE_KEY = 'cbt_remote_history_date_v3_' + CBT_HISTORY_STORE_SCOPE;
-var REMOTE_WEEKLY_KEY = 'cbt_remote_weekly_cache_v3_' + CBT_HISTORY_STORE_SCOPE;
-var REMOTE_WEEKLY_PERIOD_KEY = 'cbt_remote_weekly_period_start_v3_' + CBT_HISTORY_STORE_SCOPE;
-function cbtNormalizeAssociateName(v) {
-if (v == null || (typeof v !== 'string' && typeof v !== 'number')) return '';
-v = String(v).trim();
-if (!v || v.length > 60) return '';
-if (/^(?:null|undefined|none|n\/?a|assignable|unassignable|unknown|unassigned|—|-)$/i.test(v)) return '';
-return /^[A-Za-z0-9._-]+$/.test(v) ? v : '';
-}
-function cbtAssociateLogin(data) {
-function fromValue(v) {
-var direct = cbtNormalizeAssociateName(v);
-if (direct) return direct;
-if (!v || typeof v !== 'object') return '';
-var innerKeys = ['associateId','associateID','login','username','userId','userID','id','name'];
-for (var i = 0; i < innerKeys.length; i++) {
-var n = cbtNormalizeAssociateName(v[innerKeys[i]]);
-if (n) return n;
-}
-return '';
-}
-if (data == null) return '';
-if (typeof data === 'string' || typeof data === 'number') return fromValue(data);
-if (typeof data !== 'object') return '';
-var keys = ['associateId','associateID','associate','assignedAssociate','assignedAssociateId','assignedTo','assignee','driverAssignment'];
-for (var k = 0; k < keys.length; k++) {
-var found = fromValue(data[keys[k]]);
-if (found) return found;
-}
-try {
-if (typeof cbtAssignExtractAssociateDeep === 'function') {
-var deep = cbtNormalizeAssociateName(cbtAssignExtractAssociateDeep(data, 0));
-if (deep) return deep;
-}
-} catch(e) {}
-return '';
-}
-function cbtEscHtml(v) {
-return String(v == null ? '' : v)
-.replace(/&/g, '&amp;')
-.replace(/</g, '&lt;')
-.replace(/>/g, '&gt;')
-.replace(/"/g, '&quot;')
-.replace(/'/g, '&#39;');
-}
-var CBT_BATCH_EVENT_SCHEMA = 2;
-var CBT_BATCH_EVENT_ROOT = '/como_batch_events_v1/' + CBT_HISTORY_STORE_SCOPE + '/events';
-var CBT_BATCH_EVENT_LOCAL_KEY = 'cbt_batch_events_v1_local_' + CBT_HISTORY_STORE_SCOPE;
-var CBT_BATCH_EVENT_REMOTE_KEY = 'cbt_batch_events_v1_remote_' + CBT_HISTORY_STORE_SCOPE;
-var CBT_BATCH_EVENT_FASTEST_KEY = 'cbt_batch_events_v2_fastest_' + CBT_HISTORY_STORE_SCOPE;
-var CBT_BATCH_EVENT_RECENT_ETAG_KEY = 'cbt_batch_events_v2_recent_etag_' + CBT_HISTORY_STORE_SCOPE;
-var CBT_BATCH_EVENT_ALL_ETAG_KEY = 'cbt_batch_events_v2_all_etag_' + CBT_HISTORY_STORE_SCOPE;
-var _cbtBatchEventPullInFlight = false;
-var _cbtBatchEventAllPullInFlight = false;
-var _cbtBatchEventLastPullAt = 0;
-var _cbtBatchEventLastAllPullAt = 0;
-var _cbtBatchEventRenderTimer = null;
-var _cbtBatchRecentQueryUnsupported = false;
-function cbtBatchEventUrl(eventId) {
-var base = FIREBASE_URL + CBT_BATCH_EVENT_ROOT;
-return base + (eventId ? ('/' + encodeURIComponent(eventId)) : '') + '.json';
-}
-function cbtBatchEventHash(text, seed) {
-text = String(text || '');
-var h1 = (0xdeadbeef ^ (seed || 0) ^ text.length) | 0;
-var h2 = (0x41c6ce57 ^ (seed || 0) ^ text.length) | 0;
-for (var i = 0; i < text.length; i++) {
-var ch = text.charCodeAt(i);
-h1 = Math.imul(h1 ^ ch, 2654435761);
-h2 = Math.imul(h2 ^ ch, 1597334677);
-}
-h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
-h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
-return ((h2 >>> 0).toString(36) + (h1 >>> 0).toString(36));
-}
-function cbtBatchEventDate(ms) {
-ms = Number(ms) || Date.now();
-try {
-return new Date(ms).toLocaleDateString('en-US', { timeZone: getStoreTimezone() });
-} catch(e) {
-return new Date(ms).toLocaleDateString('en-US');
-}
-}
-function cbtBatchEventId(data, startMs) {
-if (!data || data.shortClientRef == null) return '';
-var ref = String(data.shortClientRef || data.ref || '').trim();
-var gen = String(data.generation || cbtTaskGeneration(data) || '').trim();
-var start = Number(startMs || data.startMs) || 0;
-var identity = '';
-if (/^(?:job|created):/.test(gen)) identity = gen;
-else if (gen) identity = gen + '|' + ref;
-else if (ref && start) identity = 'ref:' + ref + '|start:' + Math.round(start / 1000);
-else return '';
-var raw = CBT_HISTORY_STORE_SCOPE + '|' + identity;
-return 'e_' + cbtBatchEventHash(raw, 17) + '_' + cbtBatchEventHash(raw.split('').reverse().join(''), 97);
-}
-function cbtBatchEventCompletionMs(data, startMs, endMs, elapsedSec) {
-var end = Number(endMs) || 0;
-if (end > 0) return end;
-var fields = ['completedAt','completionTime','completedTime','endedAt','endTime'];
-for (var i = 0; i < fields.length; i++) {
-var ms = cbtNormalizeEpochMs(data && data[fields[i]]);
-if (ms && (!startMs || ms >= Number(startMs))) return ms;
-}
-if (Number(startMs) > 0 && Number(elapsedSec) > 0) {
-return Number(startMs) + Number(elapsedSec) * 1000;
-}
-return (typeof cbtNowMs === 'function') ? cbtNowMs() : Date.now();
-}
-function cbtSanitizeBatchEvent(e, fallbackId) {
-if (!e || typeof e !== 'object') return null;
-var assoc = cbtNormalizeAssociateName(e.assoc || '');
-var pkgs = Math.floor(Number(e.pkgs) || 0);
-var elapsedSec = Number(e.elapsedSec) || 0;
-var completedAt = Number(e.completedAt) || 0;
-if (!assoc) return null;
-if (!(pkgs > 0) || pkgs > 5000) return null;
-if (!(elapsedSec >= 30) || elapsedSec > 12 * 3600) return null;
-if (!(completedAt > 0) || !isFinite(completedAt)) return null;
-var generation = String(e.generation || '').trim();
-var ref = String(e.ref || '').trim();
-var startMs = Number(e.startMs) || 0;
-if (startMs > 0) {
-if (!isFinite(startMs) || completedAt < startMs) return null;
-var spanSec = (completedAt - startMs) / 1000;
-if (!(spanSec >= 30) || spanSec > 12 * 3600) return null;
-// When both timestamps exist, they are the authoritative elapsed span. This
-// prevents one device's stale timer value from changing an associate's rate.
-if (Math.abs(spanSec - elapsedSec) > 1) elapsedSec = spanSec;
-}
-try {
-var nowMs = (typeof cbtNowMs === 'function') ? cbtNowMs() : Date.now();
-if (completedAt > nowMs + 10 * 60 * 1000) return null;
-} catch(eTime) {}
-var rate = pkgs / (elapsedSec / 60);
-if (!(rate > 0) || !isFinite(rate) || rate > CBT_MAX_VALID_RATE) return null;
-var canonicalId = cbtBatchEventId({
-shortClientRef: ref,
-ref: ref,
-generation: generation,
-startMs: startMs
-}, startMs);
-var eventId = canonicalId || String(e.eventId || fallbackId || '').trim();
-if (!eventId) return null;
-var dateKey = cbtBatchEventDate(completedAt);
-var expected = Math.max(0, Math.floor(Number(e.expected) || 0));
-var missing = Math.max(0, Math.floor(Number(e.missing) || 0));
-var clean = {
-schema: CBT_BATCH_EVENT_SCHEMA,
-eventId: eventId,
-storeId: CBT_HISTORY_STORE_SCOPE,
-assoc: assoc,
-ref: ref,
-generation: generation,
-startMs: startMs,
-completedAt: completedAt,
-observedAt: Math.max(0, Number(e.observedAt) || Number(e.recordedAt) || completedAt),
-dateKey: dateKey,
-weekStart: cbtWeekStartForDateKey(dateKey) || dateKey,
-pkgs: pkgs,
-elapsedSec: elapsedSec,
-rate: rate,
-expected: expected,
-missing: missing,
-quality: Math.max(1, Math.min(3, Math.floor(Number(e.quality) || 1)))
-};
-if (clean.missing > clean.expected && clean.expected > 0) clean.missing = clean.expected;
-return clean;
-}
-function cbtBatchEventFingerprint(e) {
-e = cbtSanitizeBatchEvent(e, e && e.eventId);
-if (!e) return '';
-if (e.ref && Number(e.startMs) > 0) {
-return 'ref:' + String(e.ref).trim().toLowerCase() + '|start5s:' + Math.round(Number(e.startMs) / 5000);
-}
-if (e.generation) return 'gen:' + String(e.generation).trim().toLowerCase();
-return 'id:' + String(e.eventId || '');
-}
-function cbtDedupBatchEventMap(events) {
-var byFingerprint = Object.create(null);
-for (var id in (events || {})) {
-var ev = cbtSanitizeBatchEvent(events[id], id);
-if (!ev) continue;
-var fp = cbtBatchEventFingerprint(ev) || ('id:' + ev.eventId);
-byFingerprint[fp] = cbtChooseBatchEvent(byFingerprint[fp], ev);
-}
-var out = {};
-for (var fp2 in byFingerprint) {
-var chosen = byFingerprint[fp2];
-if (chosen) out[chosen.eventId] = cbtChooseBatchEvent(out[chosen.eventId], chosen);
-}
-return out;
-}
-function cbtBatchEventScore(e) {
-if (!e) return -1;
-// Quality/completeness win conflicts. Elapsed time is intentionally NOT part
-// of the score: a longer stale timer must never beat an equally complete copy.
-return (Number(e.quality) || 0) * 1e12 +
-(Number(e.pkgs) || 0) * 1e7 +
-(Number(e.expected) || 0) * 1e3;
-}
-function cbtChooseBatchEvent(a, b) {
-a = cbtSanitizeBatchEvent(a, a && a.eventId);
-b = cbtSanitizeBatchEvent(b, b && b.eventId);
-if (!a) return b;
-if (!b) return a;
-var sa = cbtBatchEventScore(a), sb = cbtBatchEventScore(b);
-if (sb > sa) return b;
-if (sa > sb) return a;
-return Number(b.observedAt || 0) > Number(a.observedAt || 0) ? b : a;
-}
-function cbtFirebaseEtag(headers) {
-var m = String(headers || '').match(/(?:^|\r?\n)etag:\s*([^\r\n]+)/i);
-return m ? m[1].trim() : '';
-}
-function cbtPruneRecentEventMap(map) {
-var out = {}, floor = ((typeof cbtNowMs === 'function') ? cbtNowMs() : Date.now()) - 10 * 86400000;
-for (var id in (map || {})) {
-var ev = cbtSanitizeBatchEvent(map[id], id);
-if (!ev || Number(ev.completedAt) < floor) continue;
-out[ev.eventId] = cbtChooseBatchEvent(out[ev.eventId], ev);
-}
-return out;
-}
-function cbtBatchEventRecentUrl() {
-var weekUtc = cbtDateKeyEpoch(currentWeekStartStr());
-var floor = isFinite(weekUtc) ? weekUtc - 14 * 3600000 : ((typeof cbtNowMs === 'function') ? cbtNowMs() : Date.now()) - 8 * 86400000;
-return cbtBatchEventUrl('') + '?orderBy=%22completedAt%22&startAt=' + Math.floor(floor);
-}
-var _cbtFastestSnapshotCache = null;
-var _cbtNameSourceRevision = 1;
-var _cbtNamesLastSourceRevision = -1;
-function cbtFastestSnapshotLoad() {
-if (_cbtFastestSnapshotCache) return _cbtFastestSnapshotCache;
-try {
-var raw = gmGet(CBT_BATCH_EVENT_FASTEST_KEY, null);
-if (!raw) raw = localStorage.getItem(CBT_BATCH_EVENT_FASTEST_KEY);
-var obj = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : null;
-if (!obj || typeof obj !== 'object') obj = {};
-if (!obj.stats) obj.stats = {totals:{},peaks:{},latest:{}};
-var legacyRecentIds = obj.recentIds && typeof obj.recentIds === 'object';
-if (!obj.recentEvents || typeof obj.recentEvents !== 'object') obj.recentEvents = {};
-obj.legacy = !!(legacyRecentIds && !obj.format);
-obj.pulledAt = Number(obj.pulledAt) || 0;
-_cbtFastestSnapshotCache = obj;
-return _cbtFastestSnapshotCache;
-} catch(e) {
-_cbtFastestSnapshotCache = { pulledAt:0, format:3, legacy:false, recentEvents:{}, stats:{totals:{},peaks:{},latest:{}} };
-return _cbtFastestSnapshotCache;
-}
-}
-function cbtFastestSnapshotSave(stats, pulledAt, recentEvents) {
-var cleanRecent = {};
-for (var id in (recentEvents || {})) {
-var ev = cbtSanitizeBatchEvent(recentEvents[id], id);
-if (ev) cleanRecent[ev.eventId] = cbtChooseBatchEvent(cleanRecent[ev.eventId], ev);
-}
-var obj = {
-format:3,
-legacy:false,
-pulledAt:Number(pulledAt)||((typeof cbtNowMs === 'function')?cbtNowMs():Date.now()),
-recentEvents:cleanRecent,
-stats:stats || {totals:{},peaks:{},latest:{}}
-};
-_cbtFastestSnapshotCache = obj;
-_cbtEventFastestStatsCache = null;
-_cbtNameSourceRevision++;
-var json = JSON.stringify(obj);
-gmSet(CBT_BATCH_EVENT_FASTEST_KEY, json);
-try { localStorage.setItem(CBT_BATCH_EVENT_FASTEST_KEY, json); } catch(e) {}
-}
-function cbtApplyEventToFastestStats(stats, e) {
-if (!stats) stats = { totals:{}, peaks:{}, latest:{} };
-if (!stats.totals) stats.totals = {};
-if (!stats.peaks) stats.peaks = {};
-if (!stats.latest) stats.latest = {};
-e = cbtSanitizeBatchEvent(e, e && e.eventId);
-if (!e || (Number(e.quality) || 1) < 2) return stats;
-var key = hofKey(e.assoc);
-if (!key) return stats;
-var t = stats.totals[key];
-if (!t) t = stats.totals[key] = { assoc:e.assoc, runs:0, pkgs:0 };
-t.assoc = e.assoc || t.assoc;
-t.runs += 1;
-t.pkgs += e.pkgs;
-var l = stats.latest[key];
-if (!l || e.completedAt > Number(l.at || 0)) {
-stats.latest[key] = { assoc:e.assoc,rate:e.rate,at:e.completedAt,pkgs:e.pkgs,elapsedSec:e.elapsedSec,schema:HOF_SCHEMA,calc:'uniqueBatchEvent/fullBatchingSpan' };
-}
-if (e.pkgs >= HOF_MIN_PKGS && e.elapsedSec >= HOF_MIN_SEC) {
-var p = stats.peaks[key];
-if (!p || e.rate > Number(p.rate || 0)) {
-stats.peaks[key] = { assoc:e.assoc,rate:e.rate,at:e.completedAt,pkgs:e.pkgs,elapsedSec:e.elapsedSec,schema:HOF_SCHEMA,calc:'uniqueBatchEvent/fullBatchingSpan' };
-}
-}
-return stats;
-}
-function cbtFastestStatsFromEvents(events) {
-var stats = { totals:{}, peaks:{}, latest:{} };
-var deduped = cbtDedupBatchEventMap(events || {});
-for (var id in deduped) {
-if ((Number(deduped[id].quality) || 1) < 2) continue;
-cbtApplyEventToFastestStats(stats, deduped[id]);
-}
-return stats;
-}
-function cbtLoadBatchEventMap(key) {
-var out = {};
-try {
-var gm = gmGet(key, null);
-if (gm) out = (typeof gm === 'string') ? JSON.parse(gm) : gm;
-} catch(e0) {}
-try {
-var ls = JSON.parse(localStorage.getItem(key) || '{}');
-for (var id in ls) out[id] = cbtChooseBatchEvent(out[id], ls[id]);
-} catch(e1) {}
-var clean = {};
-for (var k in (out || {})) {
-var ev = cbtSanitizeBatchEvent(out[k], k);
-if (ev) clean[ev.eventId] = cbtChooseBatchEvent(clean[ev.eventId], ev);
-}
-return cbtPruneRecentEventMap(clean);
-}
-function cbtSaveBatchEventMap(key, map) {
-map = cbtPruneRecentEventMap(map || {});
-if (key === CBT_BATCH_EVENT_LOCAL_KEY) _cbtLocalBatchEventsCache = map;
-if (key === CBT_BATCH_EVENT_REMOTE_KEY) _cbtRemoteBatchEventsCache = map;
-_cbtAllBatchEventsCache = null;
-var json = JSON.stringify(map);
-gmSet(key, json);
-try { localStorage.setItem(key, json); } catch(e) {}
-}
-var _cbtLocalBatchEventsCache = null;
-var _cbtRemoteBatchEventsCache = null;
-var _cbtAllBatchEventsCache = null;
-function cbtLoadLocalBatchEvents() {
-if (_cbtLocalBatchEventsCache) return _cbtLocalBatchEventsCache;
-_cbtLocalBatchEventsCache = cbtLoadBatchEventMap(CBT_BATCH_EVENT_LOCAL_KEY);
-return _cbtLocalBatchEventsCache;
-}
-function cbtLoadRemoteBatchEvents() {
-if (_cbtRemoteBatchEventsCache) return _cbtRemoteBatchEventsCache;
-_cbtRemoteBatchEventsCache = cbtLoadBatchEventMap(CBT_BATCH_EVENT_REMOTE_KEY);
-return _cbtRemoteBatchEventsCache;
-}
-function cbtAllBatchEvents() {
-if (_cbtAllBatchEventsCache) return _cbtAllBatchEventsCache;
-var out = {};
-var remote = cbtLoadRemoteBatchEvents();
-var local = cbtLoadLocalBatchEvents();
-for (var rid in remote) out[rid] = remote[rid];
-for (var id in local) out[id] = cbtChooseBatchEvent(out[id], local[id]);
-_cbtAllBatchEventsCache = cbtDedupBatchEventMap(cbtPruneRecentEventMap(out));
-return _cbtAllBatchEventsCache;
-}
-function cbtInvalidateEventViews() {
-_cbtNameSourceRevision++;
-_dispHistCache = null;
-_dispWeekCache = null;
-_cbtEventFastestStatsCache = null;
-_cbtDataNameSetCache = null;
-_cbtDataNameSetAt = 0;
-}
-function cbtScheduleEventRender() {
-cbtInvalidateEventViews();
-if (_cbtBatchEventRenderTimer) return;
-function runEventRender() {
-if (cbtIsActivelyScrolling()) {
-cbtRunAfterScroll('history-event-render', runEventRender);
-return;
-}
-var raf = (typeof requestAnimationFrame === 'function')
-? requestAnimationFrame
-: function(cb){ return setTimeout(cb, 16); };
-_cbtBatchEventRenderTimer = raf(function(){
-_cbtBatchEventRenderTimer = null;
-try {
-if (activeTab === 'history') renderHistory();
-else if (activeTab === 'weekly') renderWeekly();
-else if (activeTab === 'hof') renderHallOfFame();
-} catch(e) {}
-try { requestUnifiedSearchCount(); } catch(e2) {}
-});
-}
-_cbtBatchEventRenderTimer = true;
-runEventRender();
-}
-function cbtSaveLocalBatchEvent(event) {
-event = cbtSanitizeBatchEvent(event, event && event.eventId);
-if (!event) return false;
-var map = cbtLoadLocalBatchEvents();
-var chosen = cbtChooseBatchEvent(map[event.eventId], event);
-if (map[event.eventId] && JSON.stringify(chosen) === JSON.stringify(map[event.eventId])) return false;
-map[event.eventId] = chosen;
-cbtSaveBatchEventMap(CBT_BATCH_EVENT_LOCAL_KEY, map);
-cbtScheduleEventRender();
-return true;
-}
-function cbtPushBatchEvent(event, done, attempt) {
-event = cbtSanitizeBatchEvent(event, event && event.eventId);
-if (!event || !syncEnabled()) { if (done) done(false); return; }
-attempt = Number(attempt) || 0;
-var url = cbtBatchEventUrl(event.eventId);
-try {
-GM_xmlhttpRequest({
-method: 'GET', url: url,
-headers: { 'Content-Type':'application/json', 'X-Firebase-ETag':'true' },
-timeout: CBT_FIREBASE_SYNC_TIMEOUT_MS,
-onload: function(getRes) {
-if (!(getRes.status >= 200 && getRes.status < 300)) {
-if (done) done(false); return;
-}
-var existing = null;
-try {
-if (getRes.responseText && getRes.responseText !== 'null') {
-existing = cbtSanitizeBatchEvent(JSON.parse(getRes.responseText), event.eventId);
-}
-} catch(e0) {}
-var merged = cbtChooseBatchEvent(existing, event);
-if (existing && JSON.stringify(merged) === JSON.stringify(existing)) {
-var remote0 = cbtLoadRemoteBatchEvents();
-remote0[merged.eventId] = cbtChooseBatchEvent(remote0[merged.eventId], merged);
-cbtSaveBatchEventMap(CBT_BATCH_EVENT_REMOTE_KEY, remote0);
-if (done) done(true); return;
-}
-var etag = cbtFirebaseEtag(getRes.responseHeaders);
-if (!etag) { if (done) done(false); return; }
-GM_xmlhttpRequest({
-method: 'PUT', url: url,
-headers: { 'Content-Type':'application/json', 'If-Match':etag },
-data: JSON.stringify(merged),
-timeout: CBT_FIREBASE_SYNC_TIMEOUT_MS,
-onload: function(putRes) {
-if (putRes.status === 412 && attempt < 3) {
-setTimeout(function(){ cbtPushBatchEvent(event, done, attempt + 1); }, 80 * (attempt + 1));
-return;
-}
-if (putRes.status >= 200 && putRes.status < 300) {
-var remote = cbtLoadRemoteBatchEvents();
-remote[merged.eventId] = cbtChooseBatchEvent(remote[merged.eventId], merged);
-cbtSaveBatchEventMap(CBT_BATCH_EVENT_REMOTE_KEY, remote);
-cbtScheduleEventRender();
-if (done) done(true);
-return;
-}
-if (done) done(false);
-},
-onerror: function(){ if (done) done(false); },
-ontimeout: function(){ if (done) done(false); }
-});
-},
-onerror: function(){ if (done) done(false); },
-ontimeout: function(){ if (done) done(false); }
-});
-} catch(e) { if (done) done(false); }
-}
-var _cbtBatchBackfillState = Object.create(null);
-var _cbtBatchBackfillLastUnchangedAt = 0;
-function cbtPushMissingLocalBatchEvents(remote) {
-remote = remote || {};
-var local = cbtLoadLocalBatchEvents();
-var sent = 0, now = Date.now();
-for (var id in local) {
-var ev = local[id];
-if (!ev) continue;
-var chosen = cbtChooseBatchEvent(remote[id], ev);
-if (remote[id] && JSON.stringify(chosen) === JSON.stringify(remote[id])) continue;
-if (cbtIsDateInCurrentWeek(ev.dateKey)) {
-cbtPushBatchEvent(ev);
-if (++sent >= 25) break;
-continue;
-}
-// Current-week pulls intentionally do not contain older retained events. Backfill
-// those events with a small per-event retry guard so a Saturday batch that missed
-// Firebase sync is not lost after Sunday, without re-reading the same old event
-// every 15 seconds forever.
-var sig = JSON.stringify(cbtSanitizeBatchEvent(ev, id) || ev);
-var st = _cbtBatchBackfillState[id];
-if (st && st.sig === sig && (st.done || now - Number(st.lastTry || 0) < 120000)) continue;
-st = _cbtBatchBackfillState[id] = { sig:sig, lastTry:now, done:false };
-(function(backfillId, backfillSig, backfillEvent){
-cbtPushBatchEvent(backfillEvent, function(ok){
-var cur = _cbtBatchBackfillState[backfillId];
-if (cur && cur.sig === backfillSig && ok) cur.done = true;
-});
-})(id, sig, ev);
-if (++sent >= 25) break;
-}
-}
-function cbtBatchEventsPull(cb) {
-if (!syncEnabled()) { if (cb) cb(false); return; }
-if (_cbtBatchEventPullInFlight) { if (cb) cb(false); return; }
-_cbtBatchEventPullInFlight = true;
-function finishFromRaw(raw, etag, etagKey) {
-var remote = {};
-try {
-raw = raw || {};
-for (var id in raw) {
-var ev = cbtSanitizeBatchEvent(raw[id], id);
-if (!ev || !cbtIsDateInCurrentWeek(ev.dateKey)) continue;
-remote[ev.eventId] = cbtChooseBatchEvent(remote[ev.eventId], ev);
-}
-} catch(e0) {}
-var old = cbtLoadRemoteBatchEvents();
-var changed = JSON.stringify(old) !== JSON.stringify(remote);
-cbtSaveBatchEventMap(CBT_BATCH_EVENT_REMOTE_KEY, remote);
-if (etag && etagKey) { gmSet(etagKey, etag); try { localStorage.setItem(etagKey, etag); } catch(e1) {} }
-cbtPushMissingLocalBatchEvents(remote);
-if (changed) cbtScheduleEventRender();
-_cbtBatchEventPullInFlight = false;
-_cbtBatchEventLastPullAt = Date.now();
-if (cb) cb(changed);
-}
-function request(useFull) {
-var url = useFull ? cbtBatchEventUrl('') : cbtBatchEventRecentUrl();
-var etagKey = useFull ? (CBT_BATCH_EVENT_RECENT_ETAG_KEY + '_full') : (CBT_BATCH_EVENT_RECENT_ETAG_KEY + '_' + currentWeekStartStr().replace(/[^0-9]/g,'_'));
-var etag = '';
-try { etag = gmGet(etagKey, null) || localStorage.getItem(etagKey) || ''; } catch(e2) {}
-var headers = { 'Content-Type':'application/json', 'X-Firebase-ETag':'true' };
-if (etag) headers['If-None-Match'] = etag;
-GM_xmlhttpRequest({
-method:'GET', url:url, headers:headers,
-timeout:CBT_FIREBASE_SYNC_TIMEOUT_MS,
-onload:function(res){
-if (res.status === 304) {
-_cbtBatchEventPullInFlight = false;
-_cbtBatchEventLastPullAt = Date.now();
-// Remote data is unchanged. Immediate completion pushes already handle new local
-// events, so a full local-vs-remote backfill walk every 60 seconds is redundant.
-// Keep a slow retry safety net for any earlier failed push.
-if (!_cbtBatchBackfillLastUnchangedAt || Date.now() - _cbtBatchBackfillLastUnchangedAt >= 5 * 60 * 1000) {
-_cbtBatchBackfillLastUnchangedAt = Date.now();
-cbtIdle(function(){ try { cbtPushMissingLocalBatchEvents(cbtLoadRemoteBatchEvents()); } catch(eBackfill304) {} }, 700);
-}
-if (cb) cb(false);
-return;
-}
-if (res.status >= 200 && res.status < 300) {
-var raw = {};
-try {
-raw = res.responseText && res.responseText !== 'null' ? (JSON.parse(res.responseText) || {}) : {};
-} catch(e3) {
-_cbtBatchEventPullInFlight = false;
-if (cb) cb(false);
-return;
-}
-finishFromRaw(raw, cbtFirebaseEtag(res.responseHeaders), etagKey);
-return;
-}
-if (!useFull) {
-_cbtBatchRecentQueryUnsupported = true;
-request(true);
-return;
-}
-_cbtBatchEventPullInFlight = false;
-if (cb) cb(false);
-},
-onerror:function(){
-if (!useFull) { _cbtBatchRecentQueryUnsupported = true; try { request(true); return; } catch(e4) {} }
-_cbtBatchEventPullInFlight = false;
-if (cb) cb(false);
-},
-ontimeout:function(){
-if (!useFull) { _cbtBatchRecentQueryUnsupported = true; try { request(true); return; } catch(e5) {} }
-_cbtBatchEventPullInFlight = false;
-if (cb) cb(false);
-}
-});
-}
-try { request(_cbtBatchRecentQueryUnsupported); }
-catch(e) { _cbtBatchEventPullInFlight = false; if (cb) cb(false); }
-}
-function cbtBatchEventsPullAllTime(cb, force) {
-if (!syncEnabled()) { if (cb) cb(false); return; }
-if (_cbtBatchEventAllPullInFlight) { if (cb) cb(false); return; }
-if (!force && _cbtBatchEventLastAllPullAt && Date.now() - _cbtBatchEventLastAllPullAt < 5 * 60 * 1000) {
-if (cb) cb(false); return;
-}
-_cbtBatchEventAllPullInFlight = true;
-var etag = '';
-try { etag = gmGet(CBT_BATCH_EVENT_ALL_ETAG_KEY, null) || localStorage.getItem(CBT_BATCH_EVENT_ALL_ETAG_KEY) || ''; } catch(e0) {}
-try {
-var fastestSnapForPull = cbtFastestSnapshotLoad();
-if (!(fastestSnapForPull.pulledAt > 0) || fastestSnapForPull.legacy) etag = '';
-} catch(eSnap) { etag = ''; }
-var headers = { 'Content-Type':'application/json', 'X-Firebase-ETag':'true' };
-if (etag) headers['If-None-Match'] = etag;
-try {
-GM_xmlhttpRequest({
-method:'GET', url:cbtBatchEventUrl(''), headers:headers,
-timeout:CBT_FIREBASE_SYNC_TIMEOUT_MS,
-onload:function(res){
-_cbtBatchEventAllPullInFlight = false;
-_cbtBatchEventLastAllPullAt = Date.now();
-if (res.status === 304) { if (cb) cb(false); return; }
-if (!(res.status >= 200 && res.status < 300)) { if (cb) cb(false); return; }
-var canonical = {}, current = {};
-try {
-var raw = res.responseText && res.responseText !== 'null' ? (JSON.parse(res.responseText) || {}) : {};
-for (var id in raw) {
-var ev = cbtSanitizeBatchEvent(raw[id], id);
-if (!ev) continue;
-canonical[ev.eventId] = cbtChooseBatchEvent(canonical[ev.eventId], ev);
-}
-canonical = cbtDedupBatchEventMap(canonical);
-} catch(e1) {
-if (cb) cb(false);
-return;
-}
-var recentEvents = {}, olderEvents = {}, recentFloor = ((typeof cbtNowMs === 'function') ? cbtNowMs() : Date.now()) - 10 * 86400000;
-for (var rid in canonical) {
-if (Number(canonical[rid].completedAt) >= recentFloor) recentEvents[rid] = canonical[rid];
-else olderEvents[rid] = canonical[rid];
-}
-// Keep older all-time totals separate from recent event records. This lets a later,
-// higher-quality copy of the same recent batch replace the older copy without
-// double-counting that cart in Fastest.
-cbtFastestSnapshotSave(cbtFastestStatsFromEvents(olderEvents), ((typeof cbtNowMs === 'function') ? cbtNowMs() : Date.now()), recentEvents);
-for (var cid in canonical) {
-if (cbtIsDateInCurrentWeek(canonical[cid].dateKey)) current[cid] = canonical[cid];
-}
-cbtSaveBatchEventMap(CBT_BATCH_EVENT_REMOTE_KEY, current);
-var newEtag = cbtFirebaseEtag(res.responseHeaders);
-if (newEtag) { gmSet(CBT_BATCH_EVENT_ALL_ETAG_KEY, newEtag); try { localStorage.setItem(CBT_BATCH_EVENT_ALL_ETAG_KEY, newEtag); } catch(e2) {} }
-cbtScheduleEventRender();
-if (cb) cb(true);
-},
-onerror:function(){ _cbtBatchEventAllPullInFlight = false; if (cb) cb(false); },
-ontimeout:function(){ _cbtBatchEventAllPullInFlight = false; if (cb) cb(false); }
-});
-} catch(e) { _cbtBatchEventAllPullInFlight = false; if (cb) cb(false); }
-}
-function cbtAggregateBatchEvents(dateFilter) {
-var outByKey = Object.create(null);
-var events = cbtAllBatchEvents();
-for (var id in events) {
-var e = events[id];
-if (!e || (Number(e.quality) || 1) < 2 || (dateFilter && e.dateKey !== dateFilter)) continue;
-var key = String(e.assoc || '').trim().toLowerCase();
-if (!key) continue;
-var r = outByKey[key];
-if (!r) r = outByKey[key] = { assoc:e.assoc,totalPkgs:0,totalSec:0,runs:0,totalMissing:0,totalExpected:0,bestRate:null,lastRate:null,lastAt:0 };
-r.totalPkgs += e.pkgs;
-r.totalSec += e.elapsedSec;
-r.runs += 1;
-r.totalMissing += e.missing || 0;
-r.totalExpected += e.expected || 0;
-if (!(Number(r.bestRate) > 0) || e.rate > Number(r.bestRate)) r.bestRate = e.rate;
-if (!(Number(r.lastAt) > 0) || e.completedAt > Number(r.lastAt)) {
-r.lastRate = e.rate; r.lastAt = e.completedAt; r.assoc = e.assoc || r.assoc;
-}
-}
-var out = {};
-for (var key2 in outByKey) {
-var x = outByKey[key2];
-x.avgRate = x.totalSec > 0 ? x.totalPkgs / (x.totalSec / 60) : 0;
-out[key2] = x;
-}
-return out;
-}
-function cbtAggregateWeeklyBatchEvents() {
-var out = {}, events = cbtAllBatchEvents();
-for (var id in events) {
-var e = events[id];
-if (!e || (Number(e.quality) || 1) < 2 || !cbtIsDateInCurrentWeek(e.dateKey)) continue;
-var dk = e.dateKey, key = String(e.assoc || '').trim().toLowerCase();
-if (!key) continue;
-if (!out[dk]) out[dk] = {};
-if (!out[dk][key]) out[dk][key] = { assoc:e.assoc,totalPkgs:0,totalSec:0,runs:0,totalMissing:0,totalExpected:0,bestRate:null,lastRate:null,lastAt:0 };
-var r = out[dk][key];
-r.totalPkgs += e.pkgs; r.totalSec += e.elapsedSec; r.runs += 1;
-r.totalMissing += e.missing || 0; r.totalExpected += e.expected || 0;
-if (!(Number(r.bestRate) > 0) || e.rate > Number(r.bestRate)) r.bestRate = e.rate;
-if (!(Number(r.lastAt) > 0) || e.completedAt > Number(r.lastAt)) {
-r.lastRate = e.rate; r.lastAt = e.completedAt; r.assoc = e.assoc || r.assoc;
-}
-r.avgRate = r.totalSec > 0 ? r.totalPkgs / (r.totalSec / 60) : 0;
-}
-return out;
-}
-var _cbtEventFastestStatsCache = null;
-function cbtEventFastestStats() {
-if (_cbtEventFastestStatsCache) return _cbtEventFastestStatsCache;
-var snap = cbtFastestSnapshotLoad();
-var base = snap && snap.stats ? snap.stats : { totals:{}, peaks:{}, latest:{} };
-var stats = {
-totals: JSON.parse(JSON.stringify(base.totals || {})),
-peaks: JSON.parse(JSON.stringify(base.peaks || {})),
-latest: JSON.parse(JSON.stringify(base.latest || {}))
-};
-// Older snapshots already included their recent events inside stats. Keep showing
-// that known-good snapshot until the first forced all-time refresh converts it to
-// the split format, otherwise recent carts would be counted twice during migration.
-if (snap && snap.legacy) {
-_cbtEventFastestStatsCache = stats;
-return _cbtEventFastestStatsCache;
-}
-// Merge the all-time snapshot's recent event records with the newest local/current-week
-// copies by canonical event id, then count each batch exactly once.
-var recent = {};
-var snapRecent = (snap && snap.recentEvents) || {};
-for (var sid in snapRecent) {
-var sev = cbtSanitizeBatchEvent(snapRecent[sid], sid);
-if (sev) recent[sev.eventId] = cbtChooseBatchEvent(recent[sev.eventId], sev);
-}
-var liveRecent = cbtAllBatchEvents();
-for (var lid in liveRecent) {
-var lev = cbtSanitizeBatchEvent(liveRecent[lid], lid);
-if (lev) recent[lev.eventId] = cbtChooseBatchEvent(recent[lev.eventId], lev);
-}
-for (var id in recent) cbtApplyEventToFastestStats(stats, recent[id]);
-_cbtEventFastestStatsCache = stats;
-return _cbtEventFastestStatsCache;
-}
-var taskCache = new Map();
+  /* Let COMO paint its own first frame before this userscript mounts the
+     heavier dashboard UI. This removes the small "website freezes, then loads"
+     feeling without removing or changing any feature. */
+  function cbtAfterFirstPaint(fn, delay) {
+    delay = delay == null ? 140 : delay;
+    var raf = (typeof requestAnimationFrame === 'function')
+      ? requestAnimationFrame
+      : function(cb){ return setTimeout(cb, 16); };
+    raf(function(){
+      raf(function(){
+        setTimeout(function(){ try { fn(); } catch(e) {} }, delay);
+      });
+    });
+  }
 
-// v23.9.179 — instant, stable Live reload.
-// Keep only a very short snapshot of the last authoritative Live rows so a
-// normal reload does not show an empty table while the first API request is in
-// flight. Fresh backend data always wins, and provisional rows missing from the
-// first successful backend response are removed immediately.
-var CBT_LIVE_WARM_MAX_AGE_MS = 30000;
-var _cbtWarmLiveRefs = new Set();
-function cbtLiveWarmCacheKey() {
-return 'cbt_live_warm_v1_' + String(STORE_ID || 'unknown');
-}
-function cbtLiveWarmRead() {
-var raw = '';
-try { raw = sessionStorage.getItem(cbtLiveWarmCacheKey()) || ''; } catch(e0) {}
-if (!raw) { try { raw = localStorage.getItem(cbtLiveWarmCacheKey()) || ''; } catch(e1) {} }
-if (!raw) return null;
-try {
-var p = JSON.parse(raw);
-var age = Date.now() - Number(p && p.ts);
-if (!p || !Array.isArray(p.items) || !isFinite(age) || age < 0 || age > CBT_LIVE_WARM_MAX_AGE_MS) return null;
-return p;
-} catch(e2) { return null; }
-}
-function cbtLiveWarmHydrate() {
-var p = cbtLiveWarmRead();
-if (!p) return 0;
-var count = 0;
-for (var i = 0; i < p.items.length; i++) {
-var item = p.items[i];
-if (!item || item.shortClientRef == null || !cbtIsLiveBatch(item)) continue;
-var ref = String(item.shortClientRef);
-try {
-if (ingestItem(item, false)) {
-_cbtWarmLiveRefs.add(ref);
-count++;
-}
-} catch(e) {}
-}
-return count;
-}
-var _cbtLiveWarmLastWriteAt = 0;
-var _cbtLiveWarmLastPayload = '';
-function cbtLiveWarmSave(bestByRef, force) {
-var items = [];
-try {
-Object.keys(bestByRef || {}).forEach(function(ref){
-var row = bestByRef[ref] && bestByRef[ref].data;
-if (row && row.shortClientRef != null && cbtIsLiveBatch(row)) items.push(row);
-});
-var now = Date.now();
-// localStorage is synchronous. The old code wrote the full Live payload every
-// authoritative poll. Cap this to one write per 15s, and unchanged snapshots to
-// one write per minute. Reload still has a fresh warm cache without constant jank.
-if (!force && _cbtLiveWarmLastWriteAt && now - _cbtLiveWarmLastWriteAt < 15000) return;
-var payload = JSON.stringify(items);
-if (!force && payload === _cbtLiveWarmLastPayload && now - _cbtLiveWarmLastWriteAt < 60000) return;
-var raw = '{"ts":' + now + ',"items":' + payload + '}';
-_cbtLiveWarmLastPayload = payload;
-_cbtLiveWarmLastWriteAt = now;
-try { sessionStorage.setItem(cbtLiveWarmCacheKey(), raw); } catch(e0) {}
-try { localStorage.setItem(cbtLiveWarmCacheKey(), raw); } catch(e1) {}
-} catch(e2) {}
-}
-var activeTab = 'live';
-var _cbtLiveDashboardSyncPending = false;
-var _liveRenderPending = false;
-function requestLiveRender() {
-if (activeTab !== 'live') return;
-if (!document.getElementById('cbt-tbody')) return;
-if (_liveRenderPending) return;
-_liveRenderPending = true;
-function runLiveRender() {
-if (cbtIsActivelyScrolling()) {
-cbtRunAfterScroll('live-dashboard-render', runLiveRender);
-return;
-}
-// Live table rebuilds/sorts can be one of the larger dashboard tasks. Keep
-// them out of the pre-paint animation frame; a short idle handoff is visually
-// indistinguishable but avoids periodic frame drops when fresh API data lands.
-cbtIdle(function(){
-_liveRenderPending = false;
-if (activeTab === 'live' && document.getElementById('cbt-tbody')) {
-try { renderLive(); } catch(e) {}
-}
-}, 160);
-}
-runLiveRender();
-}
-var weeklySortKey = 'bestRate', weeklySortAsc = false, weeklySearchTerm = '';
-var liveSortKey = 'rate', liveSortAsc = false, liveSearchTerm = '';
-var liveSortUser = false;
-var historySortKey = 'bestRate', historySortAsc = false, historySearchTerm = '';
-var namesSearchTerm = '';
-var hofSearchTerm = '';
-var dashboardSearchTerm = '';
-var _allNamesCache = null;
-function todayStr() {
-var nowMs = Date.now();
-try { if (typeof cbtNowMs === 'function') nowMs = cbtNowMs(); } catch(e0) {}
-try {
-return new Date(nowMs).toLocaleDateString('en-US', { timeZone: getStoreTimezone() });
-} catch(e) {
-return new Date(nowMs).toLocaleDateString('en-US');
-}
-}
-function cbtDateKeyParts(dateKey) {
-var m = String(dateKey || '').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
-if (!m) return null;
-var mo = parseInt(m[1], 10), d = parseInt(m[2], 10), y = parseInt(m[3], 10);
-if (!mo || !d || !y) return null;
-return { y:y, m:mo, d:d };
-}
-function cbtDateKeyEpoch(dateKey) {
-var p = cbtDateKeyParts(dateKey);
-return p ? Date.UTC(p.y, p.m - 1, p.d) : NaN;
-}
-function cbtDateKeyFromEpoch(ms) {
-var d = new Date(ms);
-return (d.getUTCMonth() + 1) + '/' + d.getUTCDate() + '/' + d.getUTCFullYear();
-}
-function cbtWeekStartForDateKey(dateKey) {
-var ms = cbtDateKeyEpoch(dateKey);
-if (!isFinite(ms)) return null;
-var dow = new Date(ms).getUTCDay();
-return cbtDateKeyFromEpoch(ms - dow * 86400000);
-}
-function currentWeekStartStr() {
-return cbtWeekStartForDateKey(todayStr()) || todayStr();
-}
-function cbtIsDateInCurrentWeek(dateKey) {
-var day = cbtDateKeyEpoch(dateKey);
-var start = cbtDateKeyEpoch(currentWeekStartStr());
-if (!isFinite(day) || !isFinite(start)) return false;
-return day >= start && day < start + 7 * 86400000;
-}
-function fmt(s) {
-if (s == null || isNaN(s) || s < 0) return '--:--';
-return String(Math.floor(s / 60)).padStart(2,'0') + ':' + String(Math.floor(s % 60)).padStart(2,'0');
-}
-function fmtHours(s) {
-if (!s) return '0h';
-var h = s / 3600;
-return h >= 1 ? h.toFixed(1) + 'h' : Math.round(s / 60) + 'm';
-}
-function loadWeekly() {
-var currentWeek = currentWeekStartStr();
-var storedPeriod = null;
-try { storedPeriod = gmGet(WEEKLY_PERIOD_KEY, null); } catch(e0) {}
-if (!storedPeriod) {
-try { storedPeriod = localStorage.getItem(WEEKLY_PERIOD_KEY); } catch(e1) {}
-}
-var result = {};
-try {
-var gm = gmGet(OWN_WEEKLY_KEY, null) || gmGet(WEEKLY_KEY, null);
-if (gm) result = (typeof gm === 'string') ? JSON.parse(gm) : gm;
-} catch(e2) {}
-try {
-var ls = JSON.parse(localStorage.getItem(OWN_WEEKLY_KEY) || localStorage.getItem(WEEKLY_KEY) || '{}');
-for (var dk in ls) {
-if (!result[dk]) result[dk] = {};
-for (var a in ls[dk]) { if (!result[dk][a]) result[dk][a] = ls[dk][a]; }
-}
-} catch(e3) {}
-result = sanitizeWeekly(result || {});
-if (storedPeriod !== currentWeek) {
-gmSet(WEEKLY_PERIOD_KEY, currentWeek);
-try { localStorage.setItem(WEEKLY_PERIOD_KEY, currentWeek); } catch(e4) {}
-}
-return result;
-}
-function saveWeekly(w, skipPush, periodKey) {
-_dispWeekCache = null;
-var currentWeek = periodKey || currentWeekStartStr();
-var clean = sanitizeWeekly(w || {});
-var json = JSON.stringify(clean);
-gmSet(OWN_WEEKLY_KEY, json);
-gmSet(WEEKLY_PERIOD_KEY, currentWeek);
-try {
-localStorage.setItem(OWN_WEEKLY_KEY, json);
-localStorage.setItem(WEEKLY_PERIOD_KEY, currentWeek);
-} catch(e) {}
-}
-function loadRemoteWeekly() {
-var currentWeek = currentWeekStartStr();
-var period = null;
-try { period = gmGet(REMOTE_WEEKLY_PERIOD_KEY, null); } catch(e0) {}
-if (!period) {
-try { period = localStorage.getItem(REMOTE_WEEKLY_PERIOD_KEY); } catch(e1) {}
-}
-if (period !== currentWeek) return {};
-try {
-var gm = gmGet(REMOTE_WEEKLY_KEY, null);
-if (gm) return sanitizeWeekly((typeof gm === 'string') ? JSON.parse(gm) : gm);
-} catch(e2) {}
-try { return sanitizeWeekly(JSON.parse(localStorage.getItem(REMOTE_WEEKLY_KEY) || '{}')); }
-catch(e3) { return {}; }
-}
-function saveRemoteWeekly(w, periodKey) {
-_dispWeekCache = null;
-var currentWeek = periodKey || currentWeekStartStr();
-var clean = sanitizeWeekly(w || {});
-var json = JSON.stringify(clean);
-gmSet(REMOTE_WEEKLY_KEY, json);
-gmSet(REMOTE_WEEKLY_PERIOD_KEY, currentWeek);
-try {
-localStorage.setItem(REMOTE_WEEKLY_KEY, json);
-localStorage.setItem(REMOTE_WEEKLY_PERIOD_KEY, currentWeek);
-} catch(e) {}
-}
-var _dispWeekCache = null, _dispWeekTime = 0;
-var _dispHistCache = null, _dispHistTime = 0;
-function cbtMergeLatestFields(target, source) {
-if (!target || !source) return;
-var sourceRate = Number(source.lastRate);
-if (!(sourceRate > 0) || !isFinite(sourceRate)) return;
-var targetRate = Number(target.lastRate);
-var sourceAt = Number(source.lastAt) || 0;
-var targetAt = Number(target.lastAt) || 0;
-if (!(targetRate > 0) || sourceAt > targetAt || (sourceAt === targetAt && sourceAt === 0)) {
-target.lastRate = sourceRate;
-target.lastAt = sourceAt;
-}
-}
-function cbtMergeBestFields(target, source) {
-if (!target || !source) return;
-var candidate = Math.max(
-Number(source.bestRate) || 0,
-Number(source.lastRate) || 0,
-Number(source.avgRate) || 0
-);
-if (!(candidate > 0) || !isFinite(candidate)) return;
-if (!(Number(target.bestRate) > 0) || candidate > Number(target.bestRate)) {
-target.bestRate = candidate;
-}
-}
-function getDisplayWeekly() {
-var _now = Date.now();
-if (_dispWeekCache && (_now - _dispWeekTime) < 1500) return _dispWeekCache;
-var out = sanitizeWeekly(cbtAggregateWeeklyBatchEvents());
-_dispWeekCache = out; _dispWeekTime = _now;
-return out;
-}
-function gmGet(key, def) {
-try { if (typeof GM_getValue === 'function') { var v = GM_getValue(key); return (v===undefined||v===null) ? def : v; } } catch(e) {}
-return def;
-}
-function gmSet(key, val) {
-try { if (typeof GM_setValue === 'function') { GM_setValue(key, val); return true; } } catch(e) {}
-return false;
-}
-var HEADER_FIXED_SCALE = 1.3;
-var STATS_FIXED_SCALE = 1.3;
-var MISSING_QR_FIXED_SCALE = 1.3;
-var UI_SCALE_KEY = 'cbt_ui_scale';
-var UI_SCALE_MIN = 0.7, UI_SCALE_MAX = 2.0, UI_SCALE_STEP = 0.1, UI_SCALE_DEFAULT = 1;
-var _uiScale = UI_SCALE_DEFAULT;
-function clampUiScale(v) {
-v = parseFloat(v);
-if (!v || isNaN(v)) v = UI_SCALE_DEFAULT;
-return Math.min(UI_SCALE_MAX, Math.max(UI_SCALE_MIN, Math.round(v * 100) / 100));
-}
-function loadUiScale() {
-var raw = gmGet(UI_SCALE_KEY, null);
-if (raw == null) { try { raw = localStorage.getItem(UI_SCALE_KEY); } catch(e) {} }
-if (raw == null) return UI_SCALE_DEFAULT;
-return clampUiScale(raw);
-}
-function saveUiScale(v) {
-gmSet(UI_SCALE_KEY, String(v));
-try { localStorage.setItem(UI_SCALE_KEY, String(v)); } catch(e) {}
-}
-var _uiScaleLoaded = false;
-function applyUiScale() {
-if (!_uiScaleLoaded) {
-_uiScaleLoaded = true;
-try { _uiScale = loadUiScale(); } catch(e) {}
-}
-var z = _uiScale;
-var panel = document.getElementById('cbt-panel');
-if (panel) {
-var hdr = panel.querySelector('#cbt-header');
-if (hdr) hdr.style.zoom = HEADER_FIXED_SCALE;
-var stats = panel.querySelector('#cbt-stats-bar');
-if (stats) stats.style.zoom = STATS_FIXED_SCALE;
-['#cbt-tabs', '#cbt-unified-search', '#cbt-body', '#cbt-drag-bottom'].forEach(function(sel){
-var el = panel.querySelector(sel);
-if (el) el.style.zoom = z;
-});
-}
-var afa = document.getElementById('cbt-afa-card');
-if (afa) {
-var afaScale = afa.classList.contains('cbt-afa-missing-qr-card')
-? MISSING_QR_FIXED_SCALE
-: z;
-afa.style.zoom = afaScale;
-afa.style.maxHeight = Math.round((window.innerHeight * 0.82) / afaScale) + 'px';
-afa.style.maxWidth = Math.round((window.innerWidth * 0.92) / afaScale) + 'px';
-}
-var drop = document.getElementById('cbt-ac-drop');
-if (drop) {
-drop.style.zoom = z;
-try { acPlace(); } catch(e) {}
-}
-var label = document.getElementById('cbt-scale-reset');
-if (label) label.textContent = Math.round(z * 100) + '%';
-}
-function isDarkMode() {
-var p = document.getElementById('cbt-panel');
-if (p) return p.classList.contains('dark');
-try {
-var v = localStorage.getItem('cbt_dark');
-return v !== 'false' && v !== '0';
-} catch(e) { return true; }
-}
-function applyPopupTheme() {
-var dark = isDarkMode();
-['cbt-afa-overlay', 'cbt-ac-drop'].forEach(function(id){
-var el = document.getElementById(id);
-if (el) el.classList.toggle('cbt-dark', dark);
-});
-}
-function setUiScale(v, skipSave) {
-_uiScale = clampUiScale(v);
-if (!skipSave) saveUiScale(_uiScale);
-try { if (typeof _cbtAssignDestinationTextMeasureCache !== 'undefined' && _cbtAssignDestinationTextMeasureCache) _cbtAssignDestinationTextMeasureCache.clear(); } catch(eMeasureScale) {}
-applyUiScale();
-}
-function stepUiScale(dir) { setUiScale(_uiScale + dir * UI_SCALE_STEP); }
-function resetUiScale() { setUiScale(UI_SCALE_DEFAULT); }
-var SEED_NAMES = [
-'aamarinp','abahmam','abbececi','abcam','abdldiop','abdouhdi','abdrayae','aboiguiw',
-'abrekenn','absoumao','adamjkev','adarpinc','aeltayea','afriksad','ajeffang','ajfofana',
-'alapasov','alayalst','alcisseo','alcmayor','aliceaed','alisonko','alphasoh','alpoliak',
-'alwnicho','alybalbe','amadoufb','amambald','amifmbow','aminpsan','amyreyei','andhjaim',
-'andijime','andricba','andruang','angecjos','angegerr','angelvif','angicohe','anrosalg',
-'anthrort','antwileo','antzeigl','anzaisma','aouantho','arafaabo','aramadia','aranerwi',
-'arlingma','arnolzie','ashbcruz','ashchhab','aspcompa','auberete','axevgali','baabdouy',
-'bagagnaz','baldemaq','bamamads','bamelony','barsoulj','basilsid','basnsyll','baspndao',
-'batomadi','bbarioua','bcissali','bdavtiff','bdawperr','bdialmam','bedhamed','bellocr',
-'benelomo','bengoce','benjxall','binsains','blasanay','bmadial','boikovik','bolivchr',
-'boubamba','boydgsad','boytanix','brandguk','briandih','bsamanca','bueqferm','burgwjay',
-'bushrbus','bvalleaa','cadamirt','camarmu','camuouma','candesem','cantesek','caquialv',
-'cardbjar','carllaca','carmfall','carrdiey','catmayor','cdiaousm','cespjohn','chaaceve',
-'chaplumm','charjff','chavjala','cheilcor','cheinkeb','cheisecd','chungsik','chxwashi',
-'chynnshu','cisibraa','cissuman','cixromer','cjolatee','clarzave','clauraym','clemenew',
-'clemityl','coasekou','coefiu','cofabias','conairol','condeib','conyyzza','cooppetc',
-'craipsta','cruanthr','cruengol','cuencjus','daantoia','dadoucou','dafodema','daireval',
-'dalomotn','daniupag','danniven','danuniql','danvallu','daquemur','davkrod','davoplea',
-'delbnash','dembasnd','denmit','dffries','dgmarie','dgodfrda','diadamad','diagnepa',
-'diahouss','dialamal','dialdaol','diallamq','diallokc','dialmaa','dialsism','dianmamo',
-'diaruism','dicaurm','diejocel','diithier','dinilvia','diokhaai','diomalto','diopras',
-'disouleg','divhario','djfbarry','djimrbas','dnadgill','dnivasq','dobsoshu','dozieni',
-'dracheim','dramgatt','dsofgino','dsukhcsi','dumamad','dvibrahi','eanrahma','ebrahbar',
-'ebrdeand','ecafriyi','edaodafa','ehhichez','ejwte','elaloada','elguerie','elhacezy',
-'elijmate','elmokhtr','eperlonj','erneqtor','espilorn','estjiord','evanjenr','evelagye',
-'famizama','faninima','fatalidu','fatimtoc','fatsanka','fbrissac','fcissmar','fcryvarg',
-'fezmerce','fgatlich','figuojef','fistoure','fmavanes','fmbirane','fortugre','freddzun',
-'galeangu','ganthoc','garcicaj','garcidmy','garyeria','gaskimch','gbalelha','gbeezoro',
-'gcomlanw','gcoredga','gdaiacal','genterre','gerrlale','gerushaw','ghoshhri','gilfoter',
-'gmakhou','gomeande','gomjoelh','gonzasle','goodmf','gosankan','grewmaha','grgojam',
-'gsteveje','guaringu','guendabd','guerxamy','guthjalm','guzanahi','haleemib','hannacob',
-'hatoumam','hcandici','helejon','henwsuar','heqxavie','herfalex','herrjonp','hhuekenn',
-'hibradia','hilliawj','hjoshuth','hkasal','hmamabar','holtdarn','hoytashl','hshawsmi',
-'hylyedim','hymjeavo','ibkamaga','ibrahdim','ibrahly','ibrahsyw','ibrahydr','ibrahyuf',
-'ibrsibdi','igargeov','iigordo','ijeudbea','iliacomp','imejerik','imjawara','imohtrao',
-'inrosann','iousanga','irvramio','isgconde','isialexs','isolkath','istaflor','jadcruzl',
-'jadrorti','jahbagol','jahkgres','jaitehmr','jamadeor','jambentw','jamelhic','jamzeron',
-'jasmoliu','javomccr','jaydelae','jaysatte','jcojorda','jddieppa','jeanjamd','jefhargr',
-'jehronhi','jelssycu','jenkantj','jeramirf','jersenlo','jezduran','jireespi','jjaquian',
-'jjoshun','jmicadol','joekamar','johlramo','johnbrim','jonattpe','josearab','joseekpo',
-'josupenc','juqxl','juscintr','justyjhe','juvalwda','kabaidre','kabmamay','kadiabag',
-'kadizbah','kaneybab','kaseebiw','kbaibrah','kdanvers','kecortew','kefimkab','keiraabo',
-'kellevyo','kemodouk','kensohen','kevicobo','kforjudi','khariop','kizilugu','knelskay',
-'krubf','ksebarom','kvictpen','lajacksa','lakjarea','lanctour','landioma','lansanca',
-'lantonit','laujdors','lazelled','lderobin','lebracks','lecheikh','leivdomi','lenmartj',
-'lesakati','levyaman','lismarro','litxmigu','lmadiall','lmajoh','lmedoune','lopmfran',
-'lpsm','lrosemal','lsiemitc','lthiedia','lucinago','luelizau','luihesca','luisdagu',
-'maantl','mabdelkz','mackmtra','madecast','mahamafp','mahpmoh','mamabab','mamabhau',
-'mamaksac','mambahi','mambaldn','marferny','marrgess','martikke','martimop','martnnlu',
-'martrabe','marudial','matalavg','mayxstev','mbeaubru','mbenguaq','mendujua','mendvicc',
-'merceaav','mesorana','meverth','michakpi','micheolo','micnathr','milvelez','minjesie',
-'mitjavan','mkaderab','mkevinri','mkkamag','mkmaimou','mlennalm','mmahsoum','mmentobu',
-'modysarr','mohabonk','mohamhor','mohhorma','molagran','montaldj','montjosl','moorleec',
-'morgewai','morrijup','morydiaw','motbab','mtejadda','muhaadno','mullingk','muscheqm',
-'mustahap','mveleant','naaskitc','naclearm','naquasr','natanthz','natvargv','nayabsan',
-'nazcruz','nelsisaa','netolent','nfjustin','nfrancie','ngibtale','nishabel','nisvkama',
-'njordawa','nkburgos','nkeid','nlonceni','nmousmoh','nolpjeme','nsecisse','nuhubila',
-'nundaisb','occeafre','ogaldeja','ogunkasz','ojamjade','olanaugu','olayatoh','omamaroa',
-'oraynaro','osarkaba','ouldmall','oumcherh','oumocomp','owilaniy','owusdkof','ozamoraa',
-'pablflox','pahmkabe','patrwdow','pceesarj','pearsoit','pemakond','penaroby','perejill',
-'persamil','perzpred','petteaur','pexjayde','pindatra','pmamfall','powequen','prakhyag',
-'prasiddg','pringmah','prjenish','qchamord','qcmayfie','qfeif','qgajohn','qostimot',
-'quameela','qugarciy','quilcarg','rabayube','rafrosab','raineyci','ralfpauw','ramorash',
-'ramstout','raymjonw','raymukta','rbfrandy','rdukomar','redominq','ridrisdi','rmamabal',
-'rmarlalm','robelijg','rodoetha','rodrzyes','rokurtis','romaryll','romasea','rooinnoc',
-'roscahli','rosjar','roventuq','royontho','rthokell','rudegou','rujoshux','ryohsant',
-'sackmamq','saidobay','sajnashg','salcpasc','samarmo','sambemag','sanolmou','sanyefru',
-'sappmalb','saseedia','savaneut','sawnain','sbrkaysh','scamaraa','scolliju','sdiallom',
-'sekofcam','sekouaxk','serralal','seymodqx','seynabgu','shadiebe','shamzabd','sharqalh',
-'shawnqch','shervini','sidibadd','sidqibra','silvelud','sirng','smihchr','smittril',
-'snfelici','soabdol','solinemm','solinoan','sotbilal','sozjohan','sramanw','stachone',
-'stesancn','stevmper','stnabreu','sybakart','syllmas','syzuriel','talondah','tamarmsm',
-'tamidmaj','tanguiju','taveaman','tazbtanz','tbowdent','tdialabo','tedariel','terelmun',
-'terrcgre','thcolliu','thiernes','thifdial','thsalter','thwamata','timotjco','tjohanze',
-'tkemoham','tmadial','topsebas','torcstac','toriilia','torluisv','touxmoha','traosaid',
-'tribthov','tsalybar','tsanchor','tvdiallo','tyasmi','ualtoure','ucalixte','uchambil',
-'uheamill','ulauretu','urearlyj','urenabee','ureroben','urgrisel','usaymahf','valdzand',
-'valnjes','varjesup','vcamajol','velezisn','verasjer','vicaira','viciisan','victoepe',
-'vincspai','vmamadb','vshanire','wabdiall','waldlyri','whlondyn','wilennsa','wiljosx',
-'willyalm','wilsalyk','wirashaj','wirpierr','wmamadd','wmamsidi','woodtame','woohblai',
-'wrigdiav','wsoashle','xalherna','xavieari','xcepanth','xdfrance','xfahadmu','xharlake',
-'xjaviere','yadieari','yanezsai','ybangour','ycasluis','yedelaro','yinetmor','ylopdavi',
-'youlahma','yousiahv','yzeidial','zbarrabd','zdialmam','zeloabig','zjeralyn','zjesluis',
-'zmahmodi'
-];
-function loadAllNames() {
-if (_allNamesCache) return _allNamesCache;
-try {
-var raw = gmGet(ALL_NAMES_KEY, null);
-if (raw) { _allNamesCache = (typeof raw === 'string') ? JSON.parse(raw) : raw; }
-} catch(e) { _allNamesCache = null; }
-if (!_allNamesCache || typeof _allNamesCache !== 'object') _allNamesCache = {};
-try {
-var legacy = JSON.parse(localStorage.getItem(ALL_NAMES_KEY) || '{}');
-for (var lk in legacy) if (!_allNamesCache[lk]) _allNamesCache[lk] = legacy[lk];
-} catch(e2) {}
-var safe = {};
-for (var nk in _allNamesCache) {
-var nv = cbtNormalizeAssociateName(_allNamesCache[nk]);
-if (nv) safe[nv.toLowerCase()] = nv;
-}
-_allNamesCache = safe;
-for (var si = 0; si < SEED_NAMES.length; si++) {
-var sname = cbtNormalizeAssociateName(SEED_NAMES[si]);
-if (!sname) continue;
-var skey = sname.toLowerCase();
-if (!_allNamesCache[skey]) _allNamesCache[skey] = sname;
-}
-var sjson = JSON.stringify(_allNamesCache);
-gmSet(ALL_NAMES_KEY, sjson);
-try { localStorage.setItem(ALL_NAMES_KEY, sjson); } catch(e3) {}
-return _allNamesCache;
-}
-var _namesSaveTimer = null;
-function persistAllNames() {
-if (_namesSaveTimer) return;
-_namesSaveTimer = setTimeout(function(){
-_namesSaveTimer = null;
-var json = JSON.stringify(_allNamesCache||{});
-gmSet(ALL_NAMES_KEY, json);
-try { localStorage.setItem(ALL_NAMES_KEY, json); } catch(e) {}
-}, 100);
-}
-var _namesPulled = false;
-var _namesPushQueued = false;
-var _namesFirstPullRetry = null;
-function mergeRemoteNamesIntoLocal(remote) {
-var all = loadAllNames();
-var added = false;
-for (var k in (remote || {})) {
-var n = cbtNormalizeAssociateName(remote[k]);
-if (!n) continue;
-var key = n.toLowerCase();
-if (!all[key]) { all[key] = n; added = true; }
-}
-if (added) { persistAllNames(); if (activeTab === 'names') renderNames(); }
-return added;
-}
-function localNamesMissingFromRemote(remote) {
-var all = loadAllNames();
-for (var k in all) { if (!remote[k]) return true; }
-return false;
-}
-function syncPull(cb) {
-if (!syncEnabled()) { if (cb) cb(false); return; }
-try {
-GM_xmlhttpRequest({
-method: 'GET', url: syncUrl(), headers: { 'Content-Type': 'application/json' },
-timeout: CBT_FIREBASE_SYNC_TIMEOUT_MS,
-onload: function(res){
-var added = false, localExtra = false;
-try {
-var remote = {};
-if (res.status >= 200 && res.status < 300 && res.responseText && res.responseText !== 'null') {
-remote = JSON.parse(res.responseText) || {};
-}
-added = mergeRemoteNamesIntoLocal(remote);
-localExtra = localNamesMissingFromRemote(remote);
-} catch(e) {}
-_namesPulled = true;
-if (_namesPushQueued || localExtra) {
-_namesPushQueued = false;
-syncPush();
-}
-if (cb) cb(added);
-},
-onerror: function(){
-if (!_namesPulled && !_namesFirstPullRetry) {
-_namesFirstPullRetry = setTimeout(function(){ _namesFirstPullRetry = null; syncPull(); }, 5000);
-}
-if (cb) cb(false);
-},
-ontimeout: function(){
-if (!_namesPulled && !_namesFirstPullRetry) {
-_namesFirstPullRetry = setTimeout(function(){ _namesFirstPullRetry = null; syncPull(); }, 5000);
-}
-if (cb) cb(false);
-}
-});
-} catch(e) {
-if (!_namesPulled && !_namesFirstPullRetry) {
-_namesFirstPullRetry = setTimeout(function(){ _namesFirstPullRetry = null; syncPull(); }, 5000);
-}
-if (cb) cb(false);
-}
-}
-var _syncPushTimer = null;
-function syncPush() {
-if (!syncEnabled()) return;
-if (!_namesPulled) { _namesPushQueued = true; return; }
-if (_syncPushTimer) return;
-_syncPushTimer = setTimeout(function(){
-_syncPushTimer = null;
-try {
-var all = loadAllNames();
-GM_xmlhttpRequest({
-method: 'PATCH', url: syncUrl(),
-headers: { 'Content-Type': 'application/json' },
-data: JSON.stringify(all),
-timeout: CBT_FIREBASE_SYNC_TIMEOUT_MS,
-onload: function(){},
-onerror: function(){ _namesPushQueued = true; },
-ontimeout: function(){ _namesPushQueued = true; }
-});
-} catch(e) {}
-}, 2500);
-}
-function captureName(item) {
-if (!item || typeof item !== 'object') return false;
-var name = cbtAssociateLogin(item);
-if (!name) return false;
-var key = name.toLowerCase();
-var all = loadAllNames();
-if (!all[key]) {
-all[key] = name;
-persistAllNames();
-syncPush();
-return true;
-}
-return false;
-}
-function _deepCaptureInner(obj, depth) {
-if (obj == null || depth > 6) return false;
-var added = false;
-if (Array.isArray(obj)) {
-for (var i = 0; i < obj.length && i < 5000; i++) {
-if (_deepCaptureInner(obj[i], depth + 1)) added = true;
-}
-} else if (typeof obj === 'object') {
-if (captureName(obj)) added = true;
-for (var k in obj) {
-var v = obj[k];
-if (v && typeof v === 'object') {
-if (_deepCaptureInner(v, depth + 1)) added = true;
-}
-}
-}
-return added;
-}
-var _cbtNameStorageSeen = Object.create(null);
-function scanLocalStorageForNames() {
-var added = false;
-try {
-for (var i = 0; i < localStorage.length; i++) {
-var key = localStorage.key(i);
-if (!key) continue;
-var val;
-try { val = localStorage.getItem(key); } catch(e) { continue; }
-if (!val || val.length < 2) continue;
-var ch = val.charAt(0);
-if (ch !== '{' && ch !== '[') continue;
-// Avoid reparsing large unchanged JSON blobs every time the Names tab renders.
-var sig = val.length + '|' + val.slice(0, 64) + '|' + val.slice(-64);
-if (_cbtNameStorageSeen[key] === sig) continue;
-_cbtNameStorageSeen[key] = sig;
-try {
-var parsed = JSON.parse(val);
-if (_deepCaptureInner(parsed, 0)) added = true;
-} catch(e) {}
-}
-} catch(e) {}
-if (added && activeTab === 'names') renderNames();
-if (added) syncPush();
-return added;
-}
-function addNameToAll(all, n) {
-n = cbtNormalizeAssociateName(n || '');
-if (!n) return false;
-var k = n.toLowerCase();
-if (!all[k]) { all[k] = n; return true; }
-return false;
-}
-function syncNamesFromAllTabs() {
-var all = loadAllNames();
-var added = false;
-taskCache.forEach(function(d){
-if (addNameToAll(all, cbtAssociateLogin(d))) added = true;
-});
-if (_cbtNamesLastSourceRevision !== _cbtNameSourceRevision) {
-try {
-var events = cbtAllBatchEvents();
-Object.keys(events).forEach(function(id){
-var ev = events[id];
-if (ev && addNameToAll(all, ev.assoc || '')) added = true;
-});
-} catch(e) {}
-try {
-var fs = cbtEventFastestStats(), totals = fs.totals || {};
-Object.keys(totals).forEach(function(k){
-if (addNameToAll(all, totals[k].assoc || k)) added = true;
-});
-} catch(e2) {}
-_cbtNamesLastSourceRevision = _cbtNameSourceRevision;
-}
-if (added) { persistAllNames(); syncPush(); }
-return added;
-}
-function pruneWeeklyOlderThan(days) {
-var currentWeek = currentWeekStartStr();
-var w = loadWeekly();
-var changed = false;
-for (var dk of Object.keys(w)) {
-if (!cbtIsDateInCurrentWeek(dk)) { delete w[dk]; changed = true; }
-}
-if (changed) saveWeekly(w, true, currentWeek);
-var rc = loadRemoteWeekly();
-var rcChanged = false;
-for (var dk2 of Object.keys(rc)) {
-if (!cbtIsDateInCurrentWeek(dk2)) { delete rc[dk2]; rcChanged = true; }
-}
-if (rcChanged) saveRemoteWeekly(rc, currentWeek);
-}
-function rollDailyIntoWeekly() {
-try {
-var sd = gmGet(DATE_KEY, null) || localStorage.getItem(DATE_KEY);
-if (!sd) return;
-var daily = {};
-try { var gmH = gmGet(STORAGE_KEY, null); if (gmH) daily = (typeof gmH === 'string') ? JSON.parse(gmH) : gmH; } catch(e) {}
-if (!Object.keys(daily).length) {
-try { daily = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch(e) {}
-}
-if (!Object.keys(daily).length) return;
-daily = sanitizeHistory(daily);
-if (!Object.keys(daily).length) return;
-var w = loadWeekly(); if (!w[sd]) w[sd] = {};
-for (var a of Object.keys(daily)) {
-var d2 = daily[a];
-if (!w[sd][a] || (d2.totalPkgs||0) > (w[sd][a].totalPkgs||0)) {
-w[sd][a] = { totalPkgs: d2.totalPkgs, totalSec: d2.totalSec, runs: d2.runs,
-avgRate: d2.avgRate, totalMissing: d2.totalMissing||0, totalExpected: d2.totalExpected||0,
-bestRate: Math.max(Number(d2.bestRate)||0, Number(d2.lastRate)||0, Number(d2.avgRate)||0) || null,
-lastRate: Number(d2.lastRate) > 0 ? Number(d2.lastRate) : null,
-lastAt: Number(d2.lastAt) || 0 };
-}
-}
-saveWeekly(w);
-} catch(e) {}
-}
-function cbtHistoryEntryHasData(e) {
-if (!e || typeof e !== 'object') return false;
-return (Number(e.runs) || 0) > 0 ||
-(Number(e.totalPkgs) || 0) > 0 ||
-(Number(e.totalSec) || 0) > 0 ||
-(Number(e.bestRate) || 0) > 0 ||
-(Number(e.lastRate) || 0) > 0 ||
-(Number(e.totalMissing) || 0) > 0 ||
-(Number(e.totalExpected) || 0) > 0;
-}
-function sanitizeHistory(h) {
-var clean = {};
-for (var a in (h || {})) {
-var e = h[a];
-if (!e || typeof e !== 'object') continue;
-if (!cbtHistoryEntryHasData(e)) continue;
-var pkgs = Number(e.totalPkgs) || 0;
-var runs = Number(e.runs) || 0;
-var sec = Number(e.totalSec) || 0;
-if (pkgs > 50000 || runs > 300) continue;
-if (sec > 60 && (pkgs / (sec / 60)) > CBT_MAX_VALID_RATE) continue;
-var c = Object.assign({}, e);
-if (Number(c.bestRate) > CBT_MAX_VALID_RATE) c.bestRate = null;
-if (Number(c.lastRate) > CBT_MAX_VALID_RATE) {
-c.lastRate = null;
-c.lastAt = 0;
-}
-clean[a] = c;
-}
-return clean;
-}
-var _todayBoundaryTimer = null;
-var _lastStoreDay = null;
-function cbtStoreClockParts() {
-try {
-var tz = getStoreTimezone();
-var parts = new Intl.DateTimeFormat('en-US', {
-timeZone: tz,
-hour12: false,
-hour: '2-digit',
-minute: '2-digit',
-second: '2-digit'
-}).formatToParts(new Date());
-var out = { hour: 0, minute: 0, second: 0 };
-for (var i = 0; i < parts.length; i++) {
-if (parts[i].type === 'hour') out.hour = parseInt(parts[i].value, 10) || 0;
-else if (parts[i].type === 'minute') out.minute = parseInt(parts[i].value, 10) || 0;
-else if (parts[i].type === 'second') out.second = parseInt(parts[i].value, 10) || 0;
-}
-if (out.hour === 24) out.hour = 0;
-return out;
-} catch(e) {
-var d = new Date();
-return { hour: d.getHours(), minute: d.getMinutes(), second: d.getSeconds() };
-}
-}
-function cbtResetTodayForNewDay() {
-var currentDay = todayStr();
-var currentWeek = currentWeekStartStr();
-var savedDay = null;
-try { savedDay = gmGet(DATE_KEY, null) || localStorage.getItem(DATE_KEY); } catch(e0) {}
-if (savedDay === currentDay) {
-_lastStoreDay = currentDay;
-try { pruneWeeklyOlderThan(WEEKLY_DAYS); } catch(e1) {}
-return false;
-}
-var savedWeek = savedDay ? cbtWeekStartForDateKey(savedDay) : null;
-var crossedWeek = !!(savedDay && savedWeek && savedWeek !== currentWeek);
-if (savedDay && !crossedWeek) {
-try { rollDailyIntoWeekly(); } catch(e2) {}
-}
-if (crossedWeek) {
-saveWeekly({}, true, currentWeek);
-saveRemoteWeekly({}, currentWeek);
-_dispWeekCache = null;
-} else {
-try { pruneWeeklyOlderThan(WEEKLY_DAYS); } catch(e4) {}
-}
-try { localStorage.removeItem(STORAGE_KEY); } catch(e5) {}
-gmSet(STORAGE_KEY, '{}');
-try {
-localStorage.setItem(DATE_KEY, currentDay);
-localStorage.removeItem(REMOTE_HISTORY_KEY);
-localStorage.setItem(REMOTE_HISTORY_DATE_KEY, currentDay);
-} catch(e6) {}
-gmSet(DATE_KEY, currentDay);
-saveRemoteHistory({}, currentDay);
-_dispHistCache = null;
-_dispWeekCache = null;
-_lastStoreDay = currentDay;
-if (document.getElementById('cbt-hist-tbody')) {
-try { renderHistory(); } catch(e9) {}
-}
-if (document.getElementById('cbt-weekly-tbody')) {
-try { renderWeekly(); } catch(e10) {}
-}
-try { cbtBatchEventsPull(); } catch(e11) {}
-return true;
-}
-function cbtScheduleTodayBoundary() {
-if (_todayBoundaryTimer) {
-try { clearTimeout(_todayBoundaryTimer); } catch(e0) {}
-_todayBoundaryTimer = null;
-}
-var p = cbtStoreClockParts();
-var seconds = (24 * 3600) - (p.hour * 3600 + p.minute * 60 + p.second);
-if (seconds <= 0) seconds = 1;
-var delay = Math.min(seconds * 1000 + 1200, 6 * 3600 * 1000);
-_todayBoundaryTimer = setTimeout(function() {
-_todayBoundaryTimer = null;
-try { cbtResetTodayForNewDay(); } catch(e1) {}
-cbtScheduleTodayBoundary();
-}, delay);
-}
-function cbtStartTodayBoundaryClock() {
-_lastStoreDay = todayStr();
-try { cbtResetTodayForNewDay(); } catch(e0) {}
-cbtScheduleTodayBoundary();
-document.addEventListener('visibilitychange', function() {
-if (document.hidden) return;
-try { cbtResetTodayForNewDay(); } catch(e1) {}
-cbtScheduleTodayBoundary();
-});
-window.addEventListener('focus', function() {
-try { cbtResetTodayForNewDay(); } catch(e2) {}
-cbtScheduleTodayBoundary();
-});
-}
-function saveRemoteHistory(h, dateKey) {
-_dispHistCache = null;
-_dispWeekCache = null;
-var json = JSON.stringify(h || {});
-var dk = dateKey || todayStr();
-gmSet(REMOTE_HISTORY_KEY, json);
-gmSet(REMOTE_HISTORY_DATE_KEY, dk);
-try {
-localStorage.setItem(REMOTE_HISTORY_KEY, json);
-localStorage.setItem(REMOTE_HISTORY_DATE_KEY, dk);
-} catch(e) {}
-}
-function getDisplayHistory() {
-var _now = Date.now();
-if (_dispHistCache && (_now - _dispHistTime) < 1500) return _dispHistCache;
-var out = sanitizeHistory(cbtAggregateBatchEvents(todayStr()));
-_dispHistCache = out; _dispHistTime = _now;
-return out;
-}
-var HOF_MIN_PKGS = 20;
-var HOF_MIN_SEC = 120;
-var HOF_TOP = 30;
-var HOF_SCHEMA = 2;
-var HOF_PEAKS_KEY = 'cbt_hof_v2_peaks';
-var HOF_LATEST_KEY = 'cbt_hof_v2_latest';
-function hofKey(assoc) {
-return String(assoc || '').trim().toLowerCase().replace(/[.$#\[\]\/]/g, '_');
-}
-function hofLoadJson(key) {
-try { var gm = gmGet(key, null); if (gm) return (typeof gm === 'string') ? JSON.parse(gm) : gm; } catch(e) {}
-try { return JSON.parse(localStorage.getItem(key) || '{}'); } catch(e) { return {}; }
-}
-function hofSaveJson(key, obj) {
-var json = JSON.stringify(obj || {});
-gmSet(key, json);
-try { localStorage.setItem(key, json); } catch(e) {}
-}
-function hofLoadPeaks() { return hofLoadJson(HOF_PEAKS_KEY) || {}; }
-function hofSavePeaks(p) { hofSaveJson(HOF_PEAKS_KEY, p); }
-function hofLoadLatest() { return hofLoadJson(HOF_LATEST_KEY) || {}; }
-function hofSaveLatest(p) { hofSaveJson(HOF_LATEST_KEY, p); }
-function hofWhen(ts) {
-if (!ts) return '\u2014';
-try {
-var d = new Date(ts);
-if (isNaN(d.getTime())) return '\u2014';
-return d.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' });
-} catch(e) { return '\u2014'; }
-}
-function renderHallOfFame() {
-var tbody = document.getElementById('cbt-hof-tbody');
-if (!tbody) return;
-var emptyEl = document.getElementById('cbt-hof-empty');
-var noteEl = document.getElementById('cbt-hof-note');
-var eventStats = cbtEventFastestStats();
-var peaks = eventStats.peaks;
-var latest = eventStats.latest;
-var own = eventStats.totals;
-var remote = {};
-var allKeys = Object.create(null);
-for (var pk in peaks) allKeys[pk] = true;
-for (var lk0 in latest) allKeys[lk0] = true;
-var rows = [];
-for (var k in allKeys) {
-var p = peaks[k] || null;
-var l = latest[k] || null;
-var o = own[k] || {}, r = remote[k] || {};
-var peakRate =
-p && Number(p.schema) === HOF_SCHEMA &&
-Number(p.rate) > 0 && Number(p.rate) <= CBT_MAX_VALID_RATE &&
-Number(p.pkgs) >= HOF_MIN_PKGS && Number(p.elapsedSec) >= HOF_MIN_SEC
-? Number(p.rate) : null;
-var latestRate =
-l && Number(l.schema) === HOF_SCHEMA &&
-Number(l.rate) > 0 && Number(l.rate) <= CBT_MAX_VALID_RATE &&
-Number(l.pkgs) > 0 && Number(l.elapsedSec) >= 30
-? Number(l.rate) : null;
-if (!(peakRate > 0) && !(latestRate > 0)) continue;
-rows.push({
-key: k,
-assoc: (p && p.assoc) || (l && l.assoc) || o.assoc || r.assoc || k,
-rate: peakRate,
-at: p && p.at ? p.at : (l && l.at ? l.at : null),
-latestRate: latestRate,
-latestAt: l && l.at ? l.at : null,
-runs: (o.runs || 0) + (r.runs || 0),
-pkgs: (o.pkgs || 0) + (r.pkgs || 0)
-});
-}
-rows.sort(function(a, b){
-var ap = Number(a.rate) > 0, bp = Number(b.rate) > 0;
-if (ap && !bp) return -1;
-if (!ap && bp) return 1;
-if (ap && bp) {
-if (b.rate !== a.rate) return b.rate - a.rate;
-if (b.pkgs !== a.pkgs) return b.pkgs - a.pkgs;
-} else {
-var ad = Number(a.latestAt) || 0, bd = Number(b.latestAt) || 0;
-if (bd !== ad) return bd - ad;
-}
-return a.assoc.toLowerCase().localeCompare(b.assoc.toLowerCase());
-});
-var total = rows.length;
-var peakRank = 0;
-for (var ri = 0; ri < rows.length; ri++) {
-rows[ri].rank = Number(rows[ri].rate) > 0 ? (++peakRank) : null;
-}
-var hofTerm = (hofSearchTerm || '').toLowerCase().trim();
-if (hofTerm) {
-var seenKey = Object.create(null), extraByKey = Object.create(null);
-for (var rk2 = 0; rk2 < rows.length; rk2++) seenKey[rows[rk2].key] = true;
-function addSearchOnly(key, assoc, runs, pkgs, priority) {
-key = key || hofKey(assoc || '');
-if (!key || seenKey[key]) return;
-var cur = extraByKey[key];
-if (!cur) {
-var lr = latest[key] || null;
-cur = extraByKey[key] = {
-key:key, assoc:assoc||key, rate:null, at:null, rank:null,
-latestRate:lr && Number(lr.schema)===HOF_SCHEMA &&
-Number(lr.rate)>0 && Number(lr.rate)<=CBT_MAX_VALID_RATE &&
-Number(lr.pkgs)>0 && Number(lr.elapsedSec)>=30 ? Number(lr.rate) : null,
-latestAt:lr && lr.at ? lr.at : null,
-runs:0, pkgs:0, _priority:-1
-};
-}
-if (assoc) cur.assoc = assoc;
-if (priority > cur._priority) {
-cur._priority = priority;
-cur.runs = Number(runs) || 0;
-cur.pkgs = Number(pkgs) || 0;
-}
-}
-var totalKeys = Object.create(null), kk;
-for (kk in own) totalKeys[kk] = true;
-for (kk in remote) totalKeys[kk] = true;
-for (kk in totalKeys) {
-var oo = own[kk] || {}, rr = remote[kk] || {};
-addSearchOnly(kk, oo.assoc || rr.assoc || kk,
-(oo.runs || 0) + (rr.runs || 0),
-(oo.pkgs || 0) + (rr.pkgs || 0), 3);
-}
-var weeklySearchData = getDisplayWeekly(), weeklyAgg = Object.create(null);
-for (var wday in weeklySearchData) {
-for (var wa in weeklySearchData[wday]) {
-var wd = weeklySearchData[wday][wa] || {};
-var wk = hofKey(wa);
-if (!wk) continue;
-if (!weeklyAgg[wk]) weeklyAgg[wk] = { assoc:wa, runs:0, pkgs:0 };
-weeklyAgg[wk].runs += Number(wd.runs) || 0;
-weeklyAgg[wk].pkgs += Number(wd.totalPkgs) || 0;
-}
-}
-for (kk in weeklyAgg) addSearchOnly(kk, weeklyAgg[kk].assoc, weeklyAgg[kk].runs, weeklyAgg[kk].pkgs, 2);
-var todaySearchData = getDisplayHistory();
-for (kk in todaySearchData) {
-var td = todaySearchData[kk] || {};
-addSearchOnly(hofKey(td.assoc || kk), td.assoc || kk, td.runs, td.totalPkgs, 1);
-}
-var savedRoster = loadAllNames();
-for (var sk in savedRoster) {
-var sn = savedRoster[sk];
-if (String(sn || '').toLowerCase().indexOf(hofTerm) !== -1) addSearchOnly(hofKey(sn), sn, 0, 0, 0);
-}
-var extra = Object.keys(extraByKey).map(function(kx){ return extraByKey[kx]; });
-rows = rows.concat(extra).filter(function(x){
-return (x.assoc || '').toLowerCase().indexOf(hofTerm) !== -1;
-});
-rows = prioritizeNameMatches(rows, hofTerm, function(x){ return x.assoc; });
-}
-rows = rows.slice(0, HOF_TOP);
-if (!rows.length) {
-setHTML(tbody, '');
-if (emptyEl) {
-emptyEl.style.display = 'block';
-emptyEl.textContent = hofTerm
-? ('No records match "' + hofSearchTerm + '"')
-: 'No records yet.';
-}
-if (noteEl) noteEl.textContent = '';
-requestUnifiedSearchCount();
-return;
-}
-if (emptyEl) emptyEl.style.display = 'none';
-var html = '';
-for (var i = 0; i < rows.length; i++) {
-var e = rows[i];
-var rk = (typeof e.rank === 'number') ? e.rank : null;
-var rankTxt = rk ? rk : '\u2013';
-var rankCls = rk === 1 ? 'gold' : rk === 2 ? 'silver' : rk === 3 ? 'bronze' : '';
-var rowCls = (rk && rk <= 3) ? (' class="cbt-hof-' + rk + '"') : '';
-html += '<tr' + rowCls + '>' +
-'<td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-assoc">' +
-'<span class="cbt-rank ' + rankCls + '">' + rankTxt + '</span>' + cbtEscHtml(e.assoc) +
-'</span></span></span></td>' +
-'<td><span class="cbt-hist-meta">' + e.runs + '</span></td>' +
-'<td><span class="cbt-hist-meta">' + e.pkgs + '</span></td>' +
-'<td>' + (typeof e.rate === 'number'
-? ('<span class="cbt-hof-peak">' + e.rate.toFixed(1) + '</span>')
-: '<span class="cbt-hist-meta">\u2014</span>') + '</td>' +
-'<td>' + (Number(e.latestRate) > 0
-? ('<span class="cbt-hist-rate ' +
-(Number(e.latestRate)>=WARN_RATE?'good':Number(e.latestRate)>=ALERT_RATE?'warn':'alert') +
-'">' + Number(e.latestRate).toFixed(1) + '</span>')
-: '<span class="cbt-hist-meta">\u2014</span>') + '</td>' +
-'<td><span class="cbt-hof-when">' + hofWhen(e.at) + '</span></td>' +
-'</tr>';
-}
-setHTML(tbody, html);
-requestUnifiedSearchCount();
-}
-function legacyCopy(text) {
-try {
-var ta = document.createElement('textarea');
-ta.value = text;
-ta.setAttribute('readonly', '');
-ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;';
-document.body.appendChild(ta);
-ta.select();
-ta.setSelectionRange(0, ta.value.length);
-var done = document.execCommand('copy');
-document.body.removeChild(ta);
-return done;
-} catch(e) { return false; }
-}
-function copyWithFeedback(el, text, ev) {
-if (!text) return;
-function confirmed() {
-document.querySelectorAll('.cbt-copied-tag').forEach(function(t){ if (t.parentNode) t.parentNode.removeChild(t); });
-document.querySelectorAll('.cbt-copied-name').forEach(function(n){ n.classList.remove('cbt-copied-name'); });
-if (!el) return;
-el.classList.add('cbt-copied-name');
-var tag = document.createElement('span');
-tag.className = 'cbt-copied-tag';
-tag.textContent = 'Copied';
-el.appendChild(tag);
-clearTimeout(el._cbtCopyTimer);
-el._cbtCopyTimer = setTimeout(function(){
-el.classList.remove('cbt-copied-name');
-if (tag.parentNode) tag.parentNode.removeChild(tag);
-}, 1400);
-}
-try {
-if (navigator.clipboard && navigator.clipboard.writeText) {
-navigator.clipboard.writeText(text).then(confirmed, function(){
-if (legacyCopy(text)) confirmed();
-});
-} else if (legacyCopy(text)) confirmed();
-} catch(e) {
-if (legacyCopy(text)) confirmed();
-}
-}
-function setHTML(el, html) {
-if (el && el._cbtLastHTML !== html) { el._cbtLastHTML = html; el.innerHTML = html; }
-}
-function cbtObservedProgressRate(data, nowMs) {
-if (!data || data.shortClientRef == null) return null;
-var ref = String(data.shortClientRef);
-var generation = cbtTaskGeneration(data);
-var pkgs = Number(data.packagesBatched);
-if (!isFinite(pkgs) || pkgs < 0) return null;
-nowMs = Number(nowMs) || cbtNowMs();
-var cur = _cbtObservedProgressByRef[ref];
-if (!cur || (generation && cur.generation && generation !== cur.generation) ||
-pkgs < cur.lastPkgs) {
-cur = _cbtObservedProgressByRef[ref] = {
-generation: generation,
-basePkgs: pkgs,
-baseAt: nowMs,
-lastPkgs: pkgs,
-lastAt: nowMs
-};
-return null;
-}
-if (!cur.generation && generation) cur.generation = generation;
-if (pkgs > cur.lastPkgs) {
-cur.lastPkgs = pkgs;
-cur.lastAt = nowMs;
-}
-var elapsedMs = nowMs - cur.baseAt;
-var deltaPkgs = pkgs - cur.basePkgs;
-if (elapsedMs < CBT_OBS_RATE_MIN_WINDOW_MS || deltaPkgs <= 0) return null;
-var rate = deltaPkgs / (elapsedMs / 60000);
-if (!(rate > 0) || !isFinite(rate) || rate > CBT_MAX_VALID_RATE) return null;
-return rate;
-}
-function computeRow(data, forceFinished) {
-var inProg = forceFinished ? false : cbtIsLiveBatch(data);
-var info = cbtBatchingOpInfo(data, inProg);
-if (!info && !inProg) info = cbtBatchingOpInfo(data, false);
-var startMs = cbtStableLiveStartMs(data, inProg);
-var endMs = info && info.endMs ? info.endMs : null;
-var batchedN = Number(data.packagesBatched) || 0;
-var nowMs = cbtNowMs();
-var clockMs = (!inProg && endMs && startMs && endMs >= startMs) ? endMs : nowMs;
-var elapsedSec = startMs ? Math.max(0, (clockMs - startMs) / 1000) : null;
-var fullRate = (batchedN > 0 && elapsedSec > 30)
-? batchedN / (elapsedSec / 60)
-: null;
-var scanRate = null;
-var rateSource = 'pending';
-if (fullRate != null && isFinite(fullRate) && fullRate > 0 &&
-fullRate <= CBT_MAX_VALID_RATE) {
-scanRate = fullRate;
-rateSource = 'api-full-span';
-} else if (inProg) {
-var observedRate = cbtObservedProgressRate(data, nowMs);
-if (observedRate != null) {
-scanRate = observedRate;
-rateSource = 'observed-delta';
-} else if (fullRate != null && fullRate > CBT_MAX_VALID_RATE) {
-rateSource = 'invalid-api-span';
-}
-} else if (fullRate != null && fullRate > CBT_MAX_VALID_RATE) {
-rateSource = 'invalid-api-span';
-}
-return {
-startMs: startMs,
-endMs: endMs,
-elapsedSec: elapsedSec,
-scanRate: scanRate,
-fullRate: fullRate,
-rateSource: rateSource,
-inProgress: inProg
-};
-}
-function ensureActiveAssociateInToday(data) {
-if (!data || !cbtIsLiveBatch(data)) return false;
-return captureName(data);
-}
-function recordCompletedBatch(data, elapsedSec, startMs, endMs, qualityOverride) {
-if (!data) return;
-var assoc = cbtAssociateLogin(data);
-if (!assoc) return;
-var pkgs = Math.floor(Number(data.packagesBatched) || 0);
-if (pkgs === 0 || !elapsedSec || elapsedSec < 30) return;
-var rate = pkgs / (elapsedSec / 60);
-if (!(rate > 0) || !isFinite(rate) || rate > CBT_MAX_VALID_RATE) return;
-var eventId = cbtBatchEventId(data, startMs);
-if (!eventId) return;
-var expected = Number(data.totalExpectedPackages) || 0;
-var collected = Number(data.packagesCollected) || Number(data.packagesBatched) || 0;
-var missing = expected > collected ? expected - collected : 0;
-var completedAt = cbtBatchEventCompletionMs(data, startMs, endMs, elapsedSec);
-var observedAt = (typeof cbtNowMs === 'function') ? cbtNowMs() : Date.now();
-var event = cbtSanitizeBatchEvent({
-schema:CBT_BATCH_EVENT_SCHEMA,eventId:eventId,storeId:CBT_HISTORY_STORE_SCOPE,
-assoc:assoc,ref:String(data.shortClientRef || ''),generation:cbtTaskGeneration(data),
-startMs:Number(startMs)||0,completedAt:completedAt,observedAt:observedAt,pkgs:pkgs,elapsedSec:Number(elapsedSec),
-expected:expected,missing:missing,quality:Math.max(1, Number(qualityOverride) || (Number(endMs)>0?3:1))
-}, eventId);
-if (!event) return;
-captureName(data);
-var changed = cbtSaveLocalBatchEvent(event);
-if (changed) cbtPushBatchEvent(event);
-}
-function cbtLiveVisibleSignature(data) {
-if (!data || typeof data !== 'object') return '';
-var op = null;
-try { op = cbtBatchingOpInfo(data, false); } catch(e0) { op = null; }
-return [
-cbtTaskGeneration(data) || '',
-cbtAssociateLogin(data) || '',
-String(data.state || ''),
-String(data.operationState || ''),
-String(Number(data.packagesBatched) || 0),
-String(Number(data.packagesCollected) || 0),
-String(Number(data.totalExpectedPackages) || 0),
-op && op.startMs ? String(op.startMs) : '',
-op && op.endMs ? String(op.endMs) : '',
-op && op.state ? String(op.state) : ''
-].join('|');
-}
-function cbtCaptureTopLevelNamesAndJobs(d) {
-if (!d) return false;
-var added = false;
-function one(obj) {
-if (!obj || typeof obj !== 'object') return;
-try { if (captureName(obj)) added = true; } catch(e0) {}
-try { afaRecordJobObject(obj); } catch(e1) {}
-}
-if (Array.isArray(d)) {
-for (var i = 0; i < d.length && i < 5000; i++) one(d[i]);
-} else if (typeof d === 'object') {
-one(d);
-var keys = ['summaries','tasks','results','items','jobs','data'];
-for (var k = 0; k < keys.length; k++) {
-var arr = d[keys[k]];
-if (!Array.isArray(arr)) continue;
-for (var j = 0; j < arr.length && j < 5000; j++) one(arr[j]);
-}
-}
-return added;
-}
-function ingestItem(item, authoritative) {
-if (!item || typeof item !== 'object' || item.shortClientRef == null) return false;
-var ref = String(item.shortClientRef);
-var incoming = Object.assign({}, item, { shortClientRef: ref });
-var existing = taskCache.get(ref);
-var incomingGen = cbtTaskGeneration(incoming);
-var existingGen = existing ? cbtTaskGeneration(existing) : '';
-if (existing && incomingGen && existingGen && incomingGen !== existingGen) {
-taskCache.delete(ref);
-cbtForgetLiveStart(ref);
-existing = null;
-}
-var incomingLive = cbtIsLiveBatch(incoming);
-if (authoritative && incomingLive) cbtObserveAuthoritativeLive(incoming);
-if (existing) {
-var oldB = Number(existing.packagesBatched) || 0, newB = Number(incoming.packagesBatched) || 0;
-var oldC = Number(existing.packagesCollected) || 0, newC = Number(incoming.packagesCollected) || 0;
-if (newB < oldB || newC < oldC) {
-if (newB < oldB) incoming.packagesBatched = oldB;
-if (newC < oldC) incoming.packagesCollected = oldC;
-}
-}
-if (existing && cbtIsLiveBatch(existing) && incoming.state !== undefined &&
-String(incoming.state).toUpperCase() !== 'BATCHING') {
-var mergedDone = Object.assign({}, existing, incoming);
-mergedDone.packagesBatched = Math.max(Number(existing.packagesBatched)||0, Number(incoming.packagesBatched)||0);
-mergedDone.packagesCollected = Math.max(Number(existing.packagesCollected)||0, Number(incoming.packagesCollected)||0);
-var finalAssoc = cbtAssociateLogin(incoming) || cbtAssociateLogin(mergedDone);
-if (finalAssoc) mergedDone.associateId = finalAssoc;
-var finishedRow = computeRow(mergedDone, true);
-recordCompletedBatch(mergedDone, finishedRow.elapsedSec, finishedRow.startMs, finishedRow.endMs);
-taskCache.delete(ref);
-cbtForgetLiveStart(ref);
-return true;
-}
-if (!incomingLive) return false;
-var oldVisibleSig = existing ? cbtLiveVisibleSignature(existing) : '';
-var merged = existing ? Object.assign({}, existing, incoming) : incoming;
-if (existing && (!Array.isArray(incoming.operationDetails) || !incoming.operationDetails.length) &&
-Array.isArray(existing.operationDetails) && existing.operationDetails.length) {
-merged.operationDetails = existing.operationDetails;
-}
-merged.packagesBatched = Math.max(Number(existing && existing.packagesBatched)||0, Number(incoming.packagesBatched)||0);
-merged.packagesCollected = Math.max(Number(existing && existing.packagesCollected)||0, Number(incoming.packagesCollected)||0);
-var liveAssoc = cbtAssociateLogin(incoming) || cbtAssociateLogin(merged);
-if (liveAssoc) merged.associateId = liveAssoc;
-try { ensureActiveAssociateInToday(merged); } catch(e) {}
-try { afaRecordJobObject(merged); } catch(eJob) {}
-taskCache.set(ref, merged);
-return !existing || oldVisibleSig !== cbtLiveVisibleSignature(merged);
-}
-function cbtCaptureNamesAndJobs(obj, depth) {
-if (obj == null || depth > 6) return false;
-var added = false;
-if (Array.isArray(obj)) {
-for (var i = 0; i < obj.length && i < 5000; i++) {
-if (cbtCaptureNamesAndJobs(obj[i], depth + 1)) added = true;
-}
-return added;
-}
-if (typeof obj !== 'object') return false;
-try { if (captureName(obj)) added = true; } catch(eName) {}
-try { afaRecordJobObject(obj); } catch(eJob) {}
-for (var k in obj) {
-var v = obj[k];
-if (v && typeof v === 'object' && cbtCaptureNamesAndJobs(v, depth + 1)) added = true;
-}
-return added;
-}
-function ingestData(d, authoritative, shallowCapture) {
-if (!d) return;
-var changed = false;
-try {
-var namesChanged = shallowCapture
-? cbtCaptureTopLevelNamesAndJobs(d)
-: cbtCaptureNamesAndJobs(d, 0);
-if (namesChanged && activeTab === 'names') renderNames();
-} catch(e) {}
-function take(i) { if (ingestItem(i, !!authoritative)) changed = true; }
-if (Array.isArray(d)) {
-d.forEach(take);
-} else if (d.shortClientRef != null) {
-take(d);
-} else {
-['summaries','tasks','results','items','jobs','data'].forEach(function(k) {
-if (Array.isArray(d[k])) d[k].forEach(take);
-});
-}
-if (changed && !authoritative) requestLiveRender();
-return changed;
-}
-var CBT_PASSIVE_JSON_RE = /\"shortClientRef\"\s*:/i;
-// Keep passive interception focused on the two core dashboard feeds and concrete
-// job/task/assignment endpoints. Broad words such as "operation" or "associate"
-// matched unrelated Amazon JSON and forced response.clone().text() work for data
-// this userscript never used.
-var CBT_PASSIVE_URL_RE = /(?:activeJobsWithSiteSummary|activeJobSummary|jobdetails|\/api\/store\/[^/?#]+\/job(?:\/|\?|$)|\/tasks?(?:\/|\?|$)|\/assignments?(?:\/|\?|$)|\/batch(?:ing|es)?(?:\/|\?|$))/i;
-function cbtPassiveUrlMayMatter(url) {
-return CBT_PASSIVE_URL_RE.test(String(url || ''));
-}
-function cbtPassiveJsonMayMatter(raw) {
-return typeof raw === 'string' && CBT_PASSIVE_JSON_RE.test(raw);
-}
-var _cbtLastCoreLiveRaw = '';
-var _cbtLastCoreStatsRaw = '';
-var _cbtLastCoreLiveCacheSize = -1;
-var _cbtLastCoreStatsDomVersion = -1;
-// Core responses are applied after a short idle handoff. Sequence guards ensure
-// an older response can never overwrite a newer response that arrived later.
-var _cbtCoreLiveSeq = 0, _cbtCoreLiveAppliedSeq = 0;
-var _cbtCoreStatsSeq = 0, _cbtCoreStatsAppliedSeq = 0;
-function cbtTouchCachedLiveSeen() {
-var now = cbtNowMs();
-taskCache.forEach(function(data, ref){
-if (!cbtIsLiveBatch(data)) return;
-ref = String(ref);
-_cbtMissingPollsByRef[ref] = 0;
-var locked = _cbtLiveStartByRef[ref];
-if (locked) { locked.lastSeen = now; locked.missingSince = 0; }
-});
-}
+  /* Same idea, but scheduled for the next animation frame instead of a
+     timer. Used where a delay would be SEEN: the Time Left column is
+     destroyed by the page's own re-render, and anything slower than a frame
+     shows up as the value blinking out and back. */
+  function coalescedFrame(fn) {
+    var pending = false;
+    var raf = (typeof requestAnimationFrame === 'function')
+      ? requestAnimationFrame
+      : function (cb) { return setTimeout(cb, 16); };
+    return function () {
+      if (pending) return;
+      pending = true;
+      raf(function () {
+        pending = false;
+        try { fn(); } catch (e) {}
+      });
+    };
+  }
 
-// v23.9.217: apply one authoritative Live payload regardless of whether it came
-// from Amazon's own request or our fallback request. This prevents the old
-// duplicate fetch + duplicate parse + duplicate ingest cycle.
-function cbtApplyAuthoritativeLivePayload(freshData) {
-if (!freshData) return false;
-var changed = false;
-_cbtBackendLastOk = Date.now();
-var activeRefs = new Set();
-var items = Array.isArray(freshData) ? freshData.slice() : [];
-['summaries','tasks','results','items','jobs','data'].forEach(function(k) {
-if (freshData && Array.isArray(freshData[k])) items = items.concat(freshData[k]);
-});
-var bestByRef = Object.create(null);
-items.forEach(function(d) {
-if (!d || d.shortClientRef == null || !cbtIsLiveBatch(d)) return;
-var ref = String(d.shortClientRef);
-activeRefs.add(ref);
-var info = cbtBatchingOpInfo(d, true);
-var score = info && info.startMs ? info.startMs : -1;
-var prev = bestByRef[ref];
-if (!prev || score > prev.score) bestByRef[ref] = { data:d, score:score };
-});
-Object.keys(bestByRef).forEach(function(ref) {
-cbtObserveAuthoritativeLive(bestByRef[ref].data);
-});
-activeRefs.forEach(function(ref) {
-_cbtMissingPollsByRef[ref] = 0;
-try { _cbtWarmLiveRefs.delete(String(ref)); } catch(eWarmSeen) {}
-var locked = _cbtLiveStartByRef[ref];
-if (locked) {
-locked.lastSeen = cbtNowMs();
-locked.missingSince = 0;
-}
-});
-taskCache.forEach(function(val, key) {
-key = String(key);
-if (activeRefs.has(key)) {
-_cbtMissingPollsByRef[key] = 0;
-return;
-}
-if (_cbtWarmLiveRefs.has(key)) {
-_cbtWarmLiveRefs.delete(key);
-taskCache.delete(key);
-changed = true;
-try { delete _cbtMissingPollsByRef[key]; } catch(eWarmMiss) {}
-cbtForgetLiveStart(key);
-return;
-}
-cbtMarkLiveMissing(key);
-var misses = (_cbtMissingPollsByRef[key] || 0) + 1;
-_cbtMissingPollsByRef[key] = misses;
-if (misses >= CBT_MISSING_POLL_GRACE) {
-var lockedGone = _cbtLiveStartByRef[key] ? Object.assign({}, _cbtLiveStartByRef[key]) : null;
-try { cbtFinalizeMissingLiveTask(key, val, lockedGone); } catch(eFinalize) {}
-taskCache.delete(key);
-changed = true;
-delete _cbtMissingPollsByRef[key];
-cbtForgetLiveStart(key);
-}
-});
-try { if (ingestData(freshData, true, true)) changed = true; } catch(eIngest) {}
-try { cbtLiveWarmSave(bestByRef); } catch(eWarmSave) {}
-cbtPruneOldLiveStarts();
-if (isDashboardView() && _cbtLiveDashboardSyncPending) {
-try {
-if (cbtRecMainTasksSnapshot()) _cbtLiveDashboardSyncPending = false;
-} catch(eReturnSync) {}
-}
-try { cbtMaybeReloadStaleLive(); } catch(eStaleLive) {}
-if (changed) requestLiveRender();
-_cbtLastCoreLiveCacheSize = taskCache.size;
-return changed;
-}
-function cbtApplyPassiveStatsPayload(data) {
-if (!Array.isArray(data)) return false;
-_cbtPassiveStatsLastAt = Date.now();
-_cbtLastCoreStatsDomVersion = _cbtRelevantDomVersion;
-_statsLastSummaryData = data;
-if (cbtIsActivelyScrolling()) {
-cbtRunAfterScroll('stats-passive-apply', function(){
-try { cbtApplyStatsData(_statsLastSummaryData || []); } catch(eStatsApply) {}
-});
-} else {
-try { cbtApplyStatsData(data); } catch(eStatsApply2) {}
-}
-return true;
-}
-var _origFetch = window.fetch;
-window.fetch = async function() {
-var resp;
-var reqUrl = '';
-try {
-var req0 = arguments[0];
-reqUrl = String(req0 && req0.url ? req0.url : (req0 || ''));
-} catch(eUrl) {}
-try { resp = await _origFetch.apply(this, arguments); }
-catch(e) { throw e; }
-try {
-var inspectUrl = cbtPassiveUrlMayMatter(reqUrl);
-if (inspectUrl && (resp.headers.get('content-type') || '').includes('json')) {
-resp.clone().text().then(function(raw){
-var isCoreLive = /activeJobsWithSiteSummary/i.test(reqUrl);
-var isCoreStats = /activeJobSummary/i.test(reqUrl);
-var isCore = isCoreLive || isCoreStats;
-if (!raw || (!isCore && !cbtPassiveJsonMayMatter(raw))) return;
-if (isCoreLive && raw === _cbtLastCoreLiveRaw && taskCache.size === _cbtLastCoreLiveCacheSize) {
-_cbtPassiveLiveLastAt = Date.now();
-_cbtBackendLastOk = Date.now();
-cbtTouchCachedLiveSeen();
-return;
-}
-if (isCoreStats && raw === _cbtLastCoreStatsRaw && _cbtLastCoreStatsDomVersion === _cbtRelevantDomVersion) {
-_cbtPassiveStatsLastAt = Date.now();
-return;
-}
-if (isCoreLive) _cbtLastCoreLiveRaw = raw;
-if (isCoreStats) _cbtLastCoreStatsRaw = raw;
-var coreSeq = isCoreLive ? (++_cbtCoreLiveSeq) : (isCoreStats ? (++_cbtCoreStatsSeq) : 0);
-var apply = function(){
-try {
-if (isCoreLive) {
-if (coreSeq < _cbtCoreLiveAppliedSeq) return;
-_cbtCoreLiveAppliedSeq = coreSeq;
-}
-if (isCoreStats) {
-if (coreSeq < _cbtCoreStatsAppliedSeq) return;
-_cbtCoreStatsAppliedSeq = coreSeq;
-}
-var parsed = JSON.parse(raw);
-if (isCoreLive) {
-_cbtPassiveLiveLastAt = Date.now();
-cbtApplyAuthoritativeLivePayload(parsed);
-return;
-}
-if (isCoreStats) {
-cbtApplyPassiveStatsPayload(parsed);
-try {
-if (cbtCaptureTopLevelNamesAndJobs(parsed) && activeTab === 'names') renderNames();
-} catch(eNames) {}
-return;
-}
-ingestData(parsed);
-} catch(e2) {}
-};
-if (isCore) {
-// Do not compete with Amazon's own DOM render in the same animation frame.
-// A short idle handoff keeps data fresh while avoiding periodic frame hitches.
-cbtIdle(apply, 120);
-} else {
-cbtIdle(apply, 700);
-}
-}).catch(function(){});
-}
-} catch(e3) {}
-return resp;
-};
-var _xhrOpen = XMLHttpRequest.prototype.open, _xhrSend = XMLHttpRequest.prototype.send;
-XMLHttpRequest.prototype.open = function(m, url) {
-this._cbtUrl = url;
-return _xhrOpen.apply(this, arguments);
-};
-XMLHttpRequest.prototype.send = function() {
-if (!cbtPassiveUrlMayMatter(this._cbtUrl)) return _xhrSend.apply(this, arguments);
-this.addEventListener('loadend', function(){
-var xhr = this;
-try {
-if (!(xhr.getResponseHeader('content-type') || '').includes('json')) return;
-var payload;
-try {
-payload = xhr.responseType === 'json' ? xhr.response : xhr.responseText;
-} catch(e0) { return; }
-var xhrUrl = String(xhr._cbtUrl || '');
-var isCoreLive = /activeJobsWithSiteSummary/i.test(xhrUrl);
-var isCoreStats = /activeJobSummary/i.test(xhrUrl);
-var isCore = isCoreLive || isCoreStats;
-if (typeof payload === 'string' && !isCore && !cbtPassiveJsonMayMatter(payload)) return;
-if (typeof payload === 'string' && isCoreLive && payload === _cbtLastCoreLiveRaw && taskCache.size === _cbtLastCoreLiveCacheSize) {
-_cbtPassiveLiveLastAt = Date.now();
-_cbtBackendLastOk = Date.now();
-cbtTouchCachedLiveSeen();
-return;
-}
-if (typeof payload === 'string' && isCoreStats && payload === _cbtLastCoreStatsRaw && _cbtLastCoreStatsDomVersion === _cbtRelevantDomVersion) {
-_cbtPassiveStatsLastAt = Date.now();
-return;
-}
-if (typeof payload === 'string' && isCoreLive) _cbtLastCoreLiveRaw = payload;
-if (typeof payload === 'string' && isCoreStats) _cbtLastCoreStatsRaw = payload;
-var coreSeq = isCoreLive ? (++_cbtCoreLiveSeq) : (isCoreStats ? (++_cbtCoreStatsSeq) : 0);
-var applyXhrLive = function(){
-try {
-if (isCoreLive) {
-if (coreSeq < _cbtCoreLiveAppliedSeq) return;
-_cbtCoreLiveAppliedSeq = coreSeq;
-}
-if (isCoreStats) {
-if (coreSeq < _cbtCoreStatsAppliedSeq) return;
-_cbtCoreStatsAppliedSeq = coreSeq;
-}
-var d = (typeof payload === 'string') ? JSON.parse(payload) : payload;
-if (!d) return;
-if (isCoreLive) {
-_cbtPassiveLiveLastAt = Date.now();
-cbtApplyAuthoritativeLivePayload(d);
-return;
-}
-if (isCoreStats) {
-cbtApplyPassiveStatsPayload(d);
-try {
-if (cbtCaptureTopLevelNamesAndJobs(d) && activeTab === 'names') renderNames();
-} catch(eNamesXhr) {}
-return;
-}
-ingestData(d);
-} catch(e1) {}
-};
-if (isCore) {
-cbtIdle(applyXhrLive, 120);
-} else {
-cbtIdle(applyXhrLive, 700);
-}
-} catch(e2) {}
-}, { once:true });
-return _xhrSend.apply(this, arguments);
-};
-function cbtLiveCachedCount() {
-var count = 0;
-taskCache.forEach(function(d){
-if (cbtIsLiveBatch(d)) count++;
-});
-return count;
-}
-function cbtStaleLiveReloadKey() {
-return 'cbt_stale_live_reload_' + String(STORE_ID || 'unknown');
-}
-function cbtMaybeReloadStaleLive() {
-if (document.hidden || !isDashboardView()) {
-_cbtStaleLiveZeroTaskPolls = 0;
-return;
-}
-var mainTasks = null;
-try { mainTasks = cbtRecMainTasksSnapshot(); } catch(e) {}
-if (!mainTasks || mainTasks.count !== 0 || cbtLiveCachedCount() === 0) {
-_cbtStaleLiveZeroTaskPolls = 0;
-return;
-}
-_cbtStaleLiveZeroTaskPolls++;
-if (_cbtStaleLiveZeroTaskPolls < CBT_STALE_LIVE_RELOAD_POLLS) return;
-_cbtStaleLiveZeroTaskPolls = 0;
-var now = Date.now();
-var last = 0;
-try { last = Number(sessionStorage.getItem(cbtStaleLiveReloadKey()) || 0); }
-catch(e2) {}
-if (last && (now - last) < CBT_STALE_LIVE_RELOAD_COOLDOWN_MS) {
-taskCache.forEach(function(d, key){
-if (cbtIsLiveBatch(d)) {
-taskCache.delete(key);
-cbtForgetLiveStart(String(key));
-try { delete _cbtMissingPollsByRef[String(key)]; } catch(e3) {}
-}
-});
-requestLiveRender();
-return;
-}
-try { sessionStorage.setItem(cbtStaleLiveReloadKey(), String(now)); }
-catch(e4) {}
-location.reload();
-}
-var _cbtMissingFinalizeByKey = Object.create(null);
-function cbtJobIdFromData(data) {
-if (!data || typeof data !== 'object') return '';
-var fields = ['jobId','jobID','taskId','taskID','jobUuid','jobUUID','taskUuid','taskUUID'];
-for (var i = 0; i < fields.length; i++) {
-if (data[fields[i]] != null && String(data[fields[i]]).trim()) return String(data[fields[i]]).trim();
-}
-var gen = cbtTaskGeneration(data);
-return /^job:/.test(gen) ? gen.slice(4) : '';
-}
-function cbtFinalizeMissingLiveTask(ref, cached, locked) {
-cached = Object.assign({}, cached || {});
-locked = Object.assign({}, locked || {});
-var identity = cbtBatchEventId(cached, locked.startMs || 0) || (String(ref) + '|' + String(cbtTaskGeneration(cached) || ''));
-if (!identity || _cbtMissingFinalizeByKey[identity]) return;
-_cbtMissingFinalizeByKey[identity] = { tries:0, started:Date.now() };
-var jobId = cbtJobIdFromData(cached);
-function finishRecord(merged, quality, explicitEnd) {
-var liveAgain = taskCache.get(String(ref));
-if (liveAgain && cbtIsLiveBatch(liveAgain) && cbtTaskGeneration(liveAgain) === cbtTaskGeneration(cached)) {
-delete _cbtMissingFinalizeByKey[identity];
-return;
-}
-var startMs = Number(locked.startMs) || (cbtBatchingOpInfo(merged, false) || {}).startMs || 0;
-if (!startMs) { delete _cbtMissingFinalizeByKey[identity]; return; }
-var info = cbtBatchingOpInfo(merged, false) || {};
-var endMs = Number(explicitEnd || info.endMs) || 0;
-if (!endMs) {
-endMs = Math.max(startMs + 30000, Number(locked.lastSeen) + POLL_MS || 0);
-}
-var elapsedSec = Math.max(30, Math.floor((endMs - startMs) / 1000));
-recordCompletedBatch(merged, elapsedSec, startMs, endMs, quality);
-delete _cbtMissingFinalizeByKey[identity];
-}
-function attempt() {
-var stateRow = _cbtMissingFinalizeByKey[identity];
-if (!stateRow) return;
-stateRow.tries++;
-if (!jobId) {
-if (stateRow.tries >= 3) delete _cbtMissingFinalizeByKey[identity];
-else setTimeout(attempt, POLL_MS);
-return;
-}
-afaFetchJobInfo(jobId).then(function(info){
-if (!_cbtMissingFinalizeByKey[identity]) return;
-if (info) {
-var state = String(cbtAssignOperationStateDeep(info, 0) || '').toUpperCase();
-if (/CANCEL|ABORT|VOID|DELETED/.test(state)) {
-delete _cbtMissingFinalizeByKey[identity];
-return;
-}
-var merged = Object.assign({}, cached, info);
-merged.shortClientRef = cached.shortClientRef || info.shortClientRef || ref;
-merged.packagesBatched = Math.max(Number(cached.packagesBatched)||0, Number(info.packagesBatched)||0);
-merged.packagesCollected = Math.max(Number(cached.packagesCollected)||0, Number(info.packagesCollected)||0);
-var verifiedAssoc = cbtAssociateLogin(info) || cbtAssociateLogin(cached);
-if (verifiedAssoc) merged.associateId = verifiedAssoc;
-var op = cbtBatchingOpInfo(merged, false) || {};
-var explicitEnd = Number(op.endMs) || cbtNormalizeEpochMs(info.completedAt || info.completionTime || info.endedAt || info.endTime);
-var clearlyFinished = /COMPLETED|COMPLETE|DONE|STAGED|PICKUP|FINISHED/.test(state) || explicitEnd > 0;
-var clearlyActive = /BATCHING|IN_PROGRESS|ACCEPTED|STARTED|ACTIVE/.test(state) && !explicitEnd;
-if (clearlyFinished) { finishRecord(merged, explicitEnd ? 3 : 2, explicitEnd); return; }
-if (clearlyActive) {
-if (stateRow.tries < 5) setTimeout(attempt, POLL_MS);
-else delete _cbtMissingFinalizeByKey[identity];
-return;
-}
-if (state && !clearlyActive) { finishRecord(merged, 2, explicitEnd); return; }
-}
-if (stateRow.tries < 5) setTimeout(attempt, POLL_MS);
-else delete _cbtMissingFinalizeByKey[identity];
-}, function(){
-if (stateRow.tries < 5) setTimeout(attempt, POLL_MS);
-else delete _cbtMissingFinalizeByKey[identity];
-});
-}
-attempt();
-}
-var _cbtPollInFlight = false;
-async function pollActiveTasks(force) {
-if (_cbtPollInFlight || document.hidden || !isDashboardView()) return;
-// Amazon's own dashboard already fetched this endpoint recently. Its response was
-// consumed by our passive hook, so another identical request here would only repeat
-// JSON parsing/ingestion/rendering on the main thread.
-if (!force && _cbtPassiveLiveLastAt &&
-Date.now() - _cbtPassiveLiveLastAt < CBT_PASSIVE_LIVE_FRESH_MS) return;
-_cbtPollInFlight = true;
-var pollCtrl = (typeof AbortController === 'function') ? new AbortController() : null;
-var pollTimeoutId = pollCtrl ? setTimeout(function(){ try { pollCtrl.abort(); } catch(eAbort) {} }, CBT_BACKEND_FETCH_TIMEOUT_MS) : 0;
-try {
-var liveUrl = COMO_BASE + '/store/' + STORE_ID + '/activeJobsWithSiteSummary?_cbt=' + Date.now();
-var requestPerf = cbtPerfNow();
-var liveFetchOptions = {
-credentials:'include', cache:'no-store', headers:{Accept:'application/json'}
-};
-if (pollCtrl) liveFetchOptions.signal = pollCtrl.signal;
-var res = await _origFetch(liveUrl, liveFetchOptions);
-if (res.ok) {
-cbtCalibrateServerClock(res, requestPerf);
-var rawLive = await res.text();
-_cbtBackendLastOk = Date.now();
-if (rawLive === _cbtLastCoreLiveRaw && taskCache.size === _cbtLastCoreLiveCacheSize) {
-cbtTouchCachedLiveSeen();
-} else {
-_cbtLastCoreLiveRaw = rawLive;
-var pendingRawLive = rawLive;
-var liveSeq = ++_cbtCoreLiveSeq;
-cbtIdle(function(){
-try {
-if (!isDashboardView()) return;
-if (liveSeq < _cbtCoreLiveAppliedSeq) return;
-_cbtCoreLiveAppliedSeq = liveSeq;
-var freshData = pendingRawLive ? JSON.parse(pendingRawLive) : [];
-cbtApplyAuthoritativeLivePayload(freshData);
-} catch(eLiveIdle) {}
-}, 120);
-}
-}
-} catch(e) {}
-finally {
-if (pollTimeoutId) clearTimeout(pollTimeoutId);
-_cbtPollInFlight = false;
-}
-}
-function buildPanel() {
-var panel2 = document.createElement('div');
-panel2.id = 'cbt-panel';
-var bootCollapsed = false;
-try { bootCollapsed = localStorage.getItem('cbt_panel_collapsed') === '1'; } catch(eBootCollapsed) {}
-var bootStats = cbtStatsPrimeStartupWarm();
-var bootIp = bootStats ? String(bootStats.inProgress) : '\u2014';
-var bootRec = bootStats ? String(bootStats.recommended) : '\u2014';
-var bootRem = bootStats ? String(bootStats.remaining) : '\u2014';
-// Render the cached staffing delta in the very first dashboard HTML so a reload
-// does not wait for the first stats callback before showing +N / -N.
-var bootDelta = '';
-var bootDeltaClass = '';
-var bootDeltaTitle = '';
-if (bootStats) {
-var bootIpNum = Number(bootStats.inProgress);
-var bootRecNum = Number(bootStats.recommended);
-if (isFinite(bootIpNum) && isFinite(bootRecNum) && bootRecNum >= 0) {
-var bootDiff = bootRecNum - bootIpNum;
-if (bootDiff > 0) {
-bootDelta = '+' + bootDiff;
-bootDeltaClass = 'need-more';
-bootDeltaTitle = 'Need ' + bootDiff + ' more batcher' + (bootDiff === 1 ? '' : 's');
-} else if (bootDiff < 0) {
-var bootExtra = Math.abs(bootDiff);
-bootDelta = '-' + bootExtra;
-bootDeltaClass = 'extra';
-bootDeltaTitle = bootExtra + ' extra batcher' + (bootExtra === 1 ? '' : 's');
-}
-}
-}
-panel2.innerHTML =
-'<div id="cbt-header">' +
-'<span id="cbt-title">Batcher Timers</span>' +
-'<div id="cbt-controls">' +
-'<span id="cbt-font-dec" title="Smaller (A−)">A−</span>' +
-'<span id="cbt-scale-reset" title="Reset size to 100%">100%</span>' +
-'<span id="cbt-font-inc" title="Larger (A+)">A+</span>' +
-'<span id="cbt-theme-btn" title="Toggle Dark/Light">🌙</span>' +
-'<span id="cbt-afa-btn" title="Open cart actions">' +
-'<span class="cbt-afa-lbl">▶ Run</span>' +
-'</span>' +
-'<span id="cbt-collapse-btn" data-cbt-collapse-state="' + (bootCollapsed ? 'collapsed' : 'expanded') + '" title="Collapse/Expand" aria-label="' + (bootCollapsed ? 'Expand dashboard' : 'Collapse dashboard') + '"></span>' +
-'</div>' +
-'</div>' +
-'<div id="cbt-stats-bar">' +
-'<div class="cbt-stat-card">' +
-'<div class="cbt-stat-icon">\uD83E\uDDBA</div>' +
-'<div class="cbt-stat-label">Batchers</div>' +
-'<div class="cbt-stat-value"><span id="cbt-stat-ip">' + bootIp + '</span><span id="cbt-stat-delta" class="' + bootDeltaClass + '" title="' + bootDeltaTitle + '">' + bootDelta + '</span></div>' +
-'</div>' +
-'<div class="cbt-stat-card">' +
-'<div class="cbt-stat-icon">\uD83D\uDCCA</div>' +
-'<div class="cbt-stat-label">Recommended This Hour</div>' +
-'<div class="cbt-stat-value"><span id="cbt-stat-rec">' + bootRec + '</span><span id="cbt-stat-dot"></span></div>' +
-'</div>' +
-'<div class="cbt-stat-card">' +
-'<div class="cbt-stat-icon">\uD83D\uDCE6</div>' +
-'<div class="cbt-stat-label">Remaining</div>' +
-'<div class="cbt-stat-value" id="cbt-stat-rem">' + bootRem + '</div>' +
-'</div>' +
-'</div>' +
-'<div id="cbt-tabs">' +
-'<span class="cbt-tab active" data-tab="live">Live</span>' +
-'<span class="cbt-tab" data-tab="history">Today</span>' +
-'<span class="cbt-tab" data-tab="weekly">Weekly</span>' +
-'<span class="cbt-tab" data-tab="hof" title="Top 30 fastest batchers of all time">Fastest</span>' +
-'<span class="cbt-tab" data-tab="names">Names</span>' +
-'</div>' +
-'<div id="cbt-unified-search">' +
-'<div id="cbt-unified-search-box">' +
-'<input id="cbt-unified-search-input" type="text" autocomplete="off" spellcheck="false" placeholder="Find associate by name..."/>' +
-'<span id="cbt-unified-search-count"></span>' +
-'<button id="cbt-unified-search-clear" type="button" title="Clear search">✕</button>' +
-'</div>' +
-'</div>' +
-'<div id="cbt-body">' +
-'<div id="cbt-live-view">' +
-'<table id="cbt-table" style="table-layout:fixed;width:100%;"><thead><tr>' +
-'<th class="cbt-sortable-live" data-sort="assoc" style="width:40%;text-align:left;">Associate</th>' +
-'<th class="cbt-sortable-live" data-sort="elapsed" style="width:30%;text-align:center;">Elapsed</th>' +
-'<th class="cbt-sortable-live" data-sort="rate" style="width:30%;text-align:center;">Bags/min \u25BC</th>' +
-'</tr></thead><tbody id="cbt-tbody"></tbody></table>' +
-'<div id="cbt-empty">No active batching tasks</div>' +
-'<div id="cbt-live-results"></div>' +
-'</div>' +
-'<div id="cbt-history-view" style="display:none">' +
-'<div id="cbt-hist-summary"></div>' +
-'<table id="cbt-hist-table"><thead><tr>' +
-'<th class="cbt-sortable-hist" data-sort="assoc">Associate</th>' +
-'<th class="cbt-sortable-hist" data-sort="runs">Batch</th>' +
-'<th class="cbt-sortable-hist" data-sort="pkgs">Pkgs</th>' +
-'<th class="cbt-sortable-hist" data-sort="bestRate">Best \u25BC</th>' +
-'<th class="cbt-sortable-hist" data-sort="lastRate">Latest Avg</th>' +
-'</tr></thead><tbody id="cbt-hist-tbody"></tbody></table>' +
-'<div id="cbt-hist-empty">No history yet today</div>' +
-'<div id="cbt-hist-cross"></div>' +
-'</div>' +
-'<div id="cbt-weekly-view" style="display:none">' +
-'<div id="cbt-weekly-summary"></div>' +
-'<table id="cbt-weekly-table"><thead><tr>' +
-'<th class="cbt-sortable" data-sort="assoc">Associate</th>' +
-'<th class="cbt-sortable" data-sort="runs">Batch</th>' +
-'<th class="cbt-sortable" data-sort="pkgs">Pkgs</th>' +
-'<th class="cbt-sortable" data-sort="bestRate">Best \u25BC</th>' +
-'<th class="cbt-sortable" data-sort="lastRate">Last Avg</th>' +
-'<th class="cbt-sortable" data-sort="hrs">Hrs</th>' +
-'</tr></thead><tbody id="cbt-weekly-tbody"></tbody></table>' +
-'<div id="cbt-weekly-empty">No weekly data yet</div>' +
-'<div id="cbt-weekly-cross"></div>' +
-'</div>' +
-'<div id="cbt-names-view" style="display:none">' +
-'<div id="cbt-names-count" style="text-align:center;font-size:12px;color:#5a7a96;padding:2px 0 4px;font-weight:600;"></div>' +
-'<table id="cbt-names-table"><thead><tr>' +
-'<th style="text-align:left;">Associate</th>' +
-'</tr></thead><tbody id="cbt-names-tbody"></tbody></table>' +
-'<div id="cbt-names-empty" style="display:none;text-align:center;color:#aaa;padding:9px 0;font-size:13px;font-style:italic;line-height:1.2;">No names saved yet</div>' +
-'</div>' +
-'<div id="cbt-hof-view" style="display:none">' +
-'<table id="cbt-hof-table"><thead><tr>' +
-'<th>#\u2003Name</th>' +
-'<th>Batch</th>' +
-'<th>Pkgs</th>' +
-'<th>Peak</th>' +
-'<th>Last Avg</th>' +
-'<th>Date</th>' +
-'</tr></thead><tbody id="cbt-hof-tbody"></tbody></table>' +
-'<div id="cbt-hof-empty"></div>' +
-'</div>' +
-'</div>' +
-'<div id="cbt-drag-bottom" title="Drag to resize"></div>';
-return panel2;
-}
-function cbtKeepSingleRunButton(panel) {
-if (!panel || !panel.querySelectorAll) return null;
-var buttons = panel.querySelectorAll('#cbt-afa-btn');
-var keep = buttons.length ? buttons[0] : null;
-for (var i = 1; i < buttons.length; i++) {
-try { buttons[i].remove(); } catch(eBtnRemove) {
-try { if (buttons[i].parentNode) buttons[i].parentNode.removeChild(buttons[i]); } catch(eBtnRemove2) {}
-}
-}
-if (keep) {
-var labels = keep.querySelectorAll('.cbt-afa-lbl');
-for (var j = 1; j < labels.length; j++) {
-try { labels[j].remove(); } catch(eLblRemove) {}
-}
-}
-return keep;
-}
-function cbtDedupeMainPanels() {
-var panels = [];
-try { panels = Array.prototype.slice.call(document.querySelectorAll('#cbt-panel')); } catch(ePanels) {}
-if (!panels.length) return null;
-// Always keep the first connected panel in document order. This is stable even
-// if an old/new userscript instance briefly overlaps during a SPA remount.
-var keep = panels[0];
-for (var i = 1; i < panels.length; i++) {
-try { panels[i].remove(); } catch(ePanelRemove) {
-try { if (panels[i].parentNode) panels[i].parentNode.removeChild(panels[i]); } catch(ePanelRemove2) {}
-}
-}
-cbtKeepSingleRunButton(keep);
-return keep;
-}
-var _panel2Ref = null;
-var _cbtTempMountObserver = null;
-var _cbtTempMountFrame = 0;
-var PANEL_HEALTH_MS = 5000;
+  /* Performance guard:
+     Whole-page observers must ignore DOM mutations created by this userscript
+     itself. Otherwise every timer/stat/table update can wake another observer,
+     which creates needless feedback work on the Amazon page. */
+  var CBT_OWN_UI_SELECTOR =
+    '#cbt-panel,#cbt-tp,#cbt-qr-overlay,#cbt-afa-overlay,#cbt-ac-drop,.etf-col-cell,.cbt-missing-probe-frame';
 
-function cbtStopTempMountWatcher() {
-try {
-if (_cbtTempMountObserver) _cbtTempMountObserver.disconnect();
-} catch(e) {}
-_cbtTempMountObserver = null;
-if (_cbtTempMountFrame) {
-try { cancelAnimationFrame(_cbtTempMountFrame); } catch(e2) {}
-_cbtTempMountFrame = 0;
-}
-}
+  function cbtIsOwnUiNode(node) {
+    if (!node) return false;
+    var el = node.nodeType === 1 ? node : node.parentElement;
+    if (!el || !el.matches) return false;
+    try {
+      if (el.matches(CBT_OWN_UI_SELECTOR)) return true;
+      return !!(el.closest && el.closest(CBT_OWN_UI_SELECTOR));
+    } catch(e) {
+      return false;
+    }
+  }
 
-function cbtClearTempPanelStyle(panel) {
-if (!panel) return;
-try { panel.removeAttribute('data-cbt-temp-mount'); } catch(e0) {}
-panel.style.position = '';
-panel.style.top = '';
-panel.style.right = '';
-panel.style.width = '';
-panel.style.maxWidth = '';
-panel.style.zIndex = '';
-}
+  function cbtMutationIsOnlyOwnUi(mutation) {
+    if (!mutation) return false;
+    if (cbtIsOwnUiNode(mutation.target)) return true;
 
-function cbtPromoteTempPanel() {
-if (!isDashboardView()) return false;
-var panel = document.getElementById('cbt-panel');
-if (!panel || panel.getAttribute('data-cbt-temp-mount') !== '1') return false;
-var mount = findMountPoint();
-if (!mount || !mount.el || !mount.el.parentNode) return false;
-cbtClearTempPanelStyle(panel);
-mount.el.parentNode.insertBefore(panel, mount.el);
-cbtStopTempMountWatcher();
-try { cbtDedupeMainPanels(); cbtKeepSingleRunButton(panel); } catch(e1) {}
-return true;
-}
+    if (mutation.type !== 'childList') return false;
 
-function cbtStartTempMountWatcher() {
-if (_cbtTempMountObserver || !document.body || !isDashboardView()) return;
-try {
-_cbtTempMountObserver = new MutationObserver(function(mutations){
-if (!isDashboardView()) {
-cbtStopTempMountWatcher();
-return;
-}
-var relevant = false;
-for (var i = 0; i < mutations.length && !relevant; i++) {
-var added = mutations[i].addedNodes || [];
-for (var j = 0; j < added.length; j++) {
-var n = added[j];
-if (!n || n.nodeType !== 1) continue;
-try {
-if ((n.matches && n.matches('utilization.dashboard-utilization,utilization')) ||
-(n.querySelector && n.querySelector('utilization.dashboard-utilization,utilization'))) {
-relevant = true;
-break;
-}
-} catch(e0) {}
-}
-}
-if (!relevant) return;
-if (_cbtTempMountFrame) return;
-var raf = (typeof requestAnimationFrame === 'function') ? requestAnimationFrame : function(cb){ return setTimeout(cb, 16); };
-_cbtTempMountFrame = raf(function(){
-_cbtTempMountFrame = 0;
-try { cbtPromoteTempPanel(); } catch(e1) {}
-});
-});
-_cbtTempMountObserver.observe(document.body, { childList:true, subtree:true });
-} catch(e2) {
-_cbtTempMountObserver = null;
-}
-}
+    var touched = [];
+    try {
+      touched = touched.concat(Array.prototype.slice.call(mutation.addedNodes || []));
+      touched = touched.concat(Array.prototype.slice.call(mutation.removedNodes || []));
+    } catch(e) {}
 
-function cbtTempMountPanel(panel) {
-if (!panel || !document.body || !isDashboardView()) return false;
-if (panel.isConnected && panel.getAttribute('data-cbt-temp-mount') !== '1') return false;
-panel.setAttribute('data-cbt-temp-mount', '1');
-panel.style.position = 'fixed';
-panel.style.top = '40px';
-panel.style.right = '8px';
-panel.style.width = 'min(640px, calc(100vw - 16px))';
-panel.style.maxWidth = 'calc(100vw - 16px)';
-panel.style.zIndex = '2147483000';
-if (!panel.isConnected) document.body.appendChild(panel);
-cbtStartTempMountWatcher();
-return true;
-}
-var _mountFails = 0;
-var _fastMountUntil = 0;
-function isComoSite() {
-return location.hostname.indexOf('como-operations-dashboard') !== -1;
-}
-function isOutboundSite() {
-return location.hostname === 'na.store-management.f3.amazon.dev';
-}
-var TASK_DETAIL_RE = /\/(jobdetails|task)(\b|\/|\?|#|$)/i;
-function isTaskDetailPage() {
-if (document.querySelector('div.job-details')) return true;
-return TASK_DETAIL_RE.test(location.pathname);
-}
-var NON_DASHBOARD_RE = /\/(packages|orders|labor|layout|associates?)(\b|\/|\?|#|$)/i;
-var DASHBOARD_PATH_RE = /^\/store\/[^\/]+\/dash\/?$/i;
-function isDashboardView() {
-if (!isComoSite()) return false;
-if (!DASHBOARD_PATH_RE.test(location.pathname)) return false;
-if (NON_DASHBOARD_RE.test(location.hash)) return false;
-return true;
-}
-function boardIsMisplaced() {
-return !isDashboardView() && !!document.getElementById('cbt-panel');
-}
-function detachMainPanel() {
-cbtStopTempMountWatcher();
-var p = document.getElementById('cbt-panel');
-if (p) p.remove();
-}
-function findMountPoint() {
-if (!isDashboardView()) return null;
-var el = document.querySelector('utilization.dashboard-utilization') ||
-document.querySelector('utilization');
-if (el && el.parentNode) return { el: el, mode: 'before' };
-return null;
-}
-function injectPanel() {
-if (!isDashboardView()) { detachMainPanel(); return; }
-var existing = cbtDedupeMainPanels() || document.getElementById('cbt-panel');
-if (existing && existing.isConnected) {
-if (existing.getAttribute('data-cbt-temp-mount') === '1') {
-try { cbtPromoteTempPanel(); } catch(ePromoteExisting) {}
-}
-cbtKeepSingleRunButton(existing);
-return;
-}
-if (!_panel2Ref) {
-_panel2Ref = buildPanel();
-attachPanelEvents(_panel2Ref);
-}
-var mount = findMountPoint();
-if (!mount) {
-if (cbtTempMountPanel(_panel2Ref)) {
-try { cbtStatsHydrateWarm(); } catch(eWarmTemp) {}
-try { if (_statsLastSummaryData) cbtApplyStatsData(_statsLastSummaryData); } catch(eStatsTemp) {}
-try { applyUiScale(); } catch(eScaleTemp) {}
-try { renderActiveSearchTab(); } catch(eRenderTemp) { try { renderLive(); } catch(eRenderTemp2) {} }
-if (activeTab === 'live' && taskCache.size) requestLiveRender();
-}
-return;
-}
-cbtStopTempMountWatcher();
-cbtClearTempPanelStyle(_panel2Ref);
-try {
-var savedH = localStorage.getItem('cbt_body_h');
-var collapsed0 = localStorage.getItem('cbt_panel_collapsed') === '1';
-var body0 = _panel2Ref.querySelector('#cbt-body');
-var tabs0 = _panel2Ref.querySelector('#cbt-tabs');
-var search0 = _panel2Ref.querySelector('#cbt-unified-search');
-var drag0 = _panel2Ref.querySelector('#cbt-drag-bottom');
-var collapse0 = _panel2Ref.querySelector('#cbt-collapse-btn');
-if (savedH && body0) {
-var h0 = parseFloat(savedH);
-body0.style.height = h0 + 'px';
-body0.style.maxHeight = h0 + 'px';
-}
-if (collapsed0) {
-if (body0) { body0.style.display = 'none'; body0.style.minHeight = '0'; }
-if (tabs0) tabs0.style.display = 'none';
-if (search0) search0.style.display = 'none';
-if (drag0) drag0.style.display = 'none';
-if (collapse0) { collapse0.setAttribute('data-cbt-collapse-state','collapsed'); collapse0.setAttribute('aria-label','Expand dashboard'); }
-} else {
-if (body0) { body0.style.display = ''; if (!body0.style.minHeight || body0.style.minHeight === '0px') body0.style.minHeight = (parseFloat(savedH) || 350) + 'px'; }
-if (tabs0) tabs0.style.display = '';
-if (search0) search0.style.display = '';
-if (drag0) drag0.style.display = '';
-if (collapse0) { collapse0.setAttribute('data-cbt-collapse-state','expanded'); collapse0.setAttribute('aria-label','Collapse dashboard'); }
-}
-} catch(ex) {}
-mount.el.parentNode.insertBefore(_panel2Ref, mount.el);
-try { cbtDedupeMainPanels(); cbtKeepSingleRunButton(_panel2Ref); } catch(eDedupeAfterMount) {}
-try { cbtStatsHydrateWarm(); } catch(eWarmStats) {}
-try {
-if (_statsLastSummaryData) cbtApplyStatsData(_statsLastSummaryData);
-} catch(eCurrentStats) {}
-_mountFails = 0;
-try { applyUiScale(); } catch(ex) {}
-try { renderActiveSearchTab(); } catch(ex) { try { renderLive(); } catch(ex2) {} }
-if (activeTab === 'live' && taskCache.size) requestLiveRender();
-}
-function panelHealthCheck() {
-if (!isDashboardView()) { detachMainPanel(); _mountFails = 0; return; }
-var p = null;
-try { p = cbtDedupeMainPanels(); } catch(eDedupeHealth) {}
-if (!p) p = document.getElementById('cbt-panel');
-if (p) cbtKeepSingleRunButton(p);
-if (p && p.isConnected) {
-if (p.getAttribute('data-cbt-temp-mount') === '1') {
-try { cbtPromoteTempPanel(); } catch(ePromoteHealth) {}
-}
-_mountFails = 0;
-return;
-}
-injectPanel();
-if (!document.getElementById('cbt-panel')) {
-if (_mountFails < 1000) _mountFails++;
-}
-}
-function setDashboardSearchTerm(value) {
-dashboardSearchTerm = value == null ? '' : String(value);
-liveSearchTerm = dashboardSearchTerm;
-historySearchTerm = dashboardSearchTerm;
-weeklySearchTerm = dashboardSearchTerm;
-namesSearchTerm = dashboardSearchTerm;
-hofSearchTerm = dashboardSearchTerm;
-}
-function prioritizeNameMatches(list, term, getName) {
-term = (term || '').toLowerCase().trim();
-if (!term || !Array.isArray(list) || list.length < 2) return list;
-return list.map(function(item, idx){
-var name = String(getName(item) || '').toLowerCase();
-var score = name === term ? 0 : (name.indexOf(term) === 0 ? 1 : 2);
-return { item:item, idx:idx, score:score };
-}).sort(function(a,b){ return a.score - b.score || a.idx - b.idx; })
-.map(function(x){ return x.item; });
-}
-var _unifiedCountTimer = null;
-function requestUnifiedSearchCount() {
-if (_unifiedCountTimer) return;
-var raf = (typeof requestAnimationFrame === 'function')
-? requestAnimationFrame
-: function(cb){ return setTimeout(cb, 16); };
-_unifiedCountTimer = raf(function(){
-_unifiedCountTimer = null;
-updateUnifiedSearchCount();
-});
-}
-function cbtDashboardNameText(node) {
-if (!node) return '';
-var out = '';
-var children = node.childNodes || [];
-for (var i = 0; i < children.length; i++) {
-var ch = children[i];
-if (ch.nodeType === 3) {
-out += ch.nodeValue || '';
-continue;
-}
-if (ch.nodeType !== 1) continue;
-var cl = ch.classList;
-if (cl && (cl.contains('cbt-rank') ||
-cl.contains('cbt-slow-alert') ||
-cl.contains('cbt-copied-tag') ||
-cl.contains('cbt-live-status-slot'))) continue;
-out += cbtDashboardNameText(ch);
-}
-return out;
-}
-function updateUnifiedSearchCount() {
-var badge = document.getElementById('cbt-unified-search-count');
-if (!badge) return;
-var term = (dashboardSearchTerm || '').trim();
-if (!term) {
-if (badge.textContent) badge.textContent = '';
-if (badge.style.display !== 'none') badge.style.display = 'none';
-return;
-}
-var ids = { live:'cbt-live-view', history:'cbt-history-view', weekly:'cbt-weekly-view', hof:'cbt-hof-view', names:'cbt-names-view' };
-var view = document.getElementById(ids[activeTab] || 'cbt-live-view');
-if (!view) {
-if (badge.textContent) badge.textContent = '';
-if (badge.style.display !== 'none') badge.style.display = 'none';
-return;
-}
-var seen = Object.create(null);
-var nodes = view.querySelectorAll('.cbt-assoc, .cbt-search-row-name, .cbt-name-cell');
-for (var i=0; i<nodes.length; i++) {
-var name = cbtDashboardNameText(nodes[i]).trim().toLowerCase();
-if (name && name !== '—') seen[name] = true;
-}
-var count = Object.keys(seen).length;
-var nextText = count + ' found';
-if (badge.textContent !== nextText) badge.textContent = nextText;
-if (badge.style.display !== 'block') badge.style.display = 'block';
-}
-function renderActiveSearchTab() {
-if (activeTab === 'live') { renderLive(); renderLiveSearch(dashboardSearchTerm); }
-else if (activeTab === 'history') renderHistory();
-else if (activeTab === 'weekly') renderWeekly();
-else if (activeTab === 'names') renderNames();
-else if (activeTab === 'hof') renderHallOfFame();
-requestUnifiedSearchCount();
-}
-var _dashboardSearchRenderRAF = 0;
-function requestDashboardSearchRender() {
-if (_dashboardSearchRenderRAF) return;
-function runDashboardSearchRender() {
-if (cbtIsActivelyScrolling()) {
-cbtRunAfterScroll('dashboard-search-render', runDashboardSearchRender);
-return;
-}
-var raf = (typeof requestAnimationFrame === 'function')
-? requestAnimationFrame
-: function(cb){ return setTimeout(cb, 16); };
-_dashboardSearchRenderRAF = raf(function(){
-_dashboardSearchRenderRAF = 0;
-try { renderActiveSearchTab(); } catch(e) {}
-});
-}
-_dashboardSearchRenderRAF = true;
-runDashboardSearchRender();
-}
-function attachPanelEvents(panel2) {
-if (!panel2) return;
-if (panel2.getAttribute('data-cbt-events-bound') === '1') {
-cbtKeepSingleRunButton(panel2);
-return;
-}
-panel2.setAttribute('data-cbt-events-bound', '1');
-cbtKeepSingleRunButton(panel2);
-var unifiedSearch = panel2.querySelector('#cbt-unified-search-input');
-if (unifiedSearch) unifiedSearch.value = dashboardSearchTerm;
-panel2.querySelectorAll('.cbt-tab').forEach(function(tab) {
-tab.addEventListener('click', function() {
-panel2.querySelectorAll('.cbt-tab').forEach(function(t){t.classList.remove('active');});
-tab.classList.add('active');
-activeTab = tab.dataset.tab;
-setDashboardSearchTerm(dashboardSearchTerm);
-document.getElementById('cbt-live-view').style.display = activeTab==='live' ? '' : 'none';
-document.getElementById('cbt-history-view').style.display = activeTab==='history' ? '' : 'none';
-document.getElementById('cbt-weekly-view').style.display = activeTab==='weekly' ? '' : 'none';
-document.getElementById('cbt-names-view').style.display = activeTab==='names' ? '' : 'none';
-var hofView = document.getElementById('cbt-hof-view');
-if (hofView) hofView.style.display = activeTab==='hof' ? '' : 'none';
-if (activeTab==='hof') { try { cbtBatchEventsPull(); } catch(e0) {} try { cbtBatchEventsPullAllTime(function(){ try { renderHallOfFame(); } catch(e1) {} }, true); } catch(e) {} }
-renderActiveSearchTab();
-if ((activeTab === 'weekly' || activeTab === 'history') &&
-(Date.now() - _cbtBatchEventLastPullAt > 2500)) {
-try { cbtBatchEventsPull(); } catch(e2) {}
-}
-});
-});
-var afaBtn = panel2.querySelector('#cbt-afa-btn');
-// v23.9.211 NoLag: do not pre-scan Cart Actions on hover/focus.  Large COMO
-// dashboards can turn that invisible warm-up into a long main-thread task.
-if (afaBtn) afaBtn.addEventListener('click', function(e){
-e.stopPropagation();
-if (_afaRunning) {
-_afaStop = true;
-afaSetBtn('⏹ Stopping…', true);
-var modalStop = document.querySelector('#cbt-afa-card [data-afa="stop"]');
-if (modalStop) {
-modalStop.textContent = '⏹ Stopping…';
-modalStop.disabled = true;
-}
-return;
-}
-try { afaConfirm(); } catch(err) {}
-});
-try {
-var restoreHeightKey = 'cbt_body_h_restore_v23944';
-if (!localStorage.getItem(restoreHeightKey)) {
-var savedBodyH = parseFloat(localStorage.getItem('cbt_body_h') || '350');
-if (!isFinite(savedBodyH) || savedBodyH <= 350) {
-localStorage.setItem('cbt_body_h', '350');
-}
-localStorage.setItem(restoreHeightKey, '1');
-}
-} catch(eRestore) {}
-var isCollapsed = false;
-try { isCollapsed = localStorage.getItem('cbt_panel_collapsed') === '1'; } catch(eCollapsedLoad) {}
-var collapseBtn = panel2.querySelector('#cbt-collapse-btn');
-function applyMainCollapseState() {
-var body = panel2.querySelector('#cbt-body');
-var tabs = panel2.querySelector('#cbt-tabs');
-var searchBar = panel2.querySelector('#cbt-unified-search');
-var drag = panel2.querySelector('#cbt-drag-bottom');
-var savedH = parseFloat(localStorage.getItem('cbt_body_h') || '350');
-if (!isFinite(savedH) || savedH < 350) savedH = 350;
-if (isCollapsed) {
-if (body) { body.style.display = 'none'; body.style.minHeight = '0'; }
-if (tabs) tabs.style.display = 'none';
-if (searchBar) searchBar.style.display = 'none';
-if (drag) drag.style.display = 'none';
-if (collapseBtn) { collapseBtn.setAttribute('data-cbt-collapse-state','collapsed'); collapseBtn.setAttribute('aria-label','Expand dashboard'); }
-} else {
-if (body) {
-body.style.display = '';
-body.style.height = savedH + 'px';
-body.style.maxHeight = savedH + 'px';
-body.style.minHeight = savedH + 'px';
-}
-if (tabs) tabs.style.display = '';
-if (searchBar) searchBar.style.display = '';
-if (drag) drag.style.display = '';
-if (collapseBtn) { collapseBtn.setAttribute('data-cbt-collapse-state','expanded'); collapseBtn.setAttribute('aria-label','Collapse dashboard'); }
-}
-}
-applyMainCollapseState();
-collapseBtn.addEventListener('click', function() {
-var savedH = parseFloat(localStorage.getItem('cbt_body_h') || '350');
-if (isCollapsed) {
-isCollapsed = false;
-try { localStorage.setItem('cbt_panel_collapsed', '0'); } catch(ex) {}
-applyMainCollapseState();
-} else if (savedH > 350) {
-try { localStorage.setItem('cbt_body_h', '350'); } catch(ex) {}
-applyMainCollapseState();
-} else {
-isCollapsed = true;
-try { localStorage.setItem('cbt_panel_collapsed', '1'); } catch(ex) {}
-applyMainCollapseState();
-}
-});
-var isDark = localStorage.getItem('cbt_dark') !== 'false';
-var themeBtn = panel2.querySelector('#cbt-theme-btn');
-function applyTheme() {
-if (isDark) { panel2.classList.add('dark'); themeBtn.textContent = '☀️'; }
-else { panel2.classList.remove('dark'); themeBtn.textContent = '🌙'; }
-}
-applyTheme();
-themeBtn.addEventListener('click', function() {
-isDark = !isDark;
-try { localStorage.setItem('cbt_dark', isDark); } catch(e) {}
-applyTheme();
-try { applyPopupTheme(); } catch(e) {}
-});
-applyUiScale();
-var fontIncBtn = panel2.querySelector('#cbt-font-inc');
-var fontDecBtn = panel2.querySelector('#cbt-font-dec');
-var scaleResetB = panel2.querySelector('#cbt-scale-reset');
-if (fontIncBtn) fontIncBtn.addEventListener('click', function(){ stepUiScale(1); });
-if (fontDecBtn) fontDecBtn.addEventListener('click', function(){ stepUiScale(-1); });
-if (scaleResetB) scaleResetB.addEventListener('click', function(){ resetUiScale(); });
-var isDragging = false, dragStartY = 0, dragStartH = 350, dragContentH = 9999;
-var dragLatestY = 0, dragFrame = 0;
-function applyDragFrame() {
-dragFrame = 0;
-var body = panel2.querySelector('#cbt-body');
-var tabs = panel2.querySelector('#cbt-tabs');
-if (!body) return;
-var newH = Math.min(dragContentH, Math.max(350, dragStartH + (dragLatestY - dragStartY)));
-body.style.height = newH + 'px';
-body.style.maxHeight = newH + 'px';
-body.style.minHeight = newH + 'px';
-if (tabs) tabs.style.display = '';
-var searchBar2 = panel2.querySelector('#cbt-unified-search');
-if (searchBar2) searchBar2.style.display = '';
-}
-function persistDragHeight() {
-var body = panel2.querySelector('#cbt-body');
-if (!body) return;
-var h = parseInt(body.style.height || body.offsetHeight || 0, 10);
-if (!isFinite(h) || h <= 0) return;
-try { localStorage.setItem('cbt_body_h', String(h)); } catch(ex) {}
-}
-panel2.querySelector('#cbt-drag-bottom').addEventListener('mousedown', function(e) {
-isDragging = true;
-dragStartY = e.clientY;
-dragLatestY = e.clientY;
-var body = panel2.querySelector('#cbt-body');
-dragStartH = body ? body.offsetHeight : 270;
-dragContentH = body ? (body.scrollHeight || 9999) : 9999;
-e.preventDefault();
-e.stopPropagation();
-});
-document.addEventListener('mousemove', function(e) {
-if (!isDragging) return;
-dragLatestY = e.clientY;
-if (dragFrame) return;
-var rafDrag = (typeof requestAnimationFrame === 'function') ? requestAnimationFrame : function(cb){ return setTimeout(cb,16); };
-dragFrame = rafDrag(applyDragFrame);
-});
-document.addEventListener('mouseup', function() {
-if (!isDragging) return;
-isDragging = false;
-if (dragFrame) {
-try {
-var cancelDrag = (typeof cancelAnimationFrame === 'function') ? cancelAnimationFrame : clearTimeout;
-cancelDrag(dragFrame);
-} catch(eCancelDrag) {}
-dragFrame = 0;
-}
-applyDragFrame();
-persistDragHeight();
-});
-try {
-var savedH = localStorage.getItem('cbt_body_h');
-if (savedH) {
-var body = panel2.querySelector('#cbt-body');
-var h = parseFloat(savedH);
-if (body) { body.style.height = h + 'px'; body.style.maxHeight = h + 'px'; }
-}
-applyMainCollapseState();
-} catch(ex) {}
-document.addEventListener('click', function(e) {
-var el = e.target.closest('.cbt-assoc');
-if (!el || !panel2.contains(el)) return;
-var oldTag = el.querySelector('.cbt-copied-tag');
-if (oldTag) oldTag.remove();
-var text = el.textContent.replace(/^\d+\s*/, '').replace(/[●•]/g, '').trim();
-copyWithFeedback(el, text, e);
-});
-document.addEventListener('click', function(e) {
-var el = e.target.closest('.cbt-search-row-name');
-if (!el || !panel2.contains(el)) return;
-var oldTag2 = el.querySelector('.cbt-copied-tag');
-if (oldTag2) oldTag2.remove();
-var text = el.textContent.trim();
-copyWithFeedback(el, text, e);
-});
-document.addEventListener('click', function(e) {
-if (e.target.id === 'cbt-unified-search-clear') {
-var inp = document.getElementById('cbt-unified-search-input');
-if (inp) inp.value = '';
-setDashboardSearchTerm('');
-renderActiveSearchTab();
-if (inp) inp.focus();
-}
-var nameCell = e.target.closest('.cbt-name-cell');
-if (nameCell) {
-var oldTag3 = nameCell.querySelector('.cbt-copied-tag');
-if (oldTag3) oldTag3.remove();
-var nm = nameCell.textContent.trim();
-copyWithFeedback(nameCell, nm, e);
-}
-});
-document.addEventListener('input', function(e) {
-if (e.target.id === 'cbt-unified-search-input') {
-setDashboardSearchTerm(e.target.value);
-requestDashboardSearchRender();
-}
-});
-document.addEventListener('click', function(e) {
-var th = e.target.closest('.cbt-sortable');
-if (th && document.getElementById('cbt-weekly-table') && document.getElementById('cbt-weekly-table').contains(th)) {
-var key=th.dataset.sort;
-if(weeklySortKey===key){weeklySortAsc=!weeklySortAsc;}else{weeklySortKey=key;weeklySortAsc=false;}
-renderWeekly();
-}
-th = e.target.closest('.cbt-sortable-live');
-if (th && document.getElementById('cbt-table') && document.getElementById('cbt-table').contains(th)) {
-var key2=th.dataset.sort;
-if (liveSortUser && liveSortKey === key2) { liveSortAsc = !liveSortAsc; }
-else { liveSortKey = key2; liveSortAsc = false; liveSortUser = true; }
-renderLive();
-}
-th = e.target.closest('.cbt-sortable-hist');
-if (th && document.getElementById('cbt-hist-table') && document.getElementById('cbt-hist-table').contains(th)) {
-var key3=th.dataset.sort;
-if(historySortKey===key3){historySortAsc=!historySortAsc;}else{historySortKey=key3;historySortAsc=false;}
-renderHistory();
-}
-});
-}
-function renderLiveSearch(term) {
-var resultsEl = document.getElementById('cbt-live-results');
-if (!resultsEl) return;
-if (!term || term.trim() === '') { setHTML(resultsEl, ''); requestUnifiedSearchCount(); return; }
-term = term.toLowerCase().trim();
-var html = '';
-var shown = new Set();
-var history = getDisplayHistory(), histEntries = Object.values(history).filter(function(e){ return e.assoc && e.assoc.toLowerCase().indexOf(term) !== -1; });
-histEntries = prioritizeNameMatches(histEntries, term, function(e){ return e.assoc; });
-if (histEntries.length > 0) {
-html += '<div class="cbt-search-result-section">TODAY</div>';
-histEntries.forEach(function(e) {
-shown.add(e.assoc.toLowerCase());
-var rateCls = e.avgRate >= WARN_RATE ? 'good' : e.avgRate >= ALERT_RATE ? 'warn' : 'alert';
-html += '<div class="cbt-search-row"><span class="cbt-search-row-name">' + cbtEscHtml(e.assoc) + '</span>' +
-'<span class="cbt-search-row-mid"><span style="display:inline-block;width:45px;text-align:right;">' + e.runs + '</span> runs | <span style="display:inline-block;width:50px;text-align:left;">' + e.totalPkgs + '</span> pkgs</span>' +
-'<span class="cbt-search-row-rate"><span class="cbt-hist-rate ' + rateCls + '">' + e.avgRate.toFixed(1) + '</span></span></div>';
-});
-}
-var weekly = getDisplayWeekly(), agg = {};
-for (var dk of Object.keys(weekly)) {
-for (var a of Object.keys(weekly[dk])) {
-if (a.toLowerCase().indexOf(term) === -1) continue;
-if (!agg[a]) agg[a] = { assoc:(weekly[dk][a].assoc||a), totalPkgs:0, totalSec:0, runs:0, daysSet:new Set() };
-else if (weekly[dk][a].assoc) agg[a].assoc = weekly[dk][a].assoc;
-agg[a].totalPkgs += weekly[dk][a].totalPkgs;
-agg[a].totalSec += weekly[dk][a].totalSec;
-agg[a].runs += weekly[dk][a].runs;
-agg[a].daysSet.add(dk);
-}
-}
-var weeklyEntries = prioritizeNameMatches(Object.values(agg), term, function(e){ return e.assoc; });
-if (weeklyEntries.length > 0) {
-html += '<div class="cbt-search-result-section">WEEKLY</div>';
-weeklyEntries.forEach(function(e) {
-shown.add(e.assoc.toLowerCase());
-var avgRate = e.totalPkgs / (e.totalSec / 60);
-var rateCls = avgRate >= WARN_RATE ? 'good' : avgRate >= ALERT_RATE ? 'warn' : 'alert';
-html += '<div class="cbt-search-row"><span class="cbt-search-row-name">' + cbtEscHtml(e.assoc) + '</span>' +
-'<span class="cbt-search-row-mid"><span style="display:inline-block;width:45px;text-align:right;">' + e.daysSet.size + '</span> days | <span style="display:inline-block;width:50px;text-align:left;">' + e.totalPkgs + '</span> pkgs</span>' +
-'<span class="cbt-search-row-rate"><span class="cbt-hist-rate ' + rateCls + '">' + avgRate.toFixed(1) + '</span></span></div>';
-});
-}
-html += savedNamesSearchHTML(term, shown);
-if (html === '') html = '<div style="text-align:center;color:#aaa;padding:10px;font-style:italic;font-size:14px;">No results found for "' + term + '"</div>';
-setHTML(resultsEl, html);
-requestUnifiedSearchCount();
-}
-var LIVE_SORT_LABELS = { assoc: 'Associate', elapsed: 'Elapsed', rate: 'Bags/min' };
-function updateLiveSortHeaders() {
-var table = document.getElementById('cbt-table');
-if (!table) return;
-var ths = table.querySelectorAll('.cbt-sortable-live');
-for (var i = 0; i < ths.length; i++) {
-var th = ths[i];
-var k = th.dataset ? th.dataset.sort : th.getAttribute('data-sort');
-var base = LIVE_SORT_LABELS[k] ||
-(th.textContent || '').replace(/[\u25B2\u25BC]/g, '').trim();
-var arrow = (k === liveSortKey) ? (liveSortAsc ? ' \u25B2' : ' \u25BC') : '';
-var next = base + arrow;
-if (th.textContent !== next) th.textContent = next;
-}
-}
-function lockLiveRowGeometry() {
-var table = document.getElementById('cbt-table');
-if (!table) return;
-var header = table.querySelector('thead tr');
-if (header) {
-header.style.setProperty('display', 'grid', 'important');
-header.style.setProperty('grid-template-columns',
-'minmax(0,40%) minmax(0,30%) minmax(0,30%)', 'important');
-header.style.setProperty('width', '100%', 'important');
-header.style.setProperty('max-width', '100%', 'important');
-header.style.setProperty('box-sizing', 'border-box', 'important');
-}
-var rows = table.querySelectorAll('tbody tr');
-for (var i = 0; i < rows.length; i++) {
-var tr = rows[i];
-tr.style.setProperty('display', 'grid', 'important');
-tr.style.setProperty('grid-template-columns',
-'minmax(0,40%) minmax(0,30%) minmax(0,30%)', 'important');
-tr.style.setProperty('width', '100%', 'important');
-tr.style.setProperty('max-width', '100%', 'important');
-tr.style.setProperty('height', '48px', 'important');
-tr.style.setProperty('min-height', '48px', 'important');
-tr.style.setProperty('max-height', '48px', 'important');
-tr.style.setProperty('margin', '0', 'important');
-tr.style.setProperty('padding', '0', 'important');
-tr.style.setProperty('overflow', 'hidden', 'important');
-tr.style.setProperty('box-sizing', 'border-box', 'important');
-var cells = tr.children;
-for (var c = 0; c < cells.length; c++) {
-var td = cells[c];
-td.style.setProperty('width', 'auto', 'important');
-td.style.setProperty('min-width', '0', 'important');
-td.style.setProperty('height', '48px', 'important');
-td.style.setProperty('min-height', '48px', 'important');
-td.style.setProperty('max-height', '48px', 'important');
-td.style.setProperty('padding', '0 10px', 'important');
-td.style.setProperty('margin', '0', 'important');
-td.style.setProperty('display', 'flex', 'important');
-td.style.setProperty('align-items', 'center', 'important');
-td.style.setProperty('justify-content', c === 0 ? 'flex-start' : 'center', 'important');
-td.style.setProperty('overflow', 'hidden', 'important');
-td.style.setProperty('box-sizing', 'border-box', 'important');
-if (c === 1) {
-var elapsed = td.querySelector('.cbt-elapsed');
-if (elapsed) {
-elapsed.style.setProperty('display', 'inline-flex', 'important');
-elapsed.style.setProperty('align-items', 'center', 'important');
-elapsed.style.setProperty('justify-content', 'center', 'important');
-elapsed.style.setProperty('width', '58px', 'important');
-elapsed.style.setProperty('min-width', '58px', 'important');
-elapsed.style.setProperty('max-width', '58px', 'important');
-elapsed.style.setProperty('height', '22px', 'important');
-elapsed.style.setProperty('min-height', '22px', 'important');
-elapsed.style.setProperty('max-height', '22px', 'important');
-elapsed.style.setProperty('padding', '0', 'important');
-elapsed.style.setProperty('margin-left', 'auto', 'important');
-elapsed.style.setProperty('margin-right', 'auto', 'important');
-elapsed.style.setProperty('text-align', 'center', 'important');
-elapsed.style.setProperty('line-height', '22px', 'important');
-elapsed.style.setProperty('transform', 'none', 'important');
-elapsed.style.setProperty('box-sizing', 'border-box', 'important');
-}
-}
-}
-}
-}
-function renderLive() {
-var tbody=document.querySelector('#cbt-tbody'), empty=document.querySelector('#cbt-empty');
-if (!tbody||!empty) return;
-var lowerTerm = liveSearchTerm ? liveSearchTerm.toLowerCase() : '';
-var mainTasks = null;
-if (isDashboardView()) {
-try { mainTasks = cbtRecMainTasksSnapshot(); } catch(eMainTasks) {}
-}
-var rows=[]; taskCache.forEach(function(d){
-if(cbtIsLiveBatch(d)) {
-if (isDashboardView()) {
-if (!mainTasks && _cbtLiveDashboardSyncPending) return;
-if (mainTasks) {
-if (mainTasks.count === 0) return;
-if ((mainTasks.refs.size || mainTasks.ids.size) &&
-!cbtRecJobMatchesMainTasks(d, mainTasks)) return;
-}
-}
-if (lowerTerm) {
-var nm = (cbtAssociateLogin(d) || '').toLowerCase();
-if (nm.indexOf(lowerTerm) === -1) return;
-}
-rows.push({ d:d, r:computeRow(d) });
-}
-});
-var groupLowFirst = !(liveSortUser && liveSortKey === 'rate');
-rows.sort(function(A,B){
-var a=A.d, b=B.d, ra=A.r, rb=B.r;
-if (groupLowFirst) {
-var slowA = ra.scanRate && ra.scanRate < ALERT_RATE && (ra.elapsedSec||0) > 120;
-var slowB = rb.scanRate && rb.scanRate < ALERT_RATE && (rb.elapsedSec||0) > 120;
-if (slowA && !slowB) return -1;
-if (!slowA && slowB) return 1;
-if (slowA && slowB) return (ra.scanRate||0) - (rb.scanRate||0);
-}
-var va, vb;
-if(liveSortKey==='assoc'){
-va=(cbtAssociateLogin(a)||'').toLowerCase();
-vb=(cbtAssociateLogin(b)||'').toLowerCase();
-return liveSortAsc?va.localeCompare(vb):vb.localeCompare(va);
-} else if(liveSortKey==='rate'){
-var hasA = (ra.scanRate != null && !isNaN(ra.scanRate));
-var hasB = (rb.scanRate != null && !isNaN(rb.scanRate));
-if (hasA && !hasB) return -1;
-if (!hasA && hasB) return 1;
-if (!hasA && !hasB) return 0;
-va=ra.scanRate; vb=rb.scanRate;
-} else {
-va=ra.elapsedSec||0; vb=rb.elapsedSec||0;
-}
-return liveSortAsc?va-vb:vb-va;
-});
-updateLiveSortHeaders();
-if(rows.length===0){
-setHTML(tbody,'');
-empty.style.display='block';
-var body2=document.querySelector('#cbt-body');
-if(body2&&!body2.style.height){body2.style.height='350px';body2.style.maxHeight='350px';}
-return;
-}
-empty.style.display='none';
-function present(item) {
-var data=item.d, r=item.r;
-var assoc=cbtAssociateLogin(data)||'Unassigned';
-var shortRef=data.shortClientRef||'';
-var rateCls=r.scanRate!=null?(r.scanRate<ALERT_RATE?'alert':r.scanRate<WARN_RATE?'warn':''):'pending';
-var rateTxt=r.scanRate!=null?r.scanRate.toFixed(1):'\u2014';
-var rateTitle =
-r.rateSource==='api-full-span' ? 'Rate: packages batched / full BATCHING elapsed time' :
-r.rateSource==='observed-delta' ? 'Rate fallback: package increase observed by this dashboard' :
-r.rateSource==='invalid-api-span' ? 'Rate hidden: API timing/count combination produced an invalid spike' :
-'Rate pending until enough trusted timing/progress is available';
-var slow=(r.scanRate!==null&&r.scanRate<ALERT_RATE&&r.elapsedSec>120);
-return {
-key:String(shortRef), assoc:String(assoc), shortRef:String(shortRef),
-start:r.startMs||'', live:r.inProgress?'1':'0',
-rateClass:'cbt-rate '+rateCls, rateText:rateTxt,
-rateTitle:rateTitle, slow:slow
-};
-}
-var pres=rows.map(present);
-var domRows=tbody.querySelectorAll('tr[data-cbt-live-key]');
-var sameOrder=domRows.length===pres.length;
-if (sameOrder) {
-for (var di=0; di<pres.length; di++) {
-if (domRows[di].getAttribute('data-cbt-live-key') !== pres[di].key) {
-sameOrder=false; break;
-}
-}
-}
-if (sameOrder) {
-for (var pi=0; pi<pres.length; pi++) {
-var rowEl=domRows[pi], p=pres[pi];
-var assocEl=rowEl.querySelector('.cbt-assoc');
-if (assocEl && assocEl.textContent!==p.assoc) assocEl.textContent=p.assoc;
-var refEl=rowEl.querySelector('.cbt-ref');
-if (refEl && refEl.textContent!==p.shortRef) refEl.textContent=p.shortRef;
-var elapsedEl=rowEl.querySelector('.cbt-elapsed');
-if (elapsedEl) {
-_cbtLiveElapsedElements.add(elapsedEl);
-if (elapsedEl.dataset.start!==String(p.start)) elapsedEl.dataset.start=String(p.start);
-if (elapsedEl.dataset.live!==p.live) elapsedEl.dataset.live=p.live;
-}
-var rateEl=rowEl.querySelector('.cbt-rate');
-if (rateEl) {
-if (rateEl.className!==p.rateClass) rateEl.className=p.rateClass;
-if (rateEl.textContent!==p.rateText) rateEl.textContent=p.rateText;
-if (rateEl.title!==p.rateTitle) rateEl.title=p.rateTitle;
-}
-var topEl=rowEl.querySelector('.cbt-cw-top');
-var slot=topEl && topEl.querySelector('.cbt-live-status-slot');
-if (p.slow && !slot && topEl) {
-slot=document.createElement('span');
-slot.className='cbt-live-status-slot';
-slot.innerHTML='<span class="cbt-slow-alert">⚠ SLOW</span>';
-topEl.appendChild(slot);
-} else if (!p.slow && slot) {
-slot.remove();
-}
-}
-tickLive();
-requestUnifiedSearchCount();
-return;
-}
-var html='';
-for(var i=0;i<pres.length;i++){
-var p=pres[i];
-var slowAlert=p.slow?'<span class="cbt-live-status-slot"><span class="cbt-slow-alert">⚠ SLOW</span></span>':'';
-html+='<tr data-cbt-live-key="'+cbtEscHtml(p.key)+'"><td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-assoc">'+cbtEscHtml(p.assoc)+'</span>'+slowAlert+'</span><span class="cbt-ref">'+cbtEscHtml(p.shortRef)+'</span></span></td>';
-html+='<td><span class="cbt-elapsed" data-start="'+cbtEscHtml(p.start)+'" data-live="'+p.live+'">--:--</span></td>';
-html+='<td><span class="'+p.rateClass+'" title="'+cbtEscHtml(p.rateTitle)+'">'+p.rateText+'</span></td></tr>';
-}
-setHTML(tbody, html);
-lockLiveRowGeometry();
-try {
-tbody.querySelectorAll('.cbt-elapsed').forEach(function(el){ _cbtLiveElapsedElements.add(el); });
-} catch(eLiveBind) {}
-_cbtLastLiveTickSecond = -1;
-tickLive();
-requestUnifiedSearchCount();
-}
-function renderHistory() {
-var tbody=document.querySelector('#cbt-hist-tbody'),empty=document.querySelector('#cbt-hist-empty'),summary=document.querySelector('#cbt-hist-summary');
-if(!tbody||!empty) return;
-var history=getDisplayHistory(),entries=Object.values(history);
-if(entries.length===0){setHTML(tbody,'');empty.style.display='block';if(summary)setHTML(summary,'');
-if(historySearchTerm) renderHistoryCrossSearch(historySearchTerm);
-return;}
-empty.style.display='none';
-if(summary){
-var tA=entries.length,tS=entries.reduce(function(s,e){return s+e.totalSec;},0);
-var oR=tS>0?entries.reduce(function(s,e){return s+e.totalPkgs;},0)/(tS/60):0;
-var tMissing=entries.reduce(function(s,e){return s+(e.totalMissing||0);},0);
-var tExpected=entries.reduce(function(s,e){return s+(e.totalExpected||0);},0);
-var avgMissPct=tExpected>0?(tMissing/tExpected*100):0;
-setHTML(summary,'<div class="cbt-ws-stat"><span class="cbt-ws-val">'+tA+'</span><span class="cbt-ws-label">Batchers</span></div>'+
-'<div class="cbt-ws-stat"><span class="cbt-ws-val">'+oR.toFixed(1)+'</span><span class="cbt-ws-label">Avg Rate</span></div>'+
-'<div class="cbt-ws-stat"><span class="cbt-ws-val">'+avgMissPct.toFixed(1)+'%</span><span class="cbt-ws-label">Avg Miss %</span></div>');
-}
-var ranked=entries.slice();
-ranked.sort(function(a,b){
-var va,vb;
-if(historySortKey==='assoc'){va=a.assoc.toLowerCase();vb=b.assoc.toLowerCase();return historySortAsc?va.localeCompare(vb):vb.localeCompare(va);}
-else if(historySortKey==='runs'){va=a.runs;vb=b.runs;}
-else if(historySortKey==='pkgs'){va=a.totalPkgs;vb=b.totalPkgs;}
-else if(historySortKey==='lastRate'){va=Number(a.lastRate)||0;vb=Number(b.lastRate)||0;}
-else if(historySortKey==='bestRate'){va=Number(a.bestRate)||0;vb=Number(b.bestRate)||0;}
-else{va=Number(a.bestRate)||0;vb=Number(b.bestRate)||0;}
-return historySortAsc?va-vb:vb-va;
-});
-for(var ri=0;ri<ranked.length;ri++) ranked[ri]._displayRank=ri+1;
-var filtered=ranked;
-if(historySearchTerm){var term=historySearchTerm.toLowerCase();filtered=ranked.filter(function(e){return e.assoc.toLowerCase().indexOf(term)!==-1;});filtered=prioritizeNameMatches(filtered,term,function(e){return e.assoc;});}
-var html='';
-for(var i=0;i<filtered.length;i++){
-var e=filtered[i],bestRate=Number(e.bestRate)||0;
-var rateCls=bestRate>=WARN_RATE?'good':bestRate>=ALERT_RATE?'warn':'alert';
-var rk=e._displayRank||0;
-var rankCls=rk===1?'gold':rk===2?'silver':rk===3?'bronze':'';
-html+='<tr><td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-assoc"><span class="cbt-rank '+rankCls+'">'+rk+'</span>'+cbtEscHtml(e.assoc)+'</span></span></span></td>';
-html+='<td><span class="cbt-hist-meta">'+e.runs+'</span></td><td><span class="cbt-hist-meta">'+e.totalPkgs+'</span></td>';
-html+='<td>'+(bestRate>0?'<span class="cbt-hist-rate '+rateCls+'">'+bestRate.toFixed(1)+'</span>':'<span class="cbt-hist-meta">—</span>')+'</td>';
-var latestRate=Number(e.lastRate), latestCls=latestRate>=WARN_RATE?'good':latestRate>=ALERT_RATE?'warn':'alert';
-html+='<td>'+(latestRate>0?'<span class="cbt-hist-rate '+latestCls+'">'+latestRate.toFixed(1)+'</span>':'<span class="cbt-hist-meta">—</span>')+'</td></tr>';
-}
-setHTML(tbody, html);
-if(historySearchTerm) renderHistoryCrossSearch(historySearchTerm);
-else {
-var cross = document.getElementById('cbt-hist-cross');
-if(cross) setHTML(cross,'');
-}
-requestUnifiedSearchCount();
-}
-function renderHistoryCrossSearch(term) {
-var crossEl = document.getElementById('cbt-hist-cross');
-if(!crossEl) return;
-if(!term){ setHTML(crossEl,''); return; }
-term = term.toLowerCase();
-var weekly = getDisplayWeekly(), agg = {};
-for(var dk of Object.keys(weekly)){
-for(var a of Object.keys(weekly[dk])){
-if(a.toLowerCase().indexOf(term)===-1) continue;
-if(!agg[a]) agg[a]={assoc:(weekly[dk][a].assoc||a),totalPkgs:0,totalSec:0,runs:0,daysSet:new Set()};
-else if(weekly[dk][a].assoc)agg[a].assoc=weekly[dk][a].assoc;
-agg[a].totalPkgs+=weekly[dk][a].totalPkgs;
-agg[a].totalSec+=weekly[dk][a].totalSec;
-agg[a].runs+=weekly[dk][a].runs;
-agg[a].daysSet.add(dk);
-}
-}
-var entries = prioritizeNameMatches(Object.values(agg), term, function(e){ return e.assoc; });
-var shown = new Set();
-var todayHist = getDisplayHistory();
-Object.values(todayHist).forEach(function(e){ if(e.assoc.toLowerCase().indexOf(term)!==-1) shown.add(e.assoc.toLowerCase()); });
-var html='';
-if(entries.length>0){
-html+='<div class="cbt-search-result-section">WEEKLY</div>';
-entries.forEach(function(e){
-shown.add(e.assoc.toLowerCase());
-var avgRate=e.totalSec>0?e.totalPkgs/(e.totalSec/60):0;
-var rateCls=avgRate>=WARN_RATE?'good':avgRate>=ALERT_RATE?'warn':'alert';
-html+='<div class="cbt-search-row"><span class="cbt-search-row-name">'+cbtEscHtml(e.assoc)+'</span>' +
-'<span class="cbt-search-row-mid"><span style="display:inline-block;width:45px;text-align:right;">'+e.daysSet.size+'</span> days | <span style="display:inline-block;width:50px;text-align:left;">'+e.totalPkgs+'</span> pkgs</span>' +
-'<span class="cbt-search-row-rate"><span class="cbt-hist-rate '+rateCls+'">'+avgRate.toFixed(1)+'</span></span></div>';
-});
-}
-html += savedNamesSearchHTML(term, shown);
-setHTML(crossEl, html);
-}
-function sanitizeWeekly(w) {
-var clean = {};
-for (var dk in (w || {})) {
-if (!cbtIsDateInCurrentWeek(dk)) continue;
-if (!w[dk] || typeof w[dk] !== 'object') continue;
-clean[dk] = {};
-for (var a in w[dk]) {
-var e = w[dk][a];
-if (!e || typeof e !== 'object') continue;
-if (!cbtHistoryEntryHasData(e)) continue;
-if ((e.totalPkgs||0) > 50000 || (e.runs||0) > 300) continue;
-var sec = Number(e.totalSec) || 0;
-if (sec > 60 && (Number(e.totalPkgs)||0) / (sec / 60) > CBT_MAX_VALID_RATE) continue;
-var c = Object.assign({}, e);
-if (Number(c.bestRate) > CBT_MAX_VALID_RATE) c.bestRate = null;
-if (Number(c.lastRate) > CBT_MAX_VALID_RATE) {
-c.lastRate = null;
-c.lastAt = 0;
-}
-clean[dk][a] = c;
-}
-if (!Object.keys(clean[dk]).length) delete clean[dk];
-}
-return clean;
-}
-function renderWeekly() {
-var tbody=document.querySelector('#cbt-weekly-tbody'),empty=document.querySelector('#cbt-weekly-empty'),summary=document.querySelector('#cbt-weekly-summary');
-if(!tbody||!empty) return;
-var weekly=getDisplayWeekly(),agg={};
-for(var dayKey of Object.keys(weekly)){
-for(var assoc of Object.keys(weekly[dayKey])){
-var d3=weekly[dayKey][assoc];
-if(!agg[assoc])agg[assoc]={assoc:(d3.assoc||assoc),totalPkgs:0,totalSec:0,runs:0,totalMissing:0,totalExpected:0,daysSet:new Set(),bestRate:null,lastRate:null,lastAt:0};
-else if (d3.assoc) agg[assoc].assoc = d3.assoc;
-agg[assoc].totalPkgs+=d3.totalPkgs;agg[assoc].totalSec+=d3.totalSec;agg[assoc].runs+=d3.runs;
-agg[assoc].totalMissing+=(d3.totalMissing||0);agg[assoc].totalExpected+=(d3.totalExpected||0);agg[assoc].daysSet.add(dayKey);
-cbtMergeBestFields(agg[assoc], d3);
-cbtMergeLatestFields(agg[assoc], d3);
-}
-}
-var all=Object.values(agg).map(function(a){
-var pkgs = Math.min(a.totalPkgs, 100000);
-var sec = Math.min(a.totalSec, 500*3600);
-var runs = Math.min(a.runs, 500);
-return{assoc:a.assoc,totalPkgs:pkgs,totalSec:sec,runs:runs,days:a.daysSet.size,avgRate:sec>0?pkgs/(sec/60):0,
-bestRate:Number(a.bestRate)>0?Number(a.bestRate):null,
-lastRate:Number(a.lastRate)>0?Number(a.lastRate):null,lastAt:Number(a.lastAt)||0,
-hrs:sec,missPct:a.totalExpected>0?(a.totalMissing/a.totalExpected*100):0};
-});
-if(all.length===0){setHTML(tbody,'');empty.style.display='block';if(summary)setHTML(summary,'');
-if(weeklySearchTerm) renderWeeklyCrossSearch(weeklySearchTerm);
-return;}
-empty.style.display='none';
-if(summary){
-var tA=all.length,tS=all.reduce(function(s,e){return s+e.totalSec;},0);
-var oR=tS>0?all.reduce(function(s,e){return s+e.totalPkgs;},0)/(tS/60):0;
-var weeklyRaw=weekly,tMissing=0,tExpected=0;
-for(var md in weeklyRaw){for(var ma in weeklyRaw[md]){tMissing+=Number(weeklyRaw[md][ma].totalMissing)||0;tExpected+=Number(weeklyRaw[md][ma].totalExpected)||0;}}
-var tM=tExpected>0?(tMissing/tExpected*100):0;
-setHTML(summary,'<div class="cbt-ws-stat"><span class="cbt-ws-val">'+tA+'</span><span class="cbt-ws-label">Batchers</span></div>'+
-'<div class="cbt-ws-stat"><span class="cbt-ws-val">'+oR.toFixed(1)+'</span><span class="cbt-ws-label">Avg Rate</span></div>'+
-'<div class="cbt-ws-stat"><span class="cbt-ws-val">'+tM.toFixed(1)+'%</span><span class="cbt-ws-label">Avg Miss %</span></div>');
-}
-var ranked=all.slice();
-ranked.sort(function(a,b){
-var va,vb;
-if(weeklySortKey==='assoc'){va=a.assoc.toLowerCase();vb=b.assoc.toLowerCase();return weeklySortAsc?va.localeCompare(vb):vb.localeCompare(va);}
-else if(weeklySortKey==='runs'){va=a.runs;vb=b.runs;}
-else if(weeklySortKey==='pkgs'){va=a.totalPkgs;vb=b.totalPkgs;}
-else if(weeklySortKey==='bestRate'){va=Number(a.bestRate)||0;vb=Number(b.bestRate)||0;}
-else if(weeklySortKey==='lastRate'){va=Number(a.lastRate)||0;vb=Number(b.lastRate)||0;}
-else if(weeklySortKey==='hrs'){va=a.hrs;vb=b.hrs;}else{va=Number(a.bestRate)||0;vb=Number(b.bestRate)||0;}
-return weeklySortAsc?va-vb:vb-va;
-});
-for(var ri=0;ri<ranked.length;ri++) ranked[ri]._displayRank=ri+1;
-var filtered=ranked;
-if(weeklySearchTerm){var term=weeklySearchTerm.toLowerCase();filtered=ranked.filter(function(e){return e.assoc.toLowerCase().indexOf(term)!==-1;});filtered=prioritizeNameMatches(filtered,term,function(e){return e.assoc;});}
-var html='';
-for(var i=0;i<filtered.length;i++){
-var e=filtered[i],bestRate=Number(e.bestRate)||0;
-var rateCls=bestRate>=WARN_RATE?'good':bestRate>=ALERT_RATE?'warn':'alert';
-var rk=e._displayRank||0;
-var rankCls=rk===1?'gold':rk===2?'silver':rk===3?'bronze':'';
-html+='<tr><td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-assoc"><span class="cbt-rank '+rankCls+'">'+rk+'</span>'+cbtEscHtml(e.assoc)+'</span></span></span></td>';
-html+='<td><span class="cbt-hist-meta">'+e.runs+'</span></td>';
-html+='<td><span class="cbt-hist-meta">'+e.totalPkgs+'</span></td>';
-html+='<td>'+(bestRate>0?'<span class="cbt-hist-rate '+rateCls+'">'+bestRate.toFixed(1)+'</span>':'<span class="cbt-hist-meta">—</span>')+'</td>';
-var latestRate=Number(e.lastRate), latestCls=latestRate>=WARN_RATE?'good':latestRate>=ALERT_RATE?'warn':'alert';
-html+='<td>'+(latestRate>0?'<span class="cbt-hist-rate '+latestCls+'">'+latestRate.toFixed(1)+'</span>':'<span class="cbt-hist-meta">—</span>')+'</td>';
-html+='<td><span class="cbt-hist-meta">'+fmtHours(e.totalSec)+'</span></td></tr>';
-}
-setHTML(tbody, html);
-if(weeklySearchTerm) renderWeeklyCrossSearch(weeklySearchTerm);
-else {
-var cross2 = document.getElementById('cbt-weekly-cross');
-if(cross2) setHTML(cross2,'');
-}
-requestUnifiedSearchCount();
-}
-var _cbtDataNameSetCache = null;
-var _cbtDataNameSetAt = 0;
-function savedNamesSearchHTML(term, excludeSet) {
-term = (term||'').toLowerCase().trim();
-if (!term) return '';
-var all = loadAllNames();
-var matches = [];
-for (var k in all) {
-var n = all[k];
-if (k.indexOf(term) !== -1 && (!excludeSet || !excludeSet.has(k))) matches.push(n);
-}
-if (!matches.length) return '';
-matches.sort(function(a,b){ return a.toLowerCase().localeCompare(b.toLowerCase()); });
-matches = prioritizeNameMatches(matches, term, function(n){ return n; });
-var html = '<div class="cbt-search-result-section">SAVED NAMES</div>';
-matches.slice(0, 50).forEach(function(n){
-html += '<div class="cbt-search-row"><span class="cbt-search-row-name cbt-name-cell">' + cbtEscHtml(n) + '</span>' +
-'<span class="cbt-search-row-mid"></span>' +
-'<span class="cbt-search-row-rate" style="color:#aaa;">—</span></div>';
-});
-if (matches.length > 50) html += '<div style="text-align:center;color:#888;padding:4px;font-size:11px;">+' + (matches.length-50) + ' more, refine search</div>';
-return html;
-}
-var _namesScanLast = 0;
-var _cbtSortedNamesCache = null;
-var _cbtSortedNamesCacheSignature = '';
-function cbtSortedSavedNames(all) {
-var keys = Object.keys(all || {});
-var signature = keys.length + '|' + keys.map(function(k){ return k + ':' + String(all[k] || ''); }).join('\u001f');
-if (_cbtSortedNamesCache && _cbtSortedNamesCacheSignature === signature) {
-return _cbtSortedNamesCache.slice();
-}
-var names = keys
-.map(function(k){ return all[k]; })
-.filter(function(n){ return !!cbtAssignNormText(n); });
-names.sort(function(a,b){ return a.toLowerCase().localeCompare(b.toLowerCase()); });
-_cbtSortedNamesCache = names;
-_cbtSortedNamesCacheSignature = signature;
-return names.slice();
-}
-function renderNames() {
-var tbody = document.getElementById('cbt-names-tbody');
-if (!tbody) return;
-var _nowN = Date.now();
-if (_nowN - _namesScanLast > 60000) {
-_namesScanLast = _nowN;
-scanLocalStorageForNames();
-syncNamesFromAllTabs();
-}
-var all = loadAllNames();
-var names = cbtSortedSavedNames(all);
-var totalCount = names.length;
-var term = (namesSearchTerm||'').toLowerCase().trim();
-if (term) {
-names = names.filter(function(n){ return n.toLowerCase().indexOf(term) !== -1; });
-names = prioritizeNameMatches(names, term, function(n){ return n; });
-}
-var countEl = document.getElementById('cbt-names-count');
-if (countEl) {
-var countText = totalCount + ' names saved';
-if (countEl.textContent !== countText) countEl.textContent = countText;
-var namesPanel = document.getElementById('cbt-panel');
-var isDarkMode = !!(namesPanel && namesPanel.classList.contains('dark'));
-var countColor = isDarkMode ? '#8faac0' : '#5a7a96';
-if (countEl.style.color !== countColor) countEl.style.color = countColor;
-}
-var emptyEl = document.getElementById('cbt-names-empty');
-if (!names.length) {
-setHTML(tbody, '');
-if (emptyEl) { emptyEl.style.display = 'block'; emptyEl.textContent = term ? 'No saved names match "' + namesSearchTerm + '"' : 'No saved associates yet'; }
-return;
-}
-if (emptyEl) emptyEl.style.display = 'none';
-var html = '';
-names.forEach(function(n){
-html += '<tr><td style="text-align:left;"><span class="cbt-name-cell">' + cbtEscHtml(n) + '</span></td></tr>';
-});
-setHTML(tbody, html);
-requestUnifiedSearchCount();
-}
-function renderWeeklyCrossSearch(term) {
-var crossEl = document.getElementById('cbt-weekly-cross');
-if(!crossEl) return;
-if(!term){ setHTML(crossEl,''); return; }
-term = term.toLowerCase().trim();
-var history = getDisplayHistory();
-var entries = Object.values(history).filter(function(e){ return e.assoc.toLowerCase().indexOf(term)!==-1; });
-entries = prioritizeNameMatches(entries, term, function(e){ return e.assoc; });
-var shown = new Set(), html='';
-if(entries.length>0){
-html+='<div class="cbt-search-result-section">TODAY</div>';
-entries.forEach(function(e){
-shown.add(e.assoc.toLowerCase());
-var rateCls=e.avgRate>=WARN_RATE?'good':e.avgRate>=ALERT_RATE?'warn':'alert';
-html+='<div class="cbt-search-row"><span class="cbt-search-row-name">'+cbtEscHtml(e.assoc)+'</span>' +
-'<span class="cbt-search-row-mid"><span style="display:inline-block;width:45px;text-align:right;">'+e.runs+'</span> runs | <span style="display:inline-block;width:50px;text-align:left;">'+e.totalPkgs+'</span> pkgs</span>' +
-'<span class="cbt-search-row-rate"><span class="cbt-hist-rate '+rateCls+'">'+e.avgRate.toFixed(1)+'</span></span></div>';
-});
-}
-var weekly = getDisplayWeekly(), agg={};
-for(var dk in weekly){
-for(var a in weekly[dk]){
-var d=weekly[dk][a]||{}, display=d.assoc||a;
-if(String(display).toLowerCase().indexOf(term)===-1) continue;
-var key=String(display).toLowerCase();
-if(!agg[key])agg[key]={assoc:display,totalPkgs:0,totalSec:0,runs:0};
-agg[key].assoc=display; agg[key].totalPkgs+=Number(d.totalPkgs)||0; agg[key].totalSec+=Number(d.totalSec)||0; agg[key].runs+=Number(d.runs)||0;
-}
-}
-var wkRows=prioritizeNameMatches(Object.values(agg),term,function(e){return e.assoc;});
-if(wkRows.length){
-html+='<div class="cbt-search-result-section">WEEKLY</div>';
-wkRows.forEach(function(e){
-shown.add(e.assoc.toLowerCase());
-var avg=e.totalSec>0?e.totalPkgs/(e.totalSec/60):0;
-var cls=avg>=WARN_RATE?'good':avg>=ALERT_RATE?'warn':'alert';
-html+='<div class="cbt-search-row"><span class="cbt-search-row-name">'+cbtEscHtml(e.assoc)+'</span>'+
-'<span class="cbt-search-row-mid"><span style="display:inline-block;width:45px;text-align:right;">'+e.runs+'</span> runs | <span style="display:inline-block;width:50px;text-align:left;">'+e.totalPkgs+'</span> pkgs</span>'+
-'<span class="cbt-search-row-rate">'+(avg>0?'<span class="cbt-hist-rate '+cls+'">'+avg.toFixed(1)+'</span>':'<span style="color:#aaa;">—</span>')+'</span></div>';
-});
-}
-html += savedNamesSearchHTML(term, shown);
-setHTML(crossEl, html);
-}
-var _cbtLastLiveTickSecond = -1;
-var _cbtLiveElapsedElements = new Set();
-function tickLive() {
-if (document.hidden || activeTab !== 'live') return;
-var nowMs = cbtNowMs();
-var tickSecond = Math.floor(nowMs / 1000);
-if (tickSecond === _cbtLastLiveTickSecond) return;
-_cbtLastLiveTickSecond = tickSecond;
-// Live rows are registered when rendered. Avoid querySelectorAll across the
-// whole Live table every second; only touch the elapsed nodes that actually exist.
-_cbtLiveElapsedElements.forEach(function(el){
-if (!el || !el.isConnected) {
-_cbtLiveElapsedElements.delete(el);
-return;
-}
-if (el.dataset.live !== '1') return;
-var startMs = parseFloat(el.dataset.start);
-if (!startMs) return;
-var sec = Math.max(0, (nowMs - startMs) / 1000);
-var min = sec / 60;
-var nextClass = 'cbt-elapsed ' +
-(min >= ALERT_ELAPSED_MIN ? 'alert' : min >= WARN_ELAPSED_MIN ? 'warn' : '');
-var nextText = fmt(sec);
-if (el.className !== nextClass) el.className = nextClass;
-if (el.textContent !== nextText) el.textContent = nextText;
-});
-}
-var _panelMutationRun = coalesced(function() {
-try { ensureSortAttachment(); } catch(e0) {}
-if (!isDashboardView()) { detachMainPanel(); return; }
-var mp = document.getElementById('cbt-panel');
-if (!mp || !mp.isConnected) injectPanel();
-}, 50);
-var _acMutationRun = null;
-var panelWatcher = new MutationObserver(function(mutations) {
-var allOwnUi = !!(mutations && mutations.length);
-var mayHaveDuplicatePanel = false;
-for (var oi = 0; oi < mutations.length; oi++) {
-if (!cbtMutationIsOnlyOwnUi(mutations[oi])) allOwnUi = false;
-var added = mutations[oi] && mutations[oi].addedNodes ? mutations[oi].addedNodes : [];
-for (var ai = 0; ai < added.length; ai++) {
-var an = added[ai];
-if (!an || an.nodeType !== 1) continue;
-try {
-if (an.id === 'cbt-panel' || an.id === 'cbt-afa-btn' ||
-(an.querySelector && an.querySelector('#cbt-panel,#cbt-afa-btn'))) {
-mayHaveDuplicatePanel = true;
-break;
-}
-} catch(eDupProbe) {}
-}
-}
-if (mayHaveDuplicatePanel) {
-try { cbtDedupeMainPanels(); } catch(eDupPanel) {}
-}
-var livePanel = document.getElementById('cbt-panel');
-if (livePanel) cbtKeepSingleRunButton(livePanel);
-// Own dashboard/overlay updates are not a reason to re-run route/panel health.
-// If the panel itself was removed, livePanel is disconnected and normal recovery continues.
-if (allOwnUi && livePanel && livePanel.isConnected) return;
-var dashboard = isDashboardView();
-if (dashboard) {
-if (!livePanel || !livePanel.isConnected) {
-try { injectPanel(); } catch(eFastPanel) {}
-}
-} else if (livePanel && livePanel.isConnected) {
-_panelMutationRun();
-}
-if (!_acMutationRun) return;
-if (!acWatchRelevant() && !_acDrop) return;
-for (var i = 0; i < mutations.length; i++) {
-var m = mutations[i];
-if (cbtMutationIsOnlyOwnUi(m)) continue;
-if (cbtAutocompleteMutationMayMatter(m)) {
-_acMutationRun();
-break;
-}
-}
-});
-var _cbtQrLib = null;
-function qrcode() {
-if (!_cbtQrLib) _cbtQrLib = (function(){
-var module = { exports: {} }, exports = module.exports, define;
-var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],f={},c=function(t,r){o=function(t){for(var r=new Array(t),e=0;e<t;e+=1){r[e]=new Array(t);for(var n=0;n<t;n+=1)r[e][n]=null}return r}(i=4*e+17),l(0,0),l(i-7,0),l(0,i-7),s(),h(),d(t,r),e>=7&&v(t),null==a&&(a=p(e,n,u)),w(a,r)},l=function(t,r){for(var e=-1;e<=7;e+=1)if(!(t+e<=-1||i<=t+e))for(var n=-1;n<=7;n+=1)r+n<=-1||i<=r+n||(o[t+e][r+n]=0<=e&&e<=6&&(0==n||6==n)||0<=n&&n<=6&&(0==e||6==e)||2<=e&&e<=4&&2<=n&&n<=4)},h=function(){for(var t=8;t<i-8;t+=1)null==o[t][6]&&(o[t][6]=t%2==0);for(var r=8;r<i-8;r+=1)null==o[6][r]&&(o[6][r]=r%2==0)},s=function(){for(var t=B.getPatternPosition(e),r=0;r<t.length;r+=1)for(var n=0;n<t.length;n+=1){var i=t[r],a=t[n];if(null==o[i][a])for(var u=-2;u<=2;u+=1)for(var f=-2;f<=2;f+=1)o[i+u][a+f]=-2==u||2==u||-2==f||2==f||0==u&&0==f}},v=function(t){for(var r=B.getBCHTypeNumber(e),n=0;n<18;n+=1){var a=!t&&1==(r>>n&1);o[Math.floor(n/3)][n%3+i-8-3]=a}for(n=0;n<18;n+=1){a=!t&&1==(r>>n&1);o[n%3+i-8-3][Math.floor(n/3)]=a}},d=function(t,r){for(var e=n<<3|r,a=B.getBCHTypeInfo(e),u=0;u<15;u+=1){var f=!t&&1==(a>>u&1);u<6?o[u][8]=f:u<8?o[u+1][8]=f:o[i-15+u][8]=f}for(u=0;u<15;u+=1){f=!t&&1==(a>>u&1);u<8?o[8][i-u-1]=f:u<9?o[8][15-u-1+1]=f:o[8][15-u-1]=f}o[i-8][8]=!t},w=function(t,r){for(var e=-1,n=i-1,a=7,u=0,f=B.getMaskFunction(r),c=i-1;c>0;c-=2)for(6==c&&(c-=1);;){for(var g=0;g<2;g+=1)if(null==o[n][c-g]){var l=!1;u<t.length&&(l=1==(t[u]>>>a&1)),f(n,c-g)&&(l=!l),o[n][c-g]=l,-1==(a-=1)&&(u+=1,a=7)}if((n+=e)<0||i<=n){n-=e,e=-e;break}}},p=function(t,r,e){for(var n=A.getRSBlocks(t,r),o=b(),i=0;i<e.length;i+=1){var a=e[i];o.put(a.getMode(),4),o.put(a.getLength(),B.getLengthInBits(a.getMode(),t)),a.write(o)}var u=0;for(i=0;i<n.length;i+=1)u+=n[i].dataCount;if(o.getLengthInBits()>8*u)throw"code length overflow. ("+o.getLengthInBits()+">"+8*u+")";for(o.getLengthInBits()+4<=8*u&&o.put(0,4);o.getLengthInBits()%8!=0;)o.putBit(!1);for(;!(o.getLengthInBits()>=8*u||(o.put(236,8),o.getLengthInBits()>=8*u));)o.put(17,8);return function(t,r){for(var e=0,n=0,o=0,i=new Array(r.length),a=new Array(r.length),u=0;u<r.length;u+=1){var f=r[u].dataCount,c=r[u].totalCount-f;n=Math.max(n,f),o=Math.max(o,c),i[u]=new Array(f);for(var g=0;g<i[u].length;g+=1)i[u][g]=255&t.getBuffer()[g+e];e+=f;var l=B.getErrorCorrectPolynomial(c),h=k(i[u],l.getLength()-1).mod(l);for(a[u]=new Array(l.getLength()-1),g=0;g<a[u].length;g+=1){var s=g+h.getLength()-a[u].length;a[u][g]=s>=0?h.getAt(s):0}}var v=0;for(g=0;g<r.length;g+=1)v+=r[g].totalCount;var d=new Array(v),w=0;for(g=0;g<n;g+=1)for(u=0;u<r.length;u+=1)g<i[u].length&&(d[w]=i[u][g],w+=1);for(g=0;g<o;g+=1)for(u=0;u<r.length;u+=1)g<a[u].length&&(d[w]=a[u][g],w+=1);return d}(o,n)};f.addData=function(t,r){var e=null;switch(r=r||"Byte"){case"Numeric":e=M(t);break;case"Alphanumeric":e=x(t);break;case"Byte":e=m(t);break;case"Kanji":e=L(t);break;default:throw"mode:"+r}u.push(e),a=null},f.isDark=function(t,r){if(t<0||i<=t||r<0||i<=r)throw t+","+r;return o[t][r]},f.getModuleCount=function(){return i},f.make=function(){if(e<1){for(var t=1;t<40;t++){for(var r=A.getRSBlocks(t,n),o=b(),i=0;i<u.length;i++){var a=u[i];o.put(a.getMode(),4),o.put(a.getLength(),B.getLengthInBits(a.getMode(),t)),a.write(o)}var g=0;for(i=0;i<r.length;i++)g+=r[i].dataCount;if(o.getLengthInBits()<=8*g)break}e=t}c(!1,function(){for(var t=0,r=0,e=0;e<8;e+=1){c(!0,e);var n=B.getLostPoint(f);(0==e||t>n)&&(t=n,r=e)}return r}())},f.createTableTag=function(t,r){t=t||2;var e="";e+='<table style="',e+=" border-width: 0px; border-style: none;",e+=" border-collapse: collapse;",e+=" padding: 0px; margin: "+(r=void 0===r?4*t:r)+"px;",e+='">',e+="<tbody>";for(var n=0;n<f.getModuleCount();n+=1){e+="<tr>";for(var o=0;o<f.getModuleCount();o+=1)e+='<td style="',e+=" border-width: 0px; border-style: none;",e+=" border-collapse: collapse;",e+=" padding: 0px; margin: 0px;",e+=" width: "+t+"px;",e+=" height: "+t+"px;",e+=" background-color: ",e+=f.isDark(n,o)?"#000000":"#ffffff",e+=";",e+='"/>';e+="</tr>"}return e+="</tbody>",e+="</table>"},f.createSvgTag=function(t,r,e,n){var o={};"object"==typeof arguments[0]&&(t=(o=arguments[0]).cellSize,r=o.margin,e=o.alt,n=o.title),t=t||2,r=void 0===r?4*t:r,(e="string"==typeof e?{text:e}:e||{}).text=e.text||null,e.id=e.text?e.id||"qrcode-description":null,(n="string"==typeof n?{text:n}:n||{}).text=n.text||null,n.id=n.text?n.id||"qrcode-title":null;var i,a,u,c,g=f.getModuleCount()*t+2*r,l="";for(c="l"+t+",0 0,"+t+" -"+t+",0 0,-"+t+"z ",l+='<svg version="1.1" xmlns="http://www.w3.org/2000/svg"',l+=o.scalable?"":' width="'+g+'px" height="'+g+'px"',l+=' viewBox="0 0 '+g+" "+g+'" ',l+=' preserveAspectRatio="xMinYMin meet"',l+=n.text||e.text?' role="img" aria-labelledby="'+y([n.id,e.id].join(" ").trim())+'"':"",l+=">",l+=n.text?'<title id="'+y(n.id)+'">'+y(n.text)+"</title>":"",l+=e.text?'<description id="'+y(e.id)+'">'+y(e.text)+"</description>":"",l+='<rect width="100%" height="100%" fill="white" cx="0" cy="0"/>',l+='<path d="',a=0;a<f.getModuleCount();a+=1)for(u=a*t+r,i=0;i<f.getModuleCount();i+=1)f.isDark(a,i)&&(l+="M"+(i*t+r)+","+u+c);return l+='" stroke="transparent" fill="black"/>',l+="</svg>"},f.createDataURL=function(t,r){t=t||2,r=void 0===r?4*t:r;var e=f.getModuleCount()*t+2*r,n=r,o=e-r;return I(e,e,function(r,e){if(n<=r&&r<o&&n<=e&&e<o){var i=Math.floor((r-n)/t),a=Math.floor((e-n)/t);return f.isDark(a,i)?0:1}return 1})},f.createImgTag=function(t,r,e){t=t||2,r=void 0===r?4*t:r;var n=f.getModuleCount()*t+2*r,o="";return o+="<img",o+=' src="',o+=f.createDataURL(t,r),o+='"',o+=' width="',o+=n,o+='"',o+=' height="',o+=n,o+='"',e&&(o+=' alt="',o+=y(e),o+='"'),o+="/>"};var y=function(t){for(var r="",e=0;e<t.length;e+=1){var n=t.charAt(e);switch(n){case"<":r+="&lt;";break;case">":r+="&gt;";break;case"&":r+="&amp;";break;case'"':r+="&quot;";break;default:r+=n}}return r};return f.createASCII=function(t,r){if((t=t||1)<2)return function(t){t=void 0===t?2:t;var r,e,n,o,i,a=1*f.getModuleCount()+2*t,u=t,c=a-t,g={"██":"█","█ ":"▀"," █":"▄","  ":" "},l={"██":"▀","█ ":"▀"," █":" ","  ":" "},h="";for(r=0;r<a;r+=2){for(n=Math.floor((r-u)/1),o=Math.floor((r+1-u)/1),e=0;e<a;e+=1)i="█",u<=e&&e<c&&u<=r&&r<c&&f.isDark(n,Math.floor((e-u)/1))&&(i=" "),u<=e&&e<c&&u<=r+1&&r+1<c&&f.isDark(o,Math.floor((e-u)/1))?i+=" ":i+="█",h+=t<1&&r+1>=c?l[i]:g[i];h+="\n"}return a%2&&t>0?h.substring(0,h.length-a-1)+Array(a+1).join("▀"):h.substring(0,h.length-1)}(r);t-=1,r=void 0===r?2*t:r;var e,n,o,i,a=f.getModuleCount()*t+2*r,u=r,c=a-r,g=Array(t+1).join("██"),l=Array(t+1).join("  "),h="",s="";for(e=0;e<a;e+=1){for(o=Math.floor((e-u)/t),s="",n=0;n<a;n+=1)i=1,u<=n&&n<c&&u<=e&&e<c&&f.isDark(o,Math.floor((n-u)/t))&&(i=0),s+=i?g:l;for(o=0;o<t;o+=1)h+=s+"\n"}return h.substring(0,h.length-1)},f.renderTo2dContext=function(t,r){r=r||2;for(var e=f.getModuleCount(),n=0;n<e;n++)for(var o=0;o<e;o++)t.fillStyle=f.isDark(n,o)?"black":"white",t.fillRect(o*r,n*r,r,r)},f};t.stringToBytes=(t.stringToBytesFuncs={default:function(t){for(var r=[],e=0;e<t.length;e+=1){var n=t.charCodeAt(e);r.push(255&n)}return r}}).default,t.createStringToBytes=function(t,r){var e=function(){for(var e=S(t),n=function(){var t=e.read();if(-1==t)throw"eof";return t},o=0,i={};;){var a=e.read();if(-1==a)break;var u=n(),f=n()<<8|n();i[String.fromCharCode(a<<8|u)]=f,o+=1}if(o!=r)throw o+" != "+r;return i}(),n="?".charCodeAt(0);return function(t){for(var r=[],o=0;o<t.length;o+=1){var i=t.charCodeAt(o);if(i<128)r.push(i);else{var a=e[t.charAt(o)];"number"==typeof a?(255&a)==a?r.push(a):(r.push(a>>>8),r.push(255&a)):r.push(n)}}return r}};var r,e,n,o,i,a=1,u=2,f=4,c=8,g={L:1,M:0,Q:3,H:2},l=0,h=1,s=2,v=3,d=4,w=5,p=6,y=7,B=(r=[[],[6,18],[6,22],[6,26],[6,30],[6,34],[6,22,38],[6,24,42],[6,26,46],[6,28,50],[6,30,54],[6,32,58],[6,34,62],[6,26,46,66],[6,26,48,70],[6,26,50,74],[6,30,54,78],[6,30,56,82],[6,30,58,86],[6,34,62,90],[6,28,50,72,94],[6,26,50,74,98],[6,30,54,78,102],[6,28,54,80,106],[6,32,58,84,110],[6,30,58,86,114],[6,34,62,90,118],[6,26,50,74,98,122],[6,30,54,78,102,126],[6,26,52,78,104,130],[6,30,56,82,108,134],[6,34,60,86,112,138],[6,30,58,86,114,142],[6,34,62,90,118,146],[6,30,54,78,102,126,150],[6,24,50,76,102,128,154],[6,28,54,80,106,132,158],[6,32,58,84,110,136,162],[6,26,54,82,110,138,166],[6,30,58,86,114,142,170]],e=1335,n=7973,i=function(t){for(var r=0;0!=t;)r+=1,t>>>=1;return r},(o={}).getBCHTypeInfo=function(t){for(var r=t<<10;i(r)-i(e)>=0;)r^=e<<i(r)-i(e);return 21522^(t<<10|r)},o.getBCHTypeNumber=function(t){for(var r=t<<12;i(r)-i(n)>=0;)r^=n<<i(r)-i(n);return t<<12|r},o.getPatternPosition=function(t){return r[t-1]},o.getMaskFunction=function(t){switch(t){case l:return function(t,r){return(t+r)%2==0};case h:return function(t,r){return t%2==0};case s:return function(t,r){return r%3==0};case v:return function(t,r){return(t+r)%3==0};case d:return function(t,r){return(Math.floor(t/2)+Math.floor(r/3))%2==0};case w:return function(t,r){return t*r%2+t*r%3==0};case p:return function(t,r){return(t*r%2+t*r%3)%2==0};case y:return function(t,r){return(t*r%3+(t+r)%2)%2==0};default:throw"bad maskPattern:"+t}},o.getErrorCorrectPolynomial=function(t){for(var r=k([1],0),e=0;e<t;e+=1)r=r.multiply(k([1,C.gexp(e)],0));return r},o.getLengthInBits=function(t,r){if(1<=r&&r<10)switch(t){case a:return 10;case u:return 9;case f:case c:return 8;default:throw"mode:"+t}else if(r<27)switch(t){case a:return 12;case u:return 11;case f:return 16;case c:return 10;default:throw"mode:"+t}else{if(!(r<41))throw"type:"+r;switch(t){case a:return 14;case u:return 13;case f:return 16;case c:return 12;default:throw"mode:"+t}}},o.getLostPoint=function(t){for(var r=t.getModuleCount(),e=0,n=0;n<r;n+=1)for(var o=0;o<r;o+=1){for(var i=0,a=t.isDark(n,o),u=-1;u<=1;u+=1)if(!(n+u<0||r<=n+u))for(var f=-1;f<=1;f+=1)o+f<0||r<=o+f||0==u&&0==f||a==t.isDark(n+u,o+f)&&(i+=1);i>5&&(e+=3+i-5)}for(n=0;n<r-1;n+=1)for(o=0;o<r-1;o+=1){var c=0;t.isDark(n,o)&&(c+=1),t.isDark(n+1,o)&&(c+=1),t.isDark(n,o+1)&&(c+=1),t.isDark(n+1,o+1)&&(c+=1),0!=c&&4!=c||(e+=3)}for(n=0;n<r;n+=1)for(o=0;o<r-6;o+=1)t.isDark(n,o)&&!t.isDark(n,o+1)&&t.isDark(n,o+2)&&t.isDark(n,o+3)&&t.isDark(n,o+4)&&!t.isDark(n,o+5)&&t.isDark(n,o+6)&&(e+=40);for(o=0;o<r;o+=1)for(n=0;n<r-6;n+=1)t.isDark(n,o)&&!t.isDark(n+1,o)&&t.isDark(n+2,o)&&t.isDark(n+3,o)&&t.isDark(n+4,o)&&!t.isDark(n+5,o)&&t.isDark(n+6,o)&&(e+=40);var g=0;for(o=0;o<r;o+=1)for(n=0;n<r;n+=1)t.isDark(n,o)&&(g+=1);return e+=Math.abs(100*g/r/r-50)/5*10},o),C=function(){for(var t=new Array(256),r=new Array(256),e=0;e<8;e+=1)t[e]=1<<e;for(e=8;e<256;e+=1)t[e]=t[e-4]^t[e-5]^t[e-6]^t[e-8];for(e=0;e<255;e+=1)r[t[e]]=e;var n={glog:function(t){if(t<1)throw"glog("+t+")";return r[t]},gexp:function(r){for(;r<0;)r+=255;for(;r>=256;)r-=255;return t[r]}};return n}();function k(t,r){if(void 0===t.length)throw t.length+"/"+r;var e=function(){for(var e=0;e<t.length&&0==t[e];)e+=1;for(var n=new Array(t.length-e+r),o=0;o<t.length-e;o+=1)n[o]=t[o+e];return n}(),n={getAt:function(t){return e[t]},getLength:function(){return e.length},multiply:function(t){for(var r=new Array(n.getLength()+t.getLength()-1),e=0;e<n.getLength();e+=1)for(var o=0;o<t.getLength();o+=1)r[e+o]^=C.gexp(C.glog(n.getAt(e))+C.glog(t.getAt(o)));return k(r,0)},mod:function(t){if(n.getLength()-t.getLength()<0)return n;for(var r=C.glog(n.getAt(0))-C.glog(t.getAt(0)),e=new Array(n.getLength()),o=0;o<n.getLength();o+=1)e[o]=n.getAt(o);for(o=0;o<t.getLength();o+=1)e[o]^=C.gexp(C.glog(t.getAt(o))+r);return k(e,0).mod(t)}};return n}var A=function(){var t=[[1,26,19],[1,26,16],[1,26,13],[1,26,9],[1,44,34],[1,44,28],[1,44,22],[1,44,16],[1,70,55],[1,70,44],[2,35,17],[2,35,13],[1,100,80],[2,50,32],[2,50,24],[4,25,9],[1,134,108],[2,67,43],[2,33,15,2,34,16],[2,33,11,2,34,12],[2,86,68],[4,43,27],[4,43,19],[4,43,15],[2,98,78],[4,49,31],[2,32,14,4,33,15],[4,39,13,1,40,14],[2,121,97],[2,60,38,2,61,39],[4,40,18,2,41,19],[4,40,14,2,41,15],[2,146,116],[3,58,36,2,59,37],[4,36,16,4,37,17],[4,36,12,4,37,13],[2,86,68,2,87,69],[4,69,43,1,70,44],[6,43,19,2,44,20],[6,43,15,2,44,16],[4,101,81],[1,80,50,4,81,51],[4,50,22,4,51,23],[3,36,12,8,37,13],[2,116,92,2,117,93],[6,58,36,2,59,37],[4,46,20,6,47,21],[7,42,14,4,43,15],[4,133,107],[8,59,37,1,60,38],[8,44,20,4,45,21],[12,33,11,4,34,12],[3,145,115,1,146,116],[4,64,40,5,65,41],[11,36,16,5,37,17],[11,36,12,5,37,13],[5,109,87,1,110,88],[5,65,41,5,66,42],[5,54,24,7,55,25],[11,36,12,7,37,13],[5,122,98,1,123,99],[7,73,45,3,74,46],[15,43,19,2,44,20],[3,45,15,13,46,16],[1,135,107,5,136,108],[10,74,46,1,75,47],[1,50,22,15,51,23],[2,42,14,17,43,15],[5,150,120,1,151,121],[9,69,43,4,70,44],[17,50,22,1,51,23],[2,42,14,19,43,15],[3,141,113,4,142,114],[3,70,44,11,71,45],[17,47,21,4,48,22],[9,39,13,16,40,14],[3,135,107,5,136,108],[3,67,41,13,68,42],[15,54,24,5,55,25],[15,43,15,10,44,16],[4,144,116,4,145,117],[17,68,42],[17,50,22,6,51,23],[19,46,16,6,47,17],[2,139,111,7,140,112],[17,74,46],[7,54,24,16,55,25],[34,37,13],[4,151,121,5,152,122],[4,75,47,14,76,48],[11,54,24,14,55,25],[16,45,15,14,46,16],[6,147,117,4,148,118],[6,73,45,14,74,46],[11,54,24,16,55,25],[30,46,16,2,47,17],[8,132,106,4,133,107],[8,75,47,13,76,48],[7,54,24,22,55,25],[22,45,15,13,46,16],[10,142,114,2,143,115],[19,74,46,4,75,47],[28,50,22,6,51,23],[33,46,16,4,47,17],[8,152,122,4,153,123],[22,73,45,3,74,46],[8,53,23,26,54,24],[12,45,15,28,46,16],[3,147,117,10,148,118],[3,73,45,23,74,46],[4,54,24,31,55,25],[11,45,15,31,46,16],[7,146,116,7,147,117],[21,73,45,7,74,46],[1,53,23,37,54,24],[19,45,15,26,46,16],[5,145,115,10,146,116],[19,75,47,10,76,48],[15,54,24,25,55,25],[23,45,15,25,46,16],[13,145,115,3,146,116],[2,74,46,29,75,47],[42,54,24,1,55,25],[23,45,15,28,46,16],[17,145,115],[10,74,46,23,75,47],[10,54,24,35,55,25],[19,45,15,35,46,16],[17,145,115,1,146,116],[14,74,46,21,75,47],[29,54,24,19,55,25],[11,45,15,46,46,16],[13,145,115,6,146,116],[14,74,46,23,75,47],[44,54,24,7,55,25],[59,46,16,1,47,17],[12,151,121,7,152,122],[12,75,47,26,76,48],[39,54,24,14,55,25],[22,45,15,41,46,16],[6,151,121,14,152,122],[6,75,47,34,76,48],[46,54,24,10,55,25],[2,45,15,64,46,16],[17,152,122,4,153,123],[29,74,46,14,75,47],[49,54,24,10,55,25],[24,45,15,46,46,16],[4,152,122,18,153,123],[13,74,46,32,75,47],[48,54,24,14,55,25],[42,45,15,32,46,16],[20,147,117,4,148,118],[40,75,47,7,76,48],[43,54,24,22,55,25],[10,45,15,67,46,16],[19,148,118,6,149,119],[18,75,47,31,76,48],[34,54,24,34,55,25],[20,45,15,61,46,16]],r=function(t,r){var e={};return e.totalCount=t,e.dataCount=r,e},e={};return e.getRSBlocks=function(e,n){var o=function(r,e){switch(e){case g.L:return t[4*(r-1)+0];case g.M:return t[4*(r-1)+1];case g.Q:return t[4*(r-1)+2];case g.H:return t[4*(r-1)+3];default:return}}(e,n);if(void 0===o)throw"bad rs block @ typeNumber:"+e+"/errorCorrectionLevel:"+n;for(var i=o.length/3,a=[],u=0;u<i;u+=1)for(var f=o[3*u+0],c=o[3*u+1],l=o[3*u+2],h=0;h<f;h+=1)a.push(r(c,l));return a},e}(),b=function(){var t=[],r=0,e={getBuffer:function(){return t},getAt:function(r){var e=Math.floor(r/8);return 1==(t[e]>>>7-r%8&1)},put:function(t,r){for(var n=0;n<r;n+=1)e.putBit(1==(t>>>r-n-1&1))},getLengthInBits:function(){return r},putBit:function(e){var n=Math.floor(r/8);t.length<=n&&t.push(0),e&&(t[n]|=128>>>r%8),r+=1}};return e},M=function(t){var r=a,e=t,n={getMode:function(){return r},getLength:function(t){return e.length},write:function(t){for(var r=e,n=0;n+2<r.length;)t.put(o(r.substring(n,n+3)),10),n+=3;n<r.length&&(r.length-n==1?t.put(o(r.substring(n,n+1)),4):r.length-n==2&&t.put(o(r.substring(n,n+2)),7))}},o=function(t){for(var r=0,e=0;e<t.length;e+=1)r=10*r+i(t.charAt(e));return r},i=function(t){if("0"<=t&&t<="9")return t.charCodeAt(0)-"0".charCodeAt(0);throw"illegal char :"+t};return n},x=function(t){var r=u,e=t,n={getMode:function(){return r},getLength:function(t){return e.length},write:function(t){for(var r=e,n=0;n+1<r.length;)t.put(45*o(r.charAt(n))+o(r.charAt(n+1)),11),n+=2;n<r.length&&t.put(o(r.charAt(n)),6)}},o=function(t){if("0"<=t&&t<="9")return t.charCodeAt(0)-"0".charCodeAt(0);if("A"<=t&&t<="Z")return t.charCodeAt(0)-"A".charCodeAt(0)+10;switch(t){case" ":return 36;case"$":return 37;case"%":return 38;case"*":return 39;case"+":return 40;case"-":return 41;case".":return 42;case"/":return 43;case":":return 44;default:throw"illegal char :"+t}};return n},m=function(r){var e=f,n=t.stringToBytes(r),o={getMode:function(){return e},getLength:function(t){return n.length},write:function(t){for(var r=0;r<n.length;r+=1)t.put(n[r],8)}};return o},L=function(r){var e=c,n=t.stringToBytesFuncs.SJIS;if(!n)throw"sjis not supported.";!function(){var t=n("友");if(2!=t.length||38726!=(t[0]<<8|t[1]))throw"sjis not supported."}();var o=n(r),i={getMode:function(){return e},getLength:function(t){return~~(o.length/2)},write:function(t){for(var r=o,e=0;e+1<r.length;){var n=(255&r[e])<<8|255&r[e+1];if(33088<=n&&n<=40956)n-=33088;else{if(!(57408<=n&&n<=60351))throw"illegal char at "+(e+1)+"/"+n;n-=49472}n=192*(n>>>8&255)+(255&n),t.put(n,13),e+=2}if(e<r.length)throw"illegal char at "+(e+1)}};return i},D=function(){var t=[],r={writeByte:function(r){t.push(255&r)},writeShort:function(t){r.writeByte(t),r.writeByte(t>>>8)},writeBytes:function(t,e,n){e=e||0,n=n||t.length;for(var o=0;o<n;o+=1)r.writeByte(t[o+e])},writeString:function(t){for(var e=0;e<t.length;e+=1)r.writeByte(t.charCodeAt(e))},toByteArray:function(){return t},toString:function(){var r="";r+="[";for(var e=0;e<t.length;e+=1)e>0&&(r+=","),r+=t[e];return r+="]"}};return r},S=function(t){var r=t,e=0,n=0,o=0,i={read:function(){for(;o<8;){if(e>=r.length){if(0==o)return-1;throw"unexpected end of file./"+o}var t=r.charAt(e);if(e+=1,"="==t)return o=0,-1;t.match(/^\s$/)||(n=n<<6|a(t.charCodeAt(0)),o+=6)}var i=n>>>o-8&255;return o-=8,i}},a=function(t){if(65<=t&&t<=90)return t-65;if(97<=t&&t<=122)return t-97+26;if(48<=t&&t<=57)return t-48+52;if(43==t)return 62;if(47==t)return 63;throw"c:"+t};return i},I=function(t,r,e){for(var n=function(t,r){var e=t,n=r,o=new Array(t*r),i={setPixel:function(t,r,n){o[r*e+t]=n},write:function(t){t.writeString("GIF87a"),t.writeShort(e),t.writeShort(n),t.writeByte(128),t.writeByte(0),t.writeByte(0),t.writeByte(0),t.writeByte(0),t.writeByte(0),t.writeByte(255),t.writeByte(255),t.writeByte(255),t.writeString(","),t.writeShort(0),t.writeShort(0),t.writeShort(e),t.writeShort(n),t.writeByte(0);var r=a(2);t.writeByte(2);for(var o=0;r.length-o>255;)t.writeByte(255),t.writeBytes(r,o,255),o+=255;t.writeByte(r.length-o),t.writeBytes(r,o,r.length-o),t.writeByte(0),t.writeString(";")}},a=function(t){for(var r=1<<t,e=1+(1<<t),n=t+1,i=u(),a=0;a<r;a+=1)i.add(String.fromCharCode(a));i.add(String.fromCharCode(r)),i.add(String.fromCharCode(e));var f,c,g,l=D(),h=(f=l,c=0,g=0,{write:function(t,r){if(t>>>r!=0)throw"length over";for(;c+r>=8;)f.writeByte(255&(t<<c|g)),r-=8-c,t>>>=8-c,g=0,c=0;g|=t<<c,c+=r},flush:function(){c>0&&f.writeByte(g)}});h.write(r,n);var s=0,v=String.fromCharCode(o[s]);for(s+=1;s<o.length;){var d=String.fromCharCode(o[s]);s+=1,i.contains(v+d)?v+=d:(h.write(i.indexOf(v),n),i.size()<4095&&(i.size()==1<<n&&(n+=1),i.add(v+d)),v=d)}return h.write(i.indexOf(v),n),h.write(e,n),h.flush(),l.toByteArray()},u=function(){var t={},r=0,e={add:function(n){if(e.contains(n))throw"dup key:"+n;t[n]=r,r+=1},size:function(){return r},indexOf:function(r){return t[r]},contains:function(r){return void 0!==t[r]}};return e};return i}(t,r),o=0;o<r;o+=1)for(var i=0;i<t;i+=1)n.setPixel(i,o,e(i,o));var a=D();n.write(a);for(var u=function(){var t=0,r=0,e=0,n="",o={},i=function(t){n+=String.fromCharCode(a(63&t))},a=function(t){if(t<0);else{if(t<26)return 65+t;if(t<52)return t-26+97;if(t<62)return t-52+48;if(62==t)return 43;if(63==t)return 47}throw"n:"+t};return o.writeByte=function(n){for(t=t<<8|255&n,r+=8,e+=1;r>=6;)i(t>>>r-6),r-=6},o.flush=function(){if(r>0&&(i(t<<6-r),t=0,r=0),e%3!=0)for(var o=3-e%3,a=0;a<o;a+=1)n+="="},o.toString=function(){return n},o}(),f=a.toByteArray(),c=0;c<f.length;c+=1)u.writeByte(f[c]);return u.flush(),"data:image/gif;base64,"+u};return t}();qrcode.stringToBytesFuncs["UTF-8"]=function(t){return function(t){for(var r=[],e=0;e<t.length;e++){var n=t.charCodeAt(e);n<128?r.push(n):n<2048?r.push(192|n>>6,128|63&n):n<55296||n>=57344?r.push(224|n>>12,128|n>>6&63,128|63&n):(e++,n=65536+((1023&n)<<10|1023&t.charCodeAt(e)),r.push(240|n>>18,128|n>>12&63,128|n>>6&63,128|63&n))}return r}(t)},function(t){"function"==typeof define&&define.amd?define([],t):"object"==typeof exports&&(module.exports=t())}(function(){return qrcode});
-return module.exports;
-})();
-return _cbtQrLib.apply(null, arguments);
-}
-var _qrOverlay = null;
-var _qrSuppressNextMouseup = false;
-var _qrRenderRAF = 0;
-var _qrLastOpenedText = '';
-var _qrOutsideHandler = null;
-var _qrSelectionTimer = 0;
-var _qrDragCleanup = null;
-var QR_POSITION_KEY = 'cbt_qr_snap_position_v23953';
-var QR_DEFAULT_POSITION = 'bottom-right';
-var QR_ALLOWED_POSITIONS = {
-'bottom-left': 1,
-'bottom-center': 1,
-'bottom-right': 1
-};
-var QR_UI_IDS = ['cbt-panel', 'cbt-qr-overlay', 'cbt-afa-overlay', 'cbt-ac-drop'];
-function qrNormalizePosition(pos) {
-pos = String(pos || '');
-if (pos === 'middle-left') return 'bottom-left';
-if (pos === 'middle-center') return 'bottom-center';
-if (pos === 'middle-right') return 'bottom-right';
-return QR_ALLOWED_POSITIONS[pos] ? pos : QR_DEFAULT_POSITION;
-}
-function qrLoadPosition() {
-try {
-var saved = qrNormalizePosition(localStorage.getItem(QR_POSITION_KEY) || '');
-return saved;
-} catch(e) {}
-return QR_DEFAULT_POSITION;
-}
-function qrSavePosition(pos) {
-pos = qrNormalizePosition(pos);
-try { localStorage.setItem(QR_POSITION_KEY, pos); } catch(e) {}
-return pos;
-}
-function qrApplyPosition(pos) {
-if (!_qrOverlay) return;
-pos = qrNormalizePosition(pos);
-_qrOverlay.setAttribute('data-qr-pos', pos);
-qrRefreshArrowState();
-}
-function qrRefreshArrowState() {
-if (!_qrOverlay) return;
-var leftBtn = _qrOverlay.querySelector('#cbt-qr-left');
-var rightBtn = _qrOverlay.querySelector('#cbt-qr-right');
-if (!leftBtn || !rightBtn) return;
-var pos = _qrOverlay.getAttribute('data-qr-pos') || qrLoadPosition();
-var col = String(pos).split('-').pop();
-leftBtn.disabled = col === 'left';
-rightBtn.disabled = col === 'right';
-leftBtn.title = 'Move QR left';
-rightBtn.title = 'Move QR right';
-}
-function qrMoveHorizontal(direction) {
-if (!_qrOverlay) return;
-direction = direction < 0 ? -1 : 1;
-var current = _qrOverlay.getAttribute('data-qr-pos') || qrLoadPosition();
-var parts = String(current).split('-');
-var row = 'bottom';
-var cols = ['left', 'center', 'right'];
-var idx = cols.indexOf(parts[1]);
-if (idx < 0) idx = 2;
-var nextIdx = Math.max(0, Math.min(2, idx + direction));
-if (nextIdx === idx) {
-qrRefreshArrowState();
-return;
-}
-var nextPos = qrSavePosition(row + '-' + cols[nextIdx]);
-qrApplyPosition(nextPos);
-}
-function qrSnapPositionFromPoint(clientX, clientY) {
-var vw = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
-var col = clientX < vw / 3
-? 'left'
-: clientX > (vw * 2 / 3)
-? 'right'
-: 'center';
-return 'bottom-' + col;
-}
-function qrEnableSnapDrag(card) {
-if (!card) return;
-var head = card.querySelector('#cbt-qr-head');
-if (!head) return;
-var dragging = false;
-var pointerId = null;
-var lastX = 0;
-var lastY = 0;
-function onMove(e) {
-if (!dragging || (pointerId !== null && e.pointerId !== pointerId)) return;
-lastX = e.clientX;
-lastY = e.clientY;
-try { e.preventDefault(); } catch(ignore) {}
-}
-function finish(e) {
-if (!dragging || (pointerId !== null && e.pointerId !== pointerId)) return;
-dragging = false;
-if (isFinite(e.clientX)) lastX = e.clientX;
-if (isFinite(e.clientY)) lastY = e.clientY;
-var pos = qrSavePosition(qrSnapPositionFromPoint(lastX, lastY));
-qrApplyPosition(pos);
-try {
-if (pointerId !== null && head.releasePointerCapture) {
-head.releasePointerCapture(pointerId);
-}
-} catch(ignore) {}
-pointerId = null;
-try { e.preventDefault(); } catch(ignore2) {}
-}
-function onDown(e) {
-if (e.target && e.target.closest &&
-e.target.closest('#cbt-qr-left,#cbt-qr-right')) return;
-dragging = true;
-pointerId = e.pointerId;
-lastX = e.clientX;
-lastY = e.clientY;
-try {
-if (head.setPointerCapture) head.setPointerCapture(pointerId);
-} catch(ignore) {}
-try { e.preventDefault(); } catch(ignore2) {}
-}
-head.addEventListener('pointerdown', onDown);
-head.addEventListener('pointermove', onMove);
-head.addEventListener('pointerup', finish);
-head.addEventListener('pointercancel', finish);
-_qrDragCleanup = function(){
-try { head.removeEventListener('pointerdown', onDown); } catch(e0) {}
-try { head.removeEventListener('pointermove', onMove); } catch(e1) {}
-try { head.removeEventListener('pointerup', finish); } catch(e2) {}
-try { head.removeEventListener('pointercancel', finish); } catch(e3) {}
-dragging = false;
-pointerId = null;
-};
-}
-function qrInScriptUI(node) {
-var n = node, guard = 0;
-while (n && guard++ < 200) {
-if (n.nodeType === 1 && n.id && QR_UI_IDS.indexOf(n.id) !== -1) return true;
-if (n.nodeType === 11 && n.host) { n = n.host; continue; }
-n = n.parentNode;
-}
-return false;
-}
-function qrRender(text) {
-var host = document.getElementById('cbt-qr-svg');
-var err = document.getElementById('cbt-qr-err');
-if (!host) return;
-text = String(text || '');
-if (!text.trim()) {
-host.innerHTML = '';
-if (err) err.style.display = 'none';
-return;
-}
-try {
-var qr = qrcode(0, 'M');
-qr.addData(text);
-qr.make();
-var n = qr.getModuleCount();
-var quiet = 4;
-var size = n + quiet * 2;
-var path = '';
-for (var r = 0; r < n; r++) {
-for (var c = 0; c < n; c++) {
-if (!qr.isDark(r, c)) continue;
-var x = c + quiet;
-var y = r + quiet;
-path += 'M' + x + ' ' + y + 'h1v1h-1z';
-}
-}
-host.innerHTML =
-'<svg xmlns="http://www.w3.org/2000/svg" ' +
-'viewBox="0 0 ' + size + ' ' + size + '" ' +
-'preserveAspectRatio="xMidYMid meet" ' +
-'role="img" aria-label="Generated QR code">' +
-'<rect width="' + size + '" height="' + size + '" fill="#ffffff"/>' +
-'<path d="' + path + '" fill="#000000"/>' +
-'</svg>';
-if (err) {
-err.textContent = '';
-err.style.display = 'none';
-}
-} catch(e) {
-host.innerHTML = '';
-if (err) {
-err.textContent = 'Could not generate QR code';
-err.style.display = 'block';
-}
-try { console.warn('[CBT QR] QR generation failed:', e); } catch(ignore) {}
-}
-}
-function qrScheduleRender(text) {
-if (_qrRenderRAF) {
-try { cancelAnimationFrame(_qrRenderRAF); } catch(e) {}
-}
-var raf = (typeof requestAnimationFrame === 'function')
-? requestAnimationFrame
-: function(cb){ return setTimeout(cb, 16); };
-_qrRenderRAF = raf(function(){
-_qrRenderRAF = 0;
-qrRender(text);
-});
-}
-function qrTeardown() {
-if (_qrDragCleanup) {
-try { _qrDragCleanup(); } catch(eDrag) {}
-_qrDragCleanup = null;
-}
-if (_qrSelectionTimer) {
-clearTimeout(_qrSelectionTimer);
-_qrSelectionTimer = 0;
-}
-if (_qrRenderRAF) {
-try { cancelAnimationFrame(_qrRenderRAF); } catch(e0) {}
-_qrRenderRAF = 0;
-}
-if (_qrOutsideHandler) {
-try { document.removeEventListener('mousedown', _qrOutsideHandler, true); } catch(e1) {}
-_qrOutsideHandler = null;
-}
-if (_qrOverlay && _qrOverlay.parentNode) _qrOverlay.parentNode.removeChild(_qrOverlay);
-_qrOverlay = null;
-_qrLastOpenedText = '';
-}
-function qrClose() {
-qrTeardown();
-try {
-var s = window.getSelection();
-if (s && s.removeAllRanges) s.removeAllRanges();
-} catch(e) {}
-}
-function qrOpen(text) {
-text = String(text || '').trim();
-if (!text) return;
-if (_qrOverlay && _qrOverlay.isConnected && _qrLastOpenedText === text) return;
-qrTeardown();
-_qrLastOpenedText = text;
-_qrOverlay = document.createElement('div');
-_qrOverlay.id = 'cbt-qr-overlay';
-_qrOverlay.innerHTML =
-'<div id="cbt-qr-card" role="dialog" aria-label="QR Code">' +
-'<div id="cbt-qr-head">' +
-'<span id="cbt-qr-head-left">' +
-'<button id="cbt-qr-left" type="button" title="Move QR left" aria-label="Move QR left">←</button>' +
-'</span>' +
-'<span id="cbt-qr-title">QR Code</span>' +
-'<span id="cbt-qr-head-right">' +
-'<button id="cbt-qr-right" type="button" title="Move QR right" aria-label="Move QR right">→</button>' +
-'</span>' +
-'</div>' +
-'<div id="cbt-qr-canvas-wrap"><div id="cbt-qr-svg" aria-live="polite"></div></div>' +
-'<div id="cbt-qr-err"></div>' +
-'<input id="cbt-qr-input" type="text" spellcheck="false" autocomplete="off" aria-label="QR value" placeholder="Text to encode..."/>' +
-'</div>';
-document.body.appendChild(_qrOverlay);
-qrApplyPosition(qrLoadPosition());
-var card = _qrOverlay.querySelector('#cbt-qr-card');
-var input = _qrOverlay.querySelector('#cbt-qr-input');
-input.value = text;
-var qrLeftBtn = _qrOverlay.querySelector('#cbt-qr-left');
-var qrRightBtn = _qrOverlay.querySelector('#cbt-qr-right');
-if (qrLeftBtn) {
-qrLeftBtn.addEventListener('click', function(e){
-e.preventDefault();
-e.stopPropagation();
-qrMoveHorizontal(-1);
-});
-}
-if (qrRightBtn) {
-qrRightBtn.addEventListener('click', function(e){
-e.preventDefault();
-e.stopPropagation();
-qrMoveHorizontal(1);
-});
-}
-qrRefreshArrowState();
-qrEnableSnapDrag(card);
-input.addEventListener('input', function(){
-qrScheduleRender(input.value);
-});
-_qrOutsideHandler = function(e) {
-if (!_qrOverlay || !card || card.contains(e.target)) return;
-setTimeout(function(){
-if (!_qrOverlay || !card || !card.isConnected) return;
-var selected = '';
-try {
-var s = window.getSelection();
-selected = s && !s.isCollapsed ? qrCleanSelectedText(s.toString()) : '';
-} catch(ignore) {}
-if (!selected) qrClose();
-}, 80);
-};
-document.addEventListener('mousedown', _qrOutsideHandler, true);
-qrRender(text);
-}
-function qrCleanSelectedText(value) {
-return String(value || '').replace(/\s+/g, ' ').trim();
-}
-function qrControlSelection(target) {
-if (!target || target.nodeType !== 1) return '';
-if (qrInScriptUI(target)) return '';
-var tag = String(target.tagName || '').toLowerCase();
-if (tag !== 'input' && tag !== 'textarea') return '';
-try {
-var start = Number(target.selectionStart);
-var end = Number(target.selectionEnd);
-if (!isFinite(start) || !isFinite(end) || end <= start) return '';
-return qrCleanSelectedText(String(target.value || '').slice(start, end));
-} catch(e) {
-return '';
-}
-}
-function qrSelectionFromObject(sel) {
-if (!sel || sel.isCollapsed || !sel.rangeCount) return '';
-var text = qrCleanSelectedText(sel.toString());
-if (!text) return '';
-try {
-if (qrInScriptUI(sel.anchorNode) || qrInScriptUI(sel.focusNode)) return '';
-var common = sel.getRangeAt(0).commonAncestorContainer;
-if (qrInScriptUI(common)) return '';
-} catch(e) {}
-return text;
-}
-function qrSelectionText(event) {
-var direct = qrControlSelection(event && event.target);
-if (direct && cbtAssignHiddenUsable(direct)) return direct;
-var candidates = [];
-function addSelection(sel) {
-if (!sel) return;
-if (candidates.indexOf(sel) === -1) candidates.push(sel);
-}
-try { addSelection(window.getSelection()); } catch(e0) {}
-try { addSelection(document.getSelection()); } catch(e1) {}
-try {
-var path = event && typeof event.composedPath === 'function'
-? event.composedPath()
-: [];
-for (var i = 0; i < path.length; i++) {
-var node = path[i];
-if (!node) continue;
-var root = null;
-try {
-if (node.nodeType === 11) root = node;
-else if (node.getRootNode) root = node.getRootNode();
-} catch(e2) {}
-if (root && typeof root.getSelection === 'function') {
-try { addSelection(root.getSelection()); } catch(e3) {}
-}
-}
-} catch(e4) {}
-var best = '';
-for (var j = 0; j < candidates.length; j++) {
-var value = qrSelectionFromObject(candidates[j]);
-if (value && value.length > best.length) best = value;
-}
-return best;
-}
-function qrOpenCurrentSelection(event) {
-if (_qrSuppressNextMouseup) {
-_qrSuppressNextMouseup = false;
-return;
-}
-var selected = qrSelectionText(event);
-if (!selected) return;
-qrOpen(selected);
-}
-function qrQueueSelectionOpen(event) {
-if (event && qrInScriptUI(event.target)) return;
-if (_qrSelectionTimer) {
-clearTimeout(_qrSelectionTimer);
-_qrSelectionTimer = 0;
-}
-var snapshot = {
-target: event ? event.target : null,
-path: []
-};
-try {
-if (event && typeof event.composedPath === 'function') {
-snapshot.path = event.composedPath();
-}
-} catch(e) {}
-snapshot.composedPath = function(){ return snapshot.path || []; };
-_qrSelectionTimer = setTimeout(function(){
-_qrSelectionTimer = 0;
-qrOpenCurrentSelection(snapshot);
-}, 0);
-}
-if (typeof PointerEvent !== 'undefined') {
-document.addEventListener('pointerup', qrQueueSelectionOpen, true);
-} else {
-document.addEventListener('mouseup', qrQueueSelectionOpen, true);
-}
-document.addEventListener('keyup', function(e) {
-if (!e || !e.shiftKey) return;
-if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' &&
-e.key !== 'ArrowUp' && e.key !== 'ArrowDown' &&
-e.key !== 'Home' && e.key !== 'End') return;
-qrQueueSelectionOpen(e);
-}, true);
-document.addEventListener('keydown', function(e) {
-if (e && e.key === 'Escape' && _qrOverlay) qrClose();
-}, true);
-var AFA_DELAY_MS = 250;
-var AFA_TIMEOUT_MS = 15000;
-var _afaJobIndex = Object.create(null);
-var _afaJobInfo = Object.create(null);
-var _afaDone = Object.create(null);
-var _afaRunning = false, _afaStop = false, _afaOverlay = null;
-var _afaConfirmOpenSeq = 0;
-var _afaConfirmLoading = false;
-var _afaMissingMenuInfo = null;
-var _afaMissingMenuCheckSeq = 0;
-// v23.9.205: tiny in-memory Cart Actions snapshot.  It is never trusted for
-// the actual force/partial/complete operation (runFresh still re-reads Amazon);
-// it only lets the menu paint immediately instead of showing a loading screen.
-var _afaMenuSnapshotCache = null;
-var _afaMenuSnapshotInFlight = false;
-var _afaMenuSnapshotWarmSeq = 0;
-var AFA_MENU_SNAPSHOT_TTL_MS = 1800;
-function afaLooksLikeJobId(v) {
-if (typeof v !== 'string' || v.length < 30 || v.indexOf('_') === -1) return false;
-return STORE_ID ? v.indexOf(STORE_ID) === 0 : true;
-}
-function afaRecordJobObject(obj) {
-if (!obj || typeof obj !== 'object' || Array.isArray(obj)) return;
-var ref = obj.shortClientRef;
-if (typeof ref === 'string' && ref) {
-var id = null, named = ['id','jobId','jobID','taskId'];
-for (var n = 0; n < named.length; n++) {
-if (afaLooksLikeJobId(obj[named[n]])) { id = obj[named[n]]; break; }
-}
-if (!id) {
-for (var k in obj) {
-if (afaLooksLikeJobId(obj[k])) { id = obj[k]; break; }
-}
-}
-if (id) {
-_afaJobIndex[ref] = id;
-var asg = afaAssignabilityFrom(obj);
-if (!_afaJobInfo[id]) _afaJobInfo[id] = { ref: ref, assignability: null };
-_afaJobInfo[id].ref = ref;
-if (asg) _afaJobInfo[id].assignability = asg;
-}
-}
-}
-function afaRecordJobs(obj, depth) {
-if (obj == null || depth > 6) return;
-if (Array.isArray(obj)) {
-for (var i = 0; i < obj.length && i < 5000; i++) afaRecordJobs(obj[i], depth + 1);
-return;
-}
-if (typeof obj !== 'object') return;
-afaRecordJobObject(obj);
-for (var k2 in obj) {
-var v = obj[k2];
-if (v && typeof v === 'object') afaRecordJobs(v, depth + 1);
-}
-}
-function afaAssignabilityFrom(obj) {
-if (!obj || typeof obj !== 'object') return null;
-var k, v;
-for (k in obj) {
-v = obj[k];
-if (typeof v !== 'string') continue;
-if (!/assign/i.test(k)) continue;
-if (/^UNASSIGNABLE$/i.test(v.trim())) return 'UNASSIGNABLE';
-if (/^ASSIGNABLE$/i.test(v.trim())) return 'ASSIGNABLE';
-}
-for (k in obj) {
-v = obj[k];
-if (typeof v !== 'string') continue;
-if (/^UNASSIGNABLE$/i.test(v.trim())) return 'UNASSIGNABLE';
-if (/^ASSIGNABLE$/i.test(v.trim())) return 'ASSIGNABLE';
-}
-return null;
-}
-function afaFetchJobInfo(jobId) {
-var url = COMO_BASE + '/api/store/' + STORE_ID + '/job/' + encodeURIComponent(jobId);
-var ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
-var timer = setTimeout(function(){ if (ctrl) ctrl.abort(); }, AFA_TIMEOUT_MS);
-var opts = { method: 'GET', credentials: 'include', headers: { 'Accept': 'application/json' } };
-if (ctrl) opts.signal = ctrl.signal;
-return _origFetch(url, opts).then(function(res){
-clearTimeout(timer);
-if (!res.ok) return null;
-return res.json().then(function(j){ return j; }, function(){ return null; });
-}, function(){ clearTimeout(timer); return null; });
-}
-function afaAssignabilityDeep(obj, depth) {
-if (obj == null || depth > 6) return null;
-if (Array.isArray(obj)) {
-for (var i = 0; i < obj.length && i < 500; i++) {
-var r = afaAssignabilityDeep(obj[i], depth + 1);
-if (r) return r;
-}
-return null;
-}
-if (typeof obj !== 'object') return null;
-var direct = afaAssignabilityFrom(obj);
-if (direct) return direct;
-for (var k in obj) {
-var v = obj[k];
-if (v && typeof v === 'object') {
-var r2 = afaAssignabilityDeep(v, depth + 1);
-if (r2) return r2;
-}
-}
-return null;
-}
-function afaVerifyForcible(item) {
-var cached = _afaJobInfo[item.id];
-if (cached && cached.assignability === 'ASSIGNABLE') {
-return Promise.resolve({ eligible: false, reason: 'already assignable' });
-}
-if (cached && cached.assignability === 'UNASSIGNABLE') {
-return Promise.resolve({ eligible: true, reason: 'unassignable (dashboard data)' });
-}
-return afaFetchJobInfo(item.id).then(function(info){
-var asg = info ? afaAssignabilityDeep(info, 0) : null;
-if (asg === 'ASSIGNABLE') return { eligible: false, reason: 'already assignable' };
-if (asg === 'UNASSIGNABLE') return { eligible: true, reason: 'unassignable (verified)' };
-return { eligible: false, reason: 'could not verify status \u2014 skipped' };
-});
-}
-function afaSectionAnchors(startRe, stopRes) {
-// Fast path for the current COMO DOM: the relevant task groups live inside
-// dropped-job sections with a short heading. This avoids walking every node in
-// document.body just because the Run menu was opened. The original broad scan
-// is kept below as a compatibility fallback if Amazon changes the markup.
-try {
-var sections = document.querySelectorAll('dropped-job');
-for (var si = 0; si < sections.length; si++) {
-var section = sections[si];
-var headings = section.querySelectorAll('h1,h2,h3,h4,[role="heading"]');
-var matched = false;
-for (var hi = 0; hi < headings.length; hi++) {
-var ht = (headings[hi].textContent || '').trim();
-if (ht.length < 60 && startRe.test(ht)) { matched = true; break; }
-}
-if (!matched) continue;
-var holder = section.querySelector('.job-cards,[class*="job-cards"]') || section;
-return Array.prototype.slice.call(holder.querySelectorAll('a'));
-}
-} catch(eFastSection) {}
-// v23.9.211 NoLag: never fall back to querySelectorAll('*').  If the expected
-// dropped-job structure is unavailable, return no anchors and let the action's
-// normal backend revalidation handle it.
-return [];
-}
-function afaSectionCount(labelRe) {
-// Cheap heading-only lookup first. Fall back to the old document-wide lookup
-// only when the expected heading cannot be found.
-try {
-var headings = document.querySelectorAll('dropped-job h1,dropped-job h2,dropped-job h3,dropped-job h4,dropped-job [role="heading"],h1,h2,h3,h4,[role="heading"]');
-for (var h = 0; h < headings.length; h++) {
-var ht = (headings[h].textContent || '').trim();
-if (ht.length >= 60 || !labelRe.test(ht)) continue;
-var hm = ht.match(/\((\d+)\)/);
-if (hm) return parseInt(hm[1], 10);
-}
-} catch(eFastCount) {}
-// v23.9.211 NoLag: no document-wide fallback scan.
-return null;
-}
-function afaRefreshJobData() {
-return new Promise(function(resolve){
-try {
-var ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
-var timer = setTimeout(function(){ if (ctrl) ctrl.abort(); }, 6000);
-var opts = { credentials: 'include', headers: { Accept: 'application/json' } };
-if (ctrl) opts.signal = ctrl.signal;
-_origFetch(COMO_BASE + '/store/' + STORE_ID + '/activeJobsWithSiteSummary', opts)
-.then(function(r){ clearTimeout(timer); return r.ok ? r.json() : null; })
-.then(function(j){
-if (j) { try { afaRecordJobs(j, 0); } catch(e) {} }
-resolve();
-}, function(){ clearTimeout(timer); resolve(); });
-} catch(e) { resolve(); }
-});
-}
-function afaScanPartiallyBatched() {
-try {
-if (typeof cbtAssignStrictPartialCandidates !== 'function') return [];
-return cbtAssignStrictPartialCandidates().map(function(item){
-return {
-ref: item.ref,
-id: item.id,
-partial: true,
-partialSectionVerified: true,
-explicitPartialId: true
-};
-});
-} catch(e) {
-return [];
-}
-}
-function afaScanDashboard(cardsSnapshot) {
-var found = [], seen = Object.create(null);
-var cards = cardsSnapshot || document.querySelectorAll('job-card');
-for (var i = 0; i < cards.length; i++) {
-var card = cards[i];
-try { if (isInExcludedSection(card)) continue; } catch(e) {}
-var txt = card.textContent || card.innerText || '';
-if (!/UNASSIGNABLE/i.test(txt)) continue;
-var a = card.querySelector('a');
-var ref = a ? (a.textContent || '').trim() : '';
-var id = null;
-if (a) {
-var href = a.getAttribute('href') || '';
-var m = href.match(/jobId=([^&#]+)/i);
-if (m) { try { id = decodeURIComponent(m[1]); } catch(e2) { id = m[1]; } }
-}
-if (!id && ref && _afaJobIndex[ref]) id = _afaJobIndex[ref];
-var key = id || ('ref:' + ref + ':' + i);
-if (seen[key]) continue;
-seen[key] = true;
-found.push({ ref: ref || '(unknown)', id: id, unassignable: true });
-}
-return found;
-}
-function afaMissingText(v) {
-return String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
-}
-function afaMissingCartValue(v) {
-var s = afaMissingText(v);
-var m = s.match(/\bCART_[A-Z0-9][A-Z0-9_-]*\b/i);
-return m ? m[0] : '';
-}
-function afaMissingScannableFromObject(obj) {
-if (!obj || typeof obj !== 'object') return '';
-var preferred = [
-'scannableId', 'scannableID', 'scannable_id',
-'packageScannableId', 'packageScannableID',
-'bagScannableId', 'bagScannableID'
-];
-for (var i = 0; i < preferred.length; i++) {
-var v = obj[preferred[i]];
-if (typeof v === 'string' && afaMissingText(v)) return afaMissingText(v);
-}
-for (var k in obj) {
-if (!/scannable.*id/i.test(k)) continue;
-var v2 = obj[k];
-if (typeof v2 === 'string' && afaMissingText(v2)) return afaMissingText(v2);
-}
-return '';
-}
-function afaMissingStatusFromObject(obj) {
-if (!obj || typeof obj !== 'object') return '';
-for (var k in obj) {
-if (!/status/i.test(k)) continue;
-var v = obj[k];
-if (typeof v !== 'string') continue;
-var status = v.trim().toUpperCase();
-if (status === 'MISSING' || status === 'DAMAGED') return status;
-}
-return '';
-}
-function afaMissingInfoFromJson(root) {
-var missingIds = [];
-var problemPackages = [];
-var cart = '';
-var sawPackageSignals = false;
-var seenProblem = Object.create(null);
-function walk(obj, depth) {
-if (obj == null || depth > 8) return;
-if (Array.isArray(obj)) {
-for (var i = 0; i < obj.length && i < 3000; i++) walk(obj[i], depth + 1);
-return;
-}
-if (typeof obj !== 'object') return;
-var hasStatusKey = false;
-var hasScannableKey = false;
-for (var k in obj) {
-if (/status/i.test(k)) hasStatusKey = true;
-if (/scannable.*id/i.test(k)) hasScannableKey = true;
-if (!cart && typeof obj[k] === 'string') {
-var cv = afaMissingCartValue(obj[k]);
-if (cv) cart = cv;
-}
-}
-if (hasStatusKey || hasScannableKey) sawPackageSignals = true;
-var packageStatus = afaMissingStatusFromObject(obj);
-if (packageStatus === 'MISSING' || packageStatus === 'DAMAGED') {
-var sid = afaMissingScannableFromObject(obj);
-var problemKey = packageStatus + '|' + sid;
-if (sid && !seenProblem[problemKey]) {
-seenProblem[problemKey] = true;
-missingIds.push(sid);
-problemPackages.push({ id: sid, status: packageStatus });
-}
-}
-for (var k2 in obj) {
-var child = obj[k2];
-if (child && typeof child === 'object') walk(child, depth + 1);
-}
-}
-walk(root, 0);
-return {
-missingIds: missingIds,
-problemPackages: problemPackages,
-cart: cart,
-sawPackageSignals: sawPackageSignals
-};
-}
-function afaMissingInfoFromDocument(doc) {
-if (!doc) return { missingIds: [], problemPackages: [], cart: '' };
-var missingIds = [];
-var problemPackages = [];
-var cart = '';
-var seen = Object.create(null);
-var rows = [];
-try { rows = Array.prototype.slice.call(doc.querySelectorAll('tr')); } catch(e) {}
-for (var i = 0; i < rows.length; i++) {
-var row = rows[i];
-var cells = [];
-try { cells = Array.prototype.slice.call(row.querySelectorAll('td')); } catch(e2) {}
-if (!cells.length) continue;
-for (var c = 0; c < cells.length; c++) {
-if (!cart) {
-var cv = afaMissingCartValue(cells[c].textContent || '');
-if (cv) cart = cv;
-}
-}
-var statusIdx = -1;
-var packageStatus = '';
-for (var s = 0; s < cells.length; s++) {
-var cellText = afaMissingText(cells[s].textContent || '').toUpperCase();
-if (cellText === 'MISSING' || cellText === 'DAMAGED') {
-statusIdx = s;
-packageStatus = cellText;
-break;
-}
-}
-if (statusIdx < 0) continue;
-var sid = '';
-if (cells[statusIdx + 1]) sid = afaMissingText(cells[statusIdx + 1].textContent || '');
-if (!sid) {
-try {
-var statusCell = row.querySelector('.jobdetails-package-status');
-if (statusCell && statusCell.nextElementSibling) {
-sid = afaMissingText(statusCell.nextElementSibling.textContent || '');
-}
-} catch(e3) {}
-}
-var problemKey = packageStatus + '|' + sid;
-if (sid && !seen[problemKey]) {
-seen[problemKey] = true;
-missingIds.push(sid);
-problemPackages.push({ id: sid, status: packageStatus });
-}
-}
-return { missingIds: missingIds, problemPackages: problemPackages, cart: cart };
-}
-function afaMissingCandidateFromAnchor(a, section, order, baseScore) {
-if (!a) return null;
-var ref = afaMissingText(a.textContent || '');
-if (!ref || ref.length > 40) return null;
-var id = null;
-var href = a.getAttribute('href') || '';
-var m = href.match(/jobId=([^&#]+)/i);
-if (m) {
-try { id = decodeURIComponent(m[1]); }
-catch(e) { id = m[1]; }
-}
-if (!id && ref && _afaJobIndex[ref]) id = _afaJobIndex[ref];
-if (!id) return null;
-return {
-ref: ref,
-id: id,
-section: section || 'Tasks',
-alertScore: Number(baseScore) || 0,
-domOrder: Number(order) || 0
-};
-}
-function afaHasMissingPackageSignal(node) {
-if (!node) return false;
-var txt = '';
-try { txt = afaMissingText(node.innerText || node.textContent || ''); } catch(e) {}
-if (/\b(?:MISSING|DAMAGED)\b/i.test(txt)) return true;
-if (/(?:▲|⚠|❗|⛔)\s*\d*/.test(txt)) return true;
-if (/\bA\d+\b/i.test(txt)) return true;
-try {
-if (node.querySelector(
-'[class*="warning-sign"],[class*="warning"],' +
-'[class*="exclamation"],[class*="triangle"],' +
-'[class*="danger"],[class*="alert"]'
-)) {
-return true;
-}
-} catch(e2) {}
-try {
-var html = String(node.innerHTML || '');
-if (/glyphicon-(?:warning-sign|exclamation-sign)|fa-(?:exclamation|triangle-exclamation|exclamation-triangle)|warning-sign|exclamation-triangle/i.test(html)) {
-return true;
-}
-} catch(e3) {}
-return false;
-}
-function afaScanMissingCandidates(cardsSnapshot) {
-var found = [], seen = Object.create(null);
-var cards = cardsSnapshot || document.querySelectorAll('job-card');
-function pushCandidate(item) {
-if (!item || !item.id) return;
-var key = String(item.id);
-if (seen[key]) return;
-seen[key] = true;
-found.push(item);
-}
-for (var i = 0; i < cards.length; i++) {
-var card = cards[i];
-try {
-if (isInExcludedSection(card)) continue;
-} catch(e) {}
-var a = card.querySelector('a');
-var item = afaMissingCandidateFromAnchor(a, 'Tasks', i, 0);
-if (!item) continue;
-var txt = afaMissingText(card.textContent || card.innerText || '');
-if (!afaHasMissingPackageSignal(card)) continue;
-item.alertScore += 20;
-if (/\b(?:MISSING|DAMAGED)\b/i.test(txt)) item.alertScore += 30;
-pushCandidate(item);
-}
-var psStops = [
-/^Partially\s+Batched/i,
-/^Staged\s+for\s+Pickup/i,
-/^Unassigned/i,
-/^Assigned/i,
-/^Utilization/i,
-/^Late\s+Batch/i
-];
-var psAnchors = afaSectionAnchors(/^Problem\s+Solve(\s*\(\d+\))?$/i, psStops);
-for (var p = 0; p < psAnchors.length; p++) {
-pushCandidate(afaMissingCandidateFromAnchor(
-psAnchors[p],
-'Problem Solve',
-10000 + p,
-15
-));
-}
-var partialStops = [
-/^Staged\s+for\s+Pickup/i,
-/^Problem\s+Solve/i,
-/^Unassigned/i,
-/^Assigned/i,
-/^Utilization/i,
-/^Late\s+Batch/i
-];
-var partialAnchors = afaSectionAnchors(
-/^Partially\s+Batched(\s*\(\d+\))?$/i,
-partialStops
-);
-for (var q = 0; q < partialAnchors.length; q++) {
-pushCandidate(afaMissingCandidateFromAnchor(
-partialAnchors[q],
-'Partially Batched',
-20000 + q,
-10
-));
-}
-found.sort(function(a, b){
-if (b.alertScore !== a.alertScore) return b.alertScore - a.alertScore;
-return a.domOrder - b.domOrder;
-});
-return found;
-}
-function afaProbeMissingJobPage(item) {
-return new Promise(function(resolve){
-if (!item || !item.id || !document.body) {
-resolve(null);
-return;
-}
-var frame = document.createElement('iframe');
-var done = false;
-var started = Date.now();
-frame.setAttribute('aria-hidden', 'true');
-frame.className = 'cbt-missing-probe-frame';
-frame.tabIndex = -1;
-frame.style.cssText =
-'position:fixed!important;left:-10000px!important;top:-10000px!important;' +
-'width:1px!important;height:1px!important;opacity:0!important;' +
-'pointer-events:none!important;border:0!important;';
-function finish(result) {
-if (done) return;
-done = true;
-try { frame.remove(); }
-catch(e) {
-try { frame.parentNode && frame.parentNode.removeChild(frame); } catch(e2) {}
-}
-resolve(result);
-}
-function poll() {
-if (done) return;
-if (Date.now() - started > 5500) {
-finish(null);
-return;
-}
-var doc = null;
-try { doc = frame.contentDocument || (frame.contentWindow && frame.contentWindow.document); }
-catch(e) {}
-if (doc) {
-var info = afaMissingInfoFromDocument(doc);
-if (info.missingIds.length) {
-info.ref = item.ref;
-info.id = item.id;
-info.section = item.section || 'Tasks';
-info.source = 'job-details-page';
-finish(info);
-return;
-}
-try {
-var renderedRows = doc.querySelectorAll('tr.ng-scope, tr');
-var renderedText = afaMissingText(doc.body && doc.body.textContent || '');
-if (renderedRows.length >= 2 &&
-/Scannable\s*Id/i.test(renderedText) &&
-/Packages/i.test(renderedText) &&
-Date.now() - started > 900) {
-finish(null);
-return;
-}
-} catch(e2) {}
-}
-setTimeout(poll, 140);
-}
-frame.src = COMO_BASE + '/store/' + encodeURIComponent(STORE_ID) +
-'/jobdetails?jobId=' + encodeURIComponent(item.id) + '&cbtMissingQrProbe=1';
-document.body.appendChild(frame);
-setTimeout(poll, 140);
-});
-}
-function afaProbeMissingJob(item) {
-return afaFetchJobInfo(item.id).then(function(info){
-if (info) {
-var parsed = afaMissingInfoFromJson(info);
-if (parsed.missingIds.length) {
-parsed.ref = item.ref;
-parsed.id = item.id;
-parsed.section = item.section || 'Tasks';
-parsed.source = 'job-json';
-return parsed;
-}
-if (parsed.sawPackageSignals) return null;
-}
-return afaProbeMissingJobPage(item);
-}, function(){
-return afaProbeMissingJobPage(item);
-});
-}
-function afaFindAllMissingJobs(candidates, onProgress) {
-candidates = candidates || [];
-var idx = 0;
-var entries = [];
-var seen = Object.create(null);
-function next() {
-if (idx >= candidates.length) {
-return Promise.resolve({ entries: entries });
-}
-var item = candidates[idx++];
-if (typeof onProgress === 'function') {
-try { onProgress(idx, candidates.length, item); } catch(e) {}
-}
-return afaProbeMissingJob(item).then(function(info){
-if (info && info.missingIds && info.missingIds.length) {
-var packages = Array.isArray(info.problemPackages) && info.problemPackages.length
-? info.problemPackages
-: info.missingIds.map(function(id){ return { id: id, status: 'MISSING' }; });
-for (var i = 0; i < packages.length; i++) {
-var sid = afaMissingText(packages[i] && packages[i].id);
-var packageStatus = afaMissingText(packages[i] && packages[i].status).toUpperCase() || 'MISSING';
-if (!sid) continue;
-var key = String(info.id || item.id || '') + '|' + packageStatus + '|' + sid;
-if (seen[key]) continue;
-seen[key] = true;
-entries.push({
-missingId: sid,
-packageStatus: packageStatus,
-cart: info.cart || '',
-ref: info.ref || item.ref || '',
-id: info.id || item.id || '',
-section: info.section || item.section || 'Tasks'
-});
-}
-}
-return new Promise(function(resolveNext){
-setTimeout(function(){ resolveNext(next()); }, 35);
-});
-}, function(){
-return new Promise(function(resolveNext){
-setTimeout(function(){ resolveNext(next()); }, 35);
-});
-});
-}
-return next();
-}
-function afaMissingQrEntries(info) {
-if (!info) return [];
-if (Array.isArray(info.entries)) {
-return info.entries.filter(function(entry){
-return entry && afaMissingText(entry.missingId);
-});
-}
-var out = [];
-var packages = Array.isArray(info.problemPackages) && info.problemPackages.length
-? info.problemPackages
-: (Array.isArray(info.missingIds) ? info.missingIds : []).map(function(id){
-return { id: id, status: 'MISSING' };
-});
-for (var i = 0; i < packages.length; i++) {
-var sid = afaMissingText(packages[i] && packages[i].id);
-if (!sid) continue;
-out.push({
-missingId: sid,
-packageStatus: afaMissingText(packages[i] && packages[i].status).toUpperCase() || 'MISSING',
-cart: info.cart || '',
-ref: info.ref || '',
-id: info.id || '',
-section: info.section || 'Tasks'
-});
-}
-return out;
-}
-function afaQrSvgMarkup(value) {
-value = String(value == null ? '' : value);
-if (!value.trim()) return '';
-try {
-var qr = qrcode(0, 'M');
-qr.addData(value);
-qr.make();
-var n = qr.getModuleCount();
-var quiet = 4;
-var size = n + quiet * 2;
-var path = '';
-for (var r = 0; r < n; r++) {
-for (var c = 0; c < n; c++) {
-if (!qr.isDark(r, c)) continue;
-var x = c + quiet;
-var y = r + quiet;
-path += 'M' + x + ' ' + y + 'h1v1h-1z';
-}
-}
-return '<svg xmlns="http://www.w3.org/2000/svg" ' +
-'viewBox="0 0 ' + size + ' ' + size + '" ' +
-'preserveAspectRatio="xMidYMid meet" role="img" aria-label="Generated QR code">' +
-'<rect width="' + size + '" height="' + size + '" fill="#ffffff"/>' +
-'<path d="' + path + '" fill="#000000"/>' +
-'</svg>';
-} catch(e) {
-return '';
-}
-}
-function afaMissingQrTile(kind, value) {
-var svg = afaQrSvgMarkup(value);
-if (!svg) return '';
-return '<div class="cbt-missing-qr-tile">' +
-'<div class="cbt-missing-qr-kind">' + afaEsc(kind) + '</div>' +
-'<div class="cbt-missing-qr-svg">' + svg + '</div>' +
-'<div class="cbt-missing-qr-value">' + afaEsc(value) + '</div>' +
-'</div>';
-}
-function afaMissingQrResult(info) {
-var entries = afaMissingQrEntries(info);
-if (!entries.length) {
-afaShell(
-'Missing Package QR',
-'<div id="cbt-afa-lead">No MISSING or DAMAGED package was found in Tasks, Problem Solve, or Partially Batched.</div>' +
-'<div class="cbt-afa-note">Nothing was changed. This action is read-only.</div>',
-'<button class="cbt-afa-act" data-afa="back">Back</button>'
-);
-var emptyCard = _afaOverlay && _afaOverlay.querySelector('#cbt-afa-card');
-if (emptyCard) {
-emptyCard.addEventListener('click', function(e){
-var b = e.target.closest('[data-afa="back"]');
-if (b) afaConfirm();
-});
-}
-return;
-}
-var currentIndex = 0;
-afaShell(
-'Missing Package QR',
-'<div id="cbt-missing-qr-stage"></div>',
-'<button class="cbt-afa-act" data-afa="back">Back</button>' +
-'<button class="cbt-afa-act go" data-afa="close">Done</button>'
-);
-var card = _afaOverlay && _afaOverlay.querySelector('#cbt-afa-card');
-if (!card) return;
-card.classList.add('cbt-afa-missing-qr-card');
-try { applyUiScale(); } catch(eScale) {}
-function renderCurrent() {
-if (!_afaOverlay || !card.isConnected) return;
-var stage = card.querySelector('#cbt-missing-qr-stage');
-if (!stage) return;
-var entry = entries[currentIndex];
-var total = entries.length;
-var hasPrev = currentIndex > 0;
-var hasNext = currentIndex < total - 1;
-var nav =
-'<div class="cbt-missing-qr-nav">' +
-(hasPrev
-? '<button type="button" class="cbt-missing-qr-nav-btn cbt-missing-qr-prev" data-afa="missing-prev" aria-label="Previous missing package">←</button>'
-: '') +
-'<div class="cbt-missing-qr-count">' + (currentIndex + 1) + '/' + total + '</div>' +
-(hasNext
-? '<button type="button" class="cbt-missing-qr-nav-btn cbt-missing-qr-next" data-afa="missing-next" aria-label="Next missing package">→</button>'
-: '') +
-'</div>';
-var packageStatus = afaMissingText(entry.packageStatus).toUpperCase() || 'MISSING';
-var packageKind = packageStatus === 'DAMAGED' ? 'Damaged Package' : 'Missing Package';
-var tiles = afaMissingQrTile(packageKind, entry.missingId);
-var hasCart = !!entry.cart;
-if (hasCart) {
-tiles += afaMissingQrTile('Cart', entry.cart);
-}
-var note = hasCart
-? packageKind + ' QR + cart QR.'
-: 'No CART_ location was found, so only the ' + packageKind.toLowerCase() + ' QR is shown.';
-stage.innerHTML =
-'<div class="cbt-missing-qr-summary">' +
-afaEsc(entry.section || 'Tasks') + ' · Task <b>' +
-afaEsc(entry.ref || '') + '</b> · ' + afaEsc(note) +
-'</div>' +
-nav +
-'<div class="cbt-missing-qr-grid' + (hasCart ? '' : ' single') + '">' +
-tiles +
-'</div>';
-}
-renderCurrent();
-function moveMissingQr(direction) {
-var nextIndex = currentIndex + direction;
-if (nextIndex < 0 || nextIndex >= entries.length) return false;
-currentIndex = nextIndex;
-renderCurrent();
-return true;
-}
-card.setAttribute('tabindex', '-1');
-card.setAttribute('aria-keyshortcuts', 'ArrowLeft ArrowRight');
-try { card.focus({ preventScroll: true }); }
-catch(eFocus) { try { card.focus(); } catch(eFocus2) {} }
-card.addEventListener('keydown', function(e){
-if (!e) return;
-var isLeft = e.key === 'ArrowLeft' || e.keyCode === 37;
-var isRight = e.key === 'ArrowRight' || e.keyCode === 39;
-if (!isLeft && !isRight) return;
-try { e.preventDefault(); } catch(ignoreKey1) {}
-try { e.stopPropagation(); } catch(ignoreKey2) {}
-moveMissingQr(isLeft ? -1 : 1);
-});
-card.addEventListener('click', function(e){
-var b = e.target.closest('[data-afa]');
-if (!b) return;
-var action = b.getAttribute('data-afa');
-if (action === 'missing-prev') {
-moveMissingQr(-1);
-return;
-}
-if (action === 'missing-next') {
-moveMissingQr(1);
-return;
-}
-if (action === 'close') {
-afaClose();
-} else if (action === 'back') {
-afaConfirm();
-}
-});
-}
-function afaScanCompletionCandidates(cardsSnapshot) {
-var found = [], seen = Object.create(null);
-var cards = cardsSnapshot || document.querySelectorAll('job-card');
-for (var i = 0; i < cards.length; i++) {
-var card = cards[i];
-try { if (isInExcludedSection(card)) continue; } catch(e) {}
-var txt = card.textContent || card.innerText || '';
-if (/problem\s*solve|\bproblem\b/i.test(txt)) continue;
-var a = card.querySelector('a');
-var ref = a ? (a.textContent || '').trim() : '';
-var id = null;
-if (a) {
-var href = a.getAttribute('href') || '';
-var m = href.match(/jobId=([^&#]+)/i);
-if (m) { try { id = decodeURIComponent(m[1]); } catch(e2) { id = m[1]; } }
-}
-if (!id && ref && _afaJobIndex[ref]) id = _afaJobIndex[ref];
-var key = id || ('ref:' + ref + ':' + i);
-if (seen[key]) continue;
-seen[key] = true;
-found.push({ ref: ref || '(unknown)', id: id, completeCandidate: true });
-}
-return found;
-}
-var AFA_COMPLETE_PATH = '/api/store/{storeId}/job/{jobId}/completeJob';
-var AFA_COMPLETE_BODY = {};
-function afaCompletedOk(r) {
-if (!r || !r.ok) return false;
-var body = String(r.body == null ? '' : r.body).trim().replace(/^"|"$/g, '');
-return /^true$/i.test(body);
-}
-function afaCompleteTask(jobId) {
-if (!AFA_COMPLETE_PATH) {
-return Promise.resolve({ ok: false, status: 0, body: 'Complete Task endpoint not configured' });
-}
-var url = COMO_BASE + AFA_COMPLETE_PATH
-.replace('{storeId}', encodeURIComponent(STORE_ID))
-.replace('{jobId}', encodeURIComponent(jobId));
-var ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
-var timer = setTimeout(function(){ if (ctrl) ctrl.abort(); }, AFA_TIMEOUT_MS);
-var opts = {
-method: 'POST',
-credentials: 'include',
-headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-body: JSON.stringify(AFA_COMPLETE_BODY)
-};
-if (ctrl) opts.signal = ctrl.signal;
-return _origFetch(url, opts).then(function(res){
-clearTimeout(timer);
-return res.text().then(
-function(t){ return { ok: res.ok, status: res.status, body: t }; },
-function(){ return { ok: res.ok, status: res.status, body: '' }; }
-);
-}, function(err){
-clearTimeout(timer);
-return { ok: false, status: 0, body: (err && err.message) ? String(err.message) : 'network error' };
-});
-}
-function afaForceAssign(jobId) {
-var url = COMO_BASE + '/api/store/' + STORE_ID + '/job/' + encodeURIComponent(jobId) + '/forceAssignable';
-var ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
-var timer = setTimeout(function(){ if (ctrl) ctrl.abort(); }, AFA_TIMEOUT_MS);
-var opts = {
-method: 'POST',
-credentials: 'include',
-headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-body: JSON.stringify({ ignoreProblemSolve: false })
-};
-if (ctrl) opts.signal = ctrl.signal;
-return _origFetch(url, opts).then(function(res){
-clearTimeout(timer);
-return res.text().then(
-function(t){ return { ok: res.ok, status: res.status, body: t }; },
-function(){ return { ok: res.ok, status: res.status, body: '' }; }
-);
-}, function(err){
-clearTimeout(timer);
-return { ok: false, status: 0, body: (err && err.message) ? String(err.message) : 'network error' };
-});
-}
-function cbtAssignNormText(v) {
-return String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
-}
-function cbtAssignHeaderMap() {
-var header = document.querySelector('div.row.job-card-header');
-if (!header) return null;
-var cols;
-try {
-cols = Array.prototype.slice.call(
-header.querySelectorAll(':scope > div[class*="col-"]')
-);
-} catch(e) {
-cols = Array.prototype.slice.call(header.children || []);
-}
-var map = { cart: -1, assignment: -1, batch: -1, progress: -1 };
-for (var i = 0; i < cols.length; i++) {
-var t = cbtAssignNormText(cols[i].textContent || '').toLowerCase();
-if (map.cart < 0 && /^cart(?:\/s)?$|^carts?$/.test(t)) {
-map.cart = i;
-}
-if (map.assignment < 0 && /task\s*assignment/.test(t)) {
-map.assignment = i;
-}
-if (map.batch < 0 && /batch\s*target/.test(t)) {
-map.batch = i;
-}
-if (map.progress < 0 && /^progress$/.test(t)) {
-map.progress = i;
-}
-}
-return (map.cart >= 0 && map.assignment >= 0 && map.batch >= 0)
-? map
-: null;
-}
-function cbtAssignDirectCols(row) {
-if (!row) return [];
-try {
-return Array.prototype.slice.call(
-row.querySelectorAll(':scope > div[class*="col-"]')
-);
-} catch(e) {
-return Array.prototype.slice.call(row.children || []).filter(function(el){
-return el &&
-/(^|\s)col-(?:xs|sm|md|lg)-/.test(String(el.className || ''));
-});
-}
-}
-function cbtAssignPackageCount(progressText) {
-var s = cbtAssignNormText(progressText || '');
-if (!s) return 0;
-var fraction = s.match(/(\d+)\s*\/\s*(\d+)/);
-if (fraction) {
-return Number(fraction[2]) || 0;
-}
-var nums = s.match(/\d+/g);
-if (!nums || !nums.length) return 0;
-return Number(nums[nums.length - 1]) || 0;
-}
-function cbtAssignCartIsBlank(v) {
-var s = cbtAssignNormText(v).toUpperCase();
-return !s ||
-s === '-' ||
-s === '—' ||
-s === 'N/A' ||
-s === 'NA' ||
-s === 'NONE';
-}
-function cbtAssignLinkInfoFromCard(card, ref) {
-var links = [];
-try {
-links = Array.prototype.slice.call(card.querySelectorAll('a[href]'));
-} catch(e) {}
-for (var i = 0; i < links.length; i++) {
-var rawHref = links[i].getAttribute('href') || '';
-var m = rawHref.match(/jobId=([^&#]+)/i);
-if (!m) continue;
-var id = null;
-try { id = decodeURIComponent(m[1]); }
-catch(e2) { id = m[1]; }
-var detailsUrl = null;
-try {
-detailsUrl = new URL(rawHref, window.location.href).href;
-} catch(e3) {
-detailsUrl = rawHref;
-}
-return { id: id, detailsUrl: detailsUrl };
-}
-var fallbackId =
-(ref && _afaJobIndex && _afaJobIndex[ref])
-? _afaJobIndex[ref]
-: null;
-return {
-id: fallbackId,
-detailsUrl: fallbackId
-? (
-COMO_BASE +
-'/store/' +
-encodeURIComponent(STORE_ID) +
-'/jobdetails?jobId=' +
-encodeURIComponent(fallbackId)
-)
-: null
-};
-}
-function cbtAssignSiteTaskState() {
-var snap = null;
-try { snap = cbtRecMainTasksSnapshot(); } catch(e) {}
-if (!snap) {
-return {
-ready: false,
-count: null,
-hasTasks: false
-};
-}
-var count = Math.max(0, Number(snap.count) || 0);
-return {
-ready: true,
-count: count,
-hasTasks: count > 0
-};
-}
-function cbtAssignHasSiteTasks() {
-return cbtAssignSiteTaskState().hasTasks;
-}
-// v23.9.203: Amazon can briefly report an empty cached task snapshot while
-// remounting the task list.  Assign must never use that transient state as a
-// reason to navigate back to Cart Actions.  At the actual assignment boundary,
-// fall back to the live rows before deciding that normal tasks are unavailable.
-function cbtAssignHasNormalTasksNow() {
-if (cbtAssignHasSiteTasks()) return true;
-try {
-var rows = cbtAssignReadRows();
-for (var i = 0; i < rows.length; i++) {
-var r = rows[i];
-if (r && !r.partial && r.batchMs != null) return true;
-}
-} catch(e) {}
-return false;
-}
-var CBT_ASSIGN_PROTECT_MS = 1 * 60 * 1000;
-var CBT_ASSIGN_LOCK_REQUEST_TIMEOUT_MS = 4000;
-var CBT_ASSIGN_SHARED_PROTECT_ROOT = '/como_assign_protect_v1/' + CBT_HISTORY_STORE_SCOPE;
-var CBT_ASSIGN_SHARED_PROTECT_KEY = 'cbt_assign_shared_protect_v1_' + CBT_HISTORY_STORE_SCOPE;
-var _cbtAssignSharedProtectCache = Object.create(null);
-var _cbtAssignSharedProtectCacheLoaded = false;
-var _cbtAssignSharedProtectPullInFlight = false;
-var _cbtAssignSharedProtectEtag = '';
-var _cbtAssignSharedNodeToJobId = Object.create(null);
-var _cbtAssignLiveStreamReq = null;
-var _cbtAssignLiveStreamActive = false;
-var _cbtAssignLiveStreamReady = false;
-var _cbtAssignLiveStreamLastProgress = 0;
-var _cbtAssignLiveStreamStartedAt = 0;
-var _cbtAssignLiveStreamGeneration = 0;
-var _cbtAssignLiveStreamOffset = 0;
-var _cbtAssignLiveStreamBuffer = '';
-var _cbtAssignLiveStreamRetryTimer = null;
-var _cbtAssignSharedProtectSaveTimer = null;
-var _cbtAssignSharedProtectLastSavedJson = '';
-// v23.9.196: shared run-state used by gray-CREATED eligibility. These must be
-// outside cbtAssignRun so the gray eligibility helper can distinguish this
-// run's own pending associate reservation from a real associate cooldown.
-var _cbtAssignCurrentAssociateReservationName = '';
-var _cbtAssignCurrentAssociateReservationToken = '';
-function cbtAssignNowMs() {
-try { return typeof cbtNowMs === 'function' ? cbtNowMs() : Date.now(); }
-catch(e) { return Date.now(); }
-}
-function cbtAssignSharedNodeForJob(jobId) {
-return 'p_' + cbtBatchEventHash(
-CBT_HISTORY_STORE_SCOPE + '|' + String(jobId || ''),
-43
-);
-}
-function cbtAssignSharedProtectUrl(jobId) {
-var base = FIREBASE_URL + CBT_ASSIGN_SHARED_PROTECT_ROOT;
-if (!jobId) return base + '.json';
-return base + '/' + cbtAssignSharedNodeForJob(jobId) + '.json';
-}
-function cbtAssignLoadSharedProtection() {
-if (_cbtAssignSharedProtectCacheLoaded) return _cbtAssignSharedProtectCache;
-_cbtAssignSharedProtectCacheLoaded = true;
-try {
-var raw = localStorage.getItem(CBT_ASSIGN_SHARED_PROTECT_KEY);
-var parsed = raw ? JSON.parse(raw) : {};
-var clean = {};
-if (parsed && typeof parsed === 'object') {
-for (var id in parsed) {
-var candidate = Object.assign({}, parsed[id] || {}, {jobId:(parsed[id] && parsed[id].jobId) || id});
-var row = cbtAssignSanitizeProtection(candidate);
-if (row) {
-clean[row.jobId] = row;
-_cbtAssignSharedNodeToJobId[cbtAssignSharedNodeForJob(row.jobId)] = row.jobId;
-}
-}
-}
-_cbtAssignSharedProtectCache = clean;
-} catch(e) {}
-return _cbtAssignSharedProtectCache;
-}
-function cbtAssignSaveSharedProtection() {
-try {
-var json = JSON.stringify(_cbtAssignSharedProtectCache || {});
-if (json === _cbtAssignSharedProtectLastSavedJson) return;
-localStorage.setItem(CBT_ASSIGN_SHARED_PROTECT_KEY, json);
-_cbtAssignSharedProtectLastSavedJson = json;
-} catch(e) {}
-}
-function cbtAssignScheduleSharedProtectionSave() {
-if (_cbtAssignSharedProtectSaveTimer) return;
-_cbtAssignSharedProtectSaveTimer = setTimeout(function(){
-_cbtAssignSharedProtectSaveTimer = null;
-cbtAssignSaveSharedProtection();
-}, 0);
-}
-function cbtAssignSanitizeProtection(row) {
-if (!row || typeof row !== 'object') return null;
-var until = Number(row.until) || 0;
-if (until <= cbtAssignNowMs()) return null;
-var jobId = String(row.jobId || '').trim();
-if (!jobId) return null;
-return {
-jobId:jobId, until:until,
-associate:cbtNormalizeAssociateName(row.associate || ''),
-ref:cbtAssignNormText(row.ref || '').slice(0,80),
-token:String(row.token || '').slice(0,160),
-pending:!!row.pending
-};
-}
-function cbtAssignSharedProtectionPut(jobId, row, attempt) {
-if (!syncEnabled() || !jobId || !row) return;
-attempt = Number(attempt) || 0;
-row = Object.assign({}, row, { jobId:String(jobId) });
-try {
-GM_xmlhttpRequest({
-method:'PUT', url:cbtAssignSharedProtectUrl(jobId), headers:{'Content-Type':'application/json'}, data:JSON.stringify(row),
-timeout:CBT_ASSIGN_LOCK_REQUEST_TIMEOUT_MS,
-onload:function(res){ if (!(res.status>=200&&res.status<300) && attempt<3) setTimeout(function(){cbtAssignSharedProtectionPut(jobId,row,attempt+1);},75*(attempt+1)); },
-onerror:function(){ if(attempt<3)setTimeout(function(){cbtAssignSharedProtectionPut(jobId,row,attempt+1);},75*(attempt+1)); },
-ontimeout:function(){ if(attempt<3)setTimeout(function(){cbtAssignSharedProtectionPut(jobId,row,attempt+1);},75*(attempt+1)); }
-});
-} catch(e) { if(attempt<3)setTimeout(function(){cbtAssignSharedProtectionPut(jobId,row,attempt+1);},75*(attempt+1)); }
-}
-function cbtAssignAcquireSharedReservation(jobId, associate, attempt, visibleRef) {
-jobId = String(jobId || '');
-associate = cbtNormalizeAssociateName(associate || '');
-attempt = Number(attempt) || 0;
-visibleRef = cbtAssignNormText(visibleRef || '').slice(0,80);
-if (!jobId) {
-return Promise.resolve({
-ok:false,
-error:true,
-fatal:true,
-reason:'Shared assignment lock key is missing.'
-});
-}
-if (!syncEnabled()) return Promise.resolve({ok:true,token:'',local:true});
-var token = (MY_DEVICE_ID || getDeviceId()) + '_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2,8);
-return new Promise(function(resolve){
-function fatal(reason) {
-resolve({
-ok:false,
-error:true,
-fatal:true,
-reason:reason || 'Shared assignment lock is unavailable.'
-});
-}
-function run(tryNo) {
-try {
-GM_xmlhttpRequest({
-method:'GET', url:cbtAssignSharedProtectUrl(jobId), headers:{'Content-Type':'application/json','X-Firebase-ETag':'true'},
-timeout:CBT_ASSIGN_LOCK_REQUEST_TIMEOUT_MS,
-onload:function(getRes){
-if (!(getRes.status>=200 && getRes.status<300)) {
-fatal('Shared assignment lock could not be read. Assignment was not started to prevent a cross-computer conflict.');
-return;
-}
-var existing=null;
-try { if (getRes.responseText && getRes.responseText!=='null') existing=cbtAssignSanitizeProtection(JSON.parse(getRes.responseText)); } catch(e0) {}
-if (existing) { resolve({ok:false,row:existing,contention:true}); return; }
-var etag=cbtFirebaseEtag(getRes.responseHeaders);
-if (!etag) {
-fatal('Shared assignment lock could not be verified. Assignment was not started to prevent a cross-computer conflict.');
-return;
-}
-var row={jobId:jobId,until:cbtAssignNowMs()+30000,associate:associate,ref:visibleRef,token:token,pending:true};
-GM_xmlhttpRequest({
-method:'PUT',url:cbtAssignSharedProtectUrl(jobId),headers:{'Content-Type':'application/json','If-Match':etag},data:JSON.stringify(row),
-timeout:CBT_ASSIGN_LOCK_REQUEST_TIMEOUT_MS,
-onload:function(putRes){
-if(putRes.status===412){
-if(tryNo<4){setTimeout(function(){run(tryNo+1);},25*(tryNo+1));return;}
-resolve({ok:false,contention:true,reason:'Another computer reserved this item first.'});
-return;
-}
-if(putRes.status>=200&&putRes.status<300){
-cbtAssignLoadSharedProtection()[jobId] = row;
-_cbtAssignSharedNodeToJobId[cbtAssignSharedNodeForJob(jobId)] = jobId;
-// v23.9.206: the Firebase write above is the conflict-critical step. Do not
-// block the assignment promise on localStorage serialization or a full DOM
-// highlight scan. Persist/render on the next turn instead.
-try { cbtAssignScheduleSharedProtectionSave(); } catch(eSavePending) {}
-resolve({ok:true,token:token,row:row});
-return;
-}
-fatal('Shared assignment lock could not be saved. Assignment was not started to prevent a cross-computer conflict.');
-},onerror:function(){fatal('Shared assignment lock could not be saved. Assignment was not started to prevent a cross-computer conflict.');},
-ontimeout:function(){fatal('Shared assignment lock save timed out. Assignment was not started to prevent a cross-computer conflict.');}
-});
-},onerror:function(){fatal('Shared assignment lock could not be read. Assignment was not started to prevent a cross-computer conflict.');},
-ontimeout:function(){fatal('Shared assignment lock timed out. Assignment was not started to prevent a cross-computer conflict.');}
-});
-} catch(e) {
-fatal('Shared assignment lock is unavailable. Assignment was not started to prevent a cross-computer conflict.');
-}
-}
-run(attempt);
-});
-}
-function cbtAssignReleaseSharedReservation(jobId, token) {
-jobId=String(jobId||''); token=String(token||'');
-if(!jobId||!token||!syncEnabled()) return Promise.resolve(true);
-return new Promise(function(resolve){
-var settled = false;
-function finish(ok){ if (settled) return; settled = true; resolve(!!ok); }
-try{
-GM_xmlhttpRequest({
-method:'GET',url:cbtAssignSharedProtectUrl(jobId),headers:{'Content-Type':'application/json','X-Firebase-ETag':'true'},
-timeout:CBT_ASSIGN_LOCK_REQUEST_TIMEOUT_MS,
-onload:function(res){
-if(!(res.status>=200&&res.status<300)){ finish(false); return; }
-var row=null;try{if(res.responseText&&res.responseText!=='null')row=JSON.parse(res.responseText);}catch(e0){ finish(false); return; }
-// If the lease is already gone or no longer ours, there is nothing left for this device to release.
-if(!row||String(row.token||'')!==token||!row.pending){ finish(true); return; }
-var etag=cbtFirebaseEtag(res.responseHeaders);if(!etag){ finish(false); return; }
-try{
-GM_xmlhttpRequest({
-method:'DELETE',
-url:cbtAssignSharedProtectUrl(jobId),
-headers:{'If-Match':etag},
-timeout:CBT_ASSIGN_LOCK_REQUEST_TIMEOUT_MS,
-onload:function(delRes){
-if(delRes.status>=200&&delRes.status<300){
-var shared = cbtAssignLoadSharedProtection();
-if(shared[jobId] && String(shared[jobId].token||'')===token && shared[jobId].pending){
-delete shared[jobId];
-delete _cbtAssignSharedNodeToJobId[cbtAssignSharedNodeForJob(jobId)];
-cbtAssignCommitSharedProtectionVisual();
-}
-finish(true);
-return;
-}
-// 412 means another writer changed the node; our old lease is no longer safe to delete.
-if(delRes.status===412){ finish(true); return; }
-finish(false);
-},
-onerror:function(){ finish(false); },
-ontimeout:function(){ finish(false); }
-});
-}catch(e1){ finish(false); }
-},onerror:function(){ finish(false); },ontimeout:function(){ finish(false); }
-});
-}catch(e){ finish(false); }
-});
-}
-function cbtAssignSharedProtectionCheck(jobId, ignoreToken) {
-jobId = String(jobId || '');
-if (!jobId || !syncEnabled()) return Promise.resolve(null);
-return new Promise(function(resolve){
-try {
-GM_xmlhttpRequest({
-method:'GET', url:cbtAssignSharedProtectUrl(jobId), headers:{'Content-Type':'application/json'},
-timeout:CBT_ASSIGN_LOCK_REQUEST_TIMEOUT_MS,
-onload:function(res){
-var row = null;
-try { if (res.status>=200 && res.status<300 && res.responseText && res.responseText!=='null') row = cbtAssignSanitizeProtection(JSON.parse(res.responseText)); } catch(e0) {}
-if (row && ignoreToken && row.token === ignoreToken) { resolve(null); return; }
-if (row) {
-cbtAssignLoadSharedProtection()[jobId] = row;
-_cbtAssignSharedNodeToJobId[cbtAssignSharedNodeForJob(jobId)] = jobId;
-cbtAssignSaveSharedProtection();
-}
-resolve(row);
-},
-onerror:function(){ resolve(null); },
-ontimeout:function(){ resolve(null); }
-});
-} catch(e) { resolve(null); }
-});
-}
-function cbtAssignCommitSharedProtectionVisual() {
-try { cbtAssignRenderProtectionCountdown(); } catch(eRender) {}
-try { cbtAssignRenderGlobalSessionState(); } catch(eGlobalLock) {}
-cbtAssignScheduleSharedProtectionSave();
-}
-function cbtAssignApplySharedProtectionSnapshot(raw) {
-var clean = Object.create(null);
-var nodeMap = Object.create(null);
-var expiredNodes = [];
-raw = raw && typeof raw === 'object' ? raw : {};
-for (var node in raw) {
-var row = cbtAssignSanitizeProtection(raw[node]);
-if (row) {
-clean[row.jobId] = row;
-nodeMap[node] = row.jobId;
-} else {
-expiredNodes.push(node);
-}
-}
-_cbtAssignSharedProtectCache = clean;
-_cbtAssignSharedProtectCacheLoaded = true;
-_cbtAssignSharedNodeToJobId = nodeMap;
-cbtAssignCommitSharedProtectionVisual();
-return expiredNodes;
-}
-function cbtAssignApplySharedProtectionNode(node, rawRow, deferCommit) {
-node = String(node || '').replace(/^\/+|\/+$/g, '');
-if (!node) return;
-cbtAssignLoadSharedProtection();
-var previousJobId = _cbtAssignSharedNodeToJobId[node];
-if (previousJobId) {
-delete _cbtAssignSharedProtectCache[previousJobId];
-delete _cbtAssignSharedNodeToJobId[node];
-}
-var row = cbtAssignSanitizeProtection(rawRow);
-if (row) {
-_cbtAssignSharedProtectCache[row.jobId] = row;
-_cbtAssignSharedNodeToJobId[node] = row.jobId;
-}
-if (!deferCommit) cbtAssignCommitSharedProtectionVisual();
-}
-function cbtAssignSharedProtectionNodeRaw(node) {
-node = String(node || '').replace(/^\/+|\/+$/g, '');
-var jobId = _cbtAssignSharedNodeToJobId[node];
-var row = jobId ? _cbtAssignSharedProtectCache[jobId] : null;
-return row ? Object.assign({}, row) : null;
-}
-function cbtAssignApplySharedStreamMessage(eventName, payload) {
-if (eventName !== 'put' && eventName !== 'patch') return;
-var message = null;
-try { message = JSON.parse(payload || '{}'); }
-catch(eParse) { return; }
-if (!message || typeof message !== 'object') return;
-var path = String(message.path || '/');
-var data = message.data;
-var segments = path.split('/').filter(Boolean);
-if (!segments.length && eventName === 'put') {
-cbtAssignApplySharedProtectionSnapshot(data || {});
-return;
-}
-if (!segments.length && eventName === 'patch') {
-if (!data || typeof data !== 'object') return;
-var patchNodes = Object.keys(data);
-patchNodes.forEach(function(node){
-var patchData = data[node];
-if (patchData && typeof patchData === 'object' &&
-_cbtAssignSharedNodeToJobId[node]) {
-var existing = cbtAssignSharedProtectionNodeRaw(node) || {};
-patchData = Object.assign(existing, patchData);
-}
-cbtAssignApplySharedProtectionNode(node, patchData, true);
-});
-if (patchNodes.length) cbtAssignCommitSharedProtectionVisual();
-return;
-}
-var node = segments[0];
-if (segments.length === 1) {
-if (eventName === 'patch' && data && typeof data === 'object') {
-var base = cbtAssignSharedProtectionNodeRaw(node) || {};
-data = Object.assign(base, data);
-}
-cbtAssignApplySharedProtectionNode(node, data);
-return;
-}
-var current = cbtAssignSharedProtectionNodeRaw(node);
-if (!current) {
-try { cbtAssignSharedProtectionPull(true); } catch(ePull) {}
-return;
-}
-var cursor = current;
-for (var i = 1; i < segments.length - 1; i++) {
-var key = segments[i];
-if (!cursor[key] || typeof cursor[key] !== 'object') {
-cursor[key] = {};
-}
-cursor = cursor[key];
-}
-var leaf = segments[segments.length - 1];
-if (data === null) delete cursor[leaf];
-else cursor[leaf] = data;
-cbtAssignApplySharedProtectionNode(node, current);
-}
-function cbtAssignParseSharedStreamBlock(block) {
-block = String(block || '').trim();
-if (!block || block.charAt(0) === ':') return;
-var eventName = 'message';
-var dataLines = [];
-block.split(/\r?\n/).forEach(function(line){
-if (line.indexOf('event:') === 0) {
-eventName = line.slice(6).trim();
-} else if (line.indexOf('data:') === 0) {
-dataLines.push(line.slice(5).trim());
-}
-});
-if (!dataLines.length) return;
-if (eventName === 'put' || eventName === 'patch') {
-cbtAssignApplySharedStreamMessage(
-eventName,
-dataLines.join('\n')
-);
-}
-}
-function cbtAssignHandleSharedStreamProgress(res) {
-var full = '';
-try { full = String((res && res.responseText) || ''); }
-catch(eText) { return; }
-if (full.length < _cbtAssignLiveStreamOffset) {
-_cbtAssignLiveStreamOffset = 0;
-_cbtAssignLiveStreamBuffer = '';
-}
-if (full.length === _cbtAssignLiveStreamOffset) return;
-_cbtAssignLiveStreamReady = true;
-_cbtAssignLiveStreamLastProgress = Date.now();
-var chunk = full.slice(_cbtAssignLiveStreamOffset);
-_cbtAssignLiveStreamOffset = full.length;
-_cbtAssignLiveStreamBuffer += chunk;
-var separator = null;
-while ((separator = /\r?\n\r?\n/.exec(_cbtAssignLiveStreamBuffer))) {
-var splitAt = separator.index;
-var block = _cbtAssignLiveStreamBuffer.slice(0, splitAt);
-_cbtAssignLiveStreamBuffer =
-_cbtAssignLiveStreamBuffer.slice(
-splitAt + separator[0].length
-);
-cbtAssignParseSharedStreamBlock(block);
-}
-if (_cbtAssignLiveStreamBuffer.length > 128 * 1024) {
-_cbtAssignLiveStreamBuffer =
-_cbtAssignLiveStreamBuffer.slice(-64 * 1024);
-}
-}
-function cbtAssignScheduleSharedProtectionLiveReconnect(delayMs) {
-// v23.9.211 NoLag: continuous Firebase stream/reconnect disabled.
-}
-function cbtAssignStopSharedProtectionLive() {
-_cbtAssignLiveStreamGeneration++;
-_cbtAssignLiveStreamActive = false;
-_cbtAssignLiveStreamReady = false;
-_cbtAssignLiveStreamLastProgress = 0;
-_cbtAssignLiveStreamStartedAt = 0;
-_cbtAssignLiveStreamOffset = 0;
-_cbtAssignLiveStreamBuffer = '';
-if (_cbtAssignLiveStreamRetryTimer) {
-clearTimeout(_cbtAssignLiveStreamRetryTimer);
-_cbtAssignLiveStreamRetryTimer = null;
-}
-var req = _cbtAssignLiveStreamReq;
-_cbtAssignLiveStreamReq = null;
-try {
-if (req && typeof req.abort === 'function') req.abort();
-} catch(eAbort) {}
-}
-function cbtAssignStartSharedProtectionLive() {
-// v23.9.211 NoLag: no continuous Firebase event stream.
-// The per-job ETag GET/PUT lock still runs when Assign is actually pressed.
-}
-function cbtAssignDeleteExpiredSharedNode(node) {
-node = String(node || '').replace(/^\/+|\/+$/g, '');
-if (!node || !syncEnabled()) return;
-var url = FIREBASE_URL + CBT_ASSIGN_SHARED_PROTECT_ROOT + '/' + encodeURIComponent(node) + '.json';
-try {
-GM_xmlhttpRequest({
-method:'GET',
-url:url,
-headers:{'Content-Type':'application/json','X-Firebase-ETag':'true'},
-timeout:CBT_ASSIGN_LOCK_REQUEST_TIMEOUT_MS,
-onload:function(getRes){
-if (!(getRes.status>=200 && getRes.status<300)) return;
-if (!getRes.responseText || getRes.responseText === 'null') return;
-var current = null;
-try { current = JSON.parse(getRes.responseText); } catch(e0) { return; }
-// Never delete a node that became active after the root snapshot was taken.
-if (cbtAssignSanitizeProtection(current)) return;
-var etag = cbtFirebaseEtag(getRes.responseHeaders);
-if (!etag) return;
-try {
-GM_xmlhttpRequest({
-method:'DELETE',
-url:url,
-headers:{'If-Match':etag},
-timeout:CBT_ASSIGN_LOCK_REQUEST_TIMEOUT_MS,
-onload:function(){},
-onerror:function(){},
-ontimeout:function(){}
-});
-} catch(e1) {}
-},
-onerror:function(){},
-ontimeout:function(){}
-});
-} catch(e) {}
-}
-function cbtAssignSharedProtectionPull(force) {
-// v23.9.212 lightweight cross-computer countdown sync:
-// one conditional ETag GET every few seconds, no Firebase event stream.
-if (_cbtAssignSharedProtectPullInFlight || !syncEnabled()) return;
-if (!force && document.hidden) return;
-_cbtAssignSharedProtectPullInFlight = true;
-try {
-var headers = {
-'Content-Type':'application/json',
-'X-Firebase-ETag':'true'
-};
-if (_cbtAssignSharedProtectEtag) headers['If-None-Match'] = _cbtAssignSharedProtectEtag;
-GM_xmlhttpRequest({
-method:'GET',
-url:cbtAssignSharedProtectUrl(''),
-headers:headers,
-timeout:CBT_ASSIGN_LOCK_REQUEST_TIMEOUT_MS,
-onload:function(res){
-_cbtAssignSharedProtectPullInFlight = false;
-if (res.status === 304) return;
-if (!(res.status >= 200 && res.status < 300)) return;
-var raw = {};
-try {
-raw = res.responseText && res.responseText !== 'null' ? (JSON.parse(res.responseText) || {}) : {};
-} catch(eParse) { return; }
-var nextEtag = cbtFirebaseEtag(res.responseHeaders);
-if (nextEtag) _cbtAssignSharedProtectEtag = nextEtag;
-// Rebind countdowns only when the shared snapshot actually changed.
-cbtAssignApplySharedProtectionSnapshot(raw);
-},
-onerror:function(){ _cbtAssignSharedProtectPullInFlight = false; },
-ontimeout:function(){ _cbtAssignSharedProtectPullInFlight = false; }
-});
-} catch(e) {
-_cbtAssignSharedProtectPullInFlight = false;
-}
-}
-var _cbtAssignProtectCache = Object.create(null);
-var _cbtAssignProtectCacheKey = '';
-var _cbtAssignProtectCacheLoaded = false;
-function cbtAssignProtectKey() {
-return 'cbt_assign_protect_v2_' + String(STORE_ID || 'unknown')
-.replace(/[^A-Za-z0-9_.-]/g, '_');
-}
-function cbtAssignPersistProtection() {
-if (!_cbtAssignProtectCacheLoaded || !_cbtAssignProtectCacheKey) return;
-try {
-localStorage.setItem(
-_cbtAssignProtectCacheKey,
-JSON.stringify(_cbtAssignProtectCache)
-);
-} catch(e) {}
-}
-function cbtAssignLoadProtection() {
-var key = cbtAssignProtectKey();
-if (!_cbtAssignProtectCacheLoaded || _cbtAssignProtectCacheKey !== key) {
-_cbtAssignProtectCache = Object.create(null);
-_cbtAssignProtectCacheKey = key;
-_cbtAssignProtectCacheLoaded = true;
-try {
-var raw = localStorage.getItem(key);
-var parsed = raw ? JSON.parse(raw) : null;
-if (parsed && typeof parsed === 'object') {
-Object.keys(parsed).forEach(function(jobId){
-var row = parsed[jobId] || {};
-var until = Number(row.until) || 0;
-if (until <= cbtAssignNowMs()) return;
-_cbtAssignProtectCache[String(jobId)] = {
-jobId:String(jobId), until:until,
-associate:cbtNormalizeAssociateName(row.associate || ''),
-ref:cbtAssignNormText(row.ref || '').slice(0,80),
-token:String(row.token || ''), pending:!!row.pending
-};
-});
-}
-} catch(e) {}
-}
-return _cbtAssignProtectCache;
-}
-function cbtAssignProtect(jobId, associate, ref) {
-jobId = String(jobId || '');
-if (!jobId) return;
-var rows = cbtAssignLoadProtection();
-var row = {
-jobId:jobId,
-until: cbtAssignNowMs() + CBT_ASSIGN_PROTECT_MS,
-associate: cbtNormalizeAssociateName(associate || ''),
-ref: cbtAssignNormText(ref || '').slice(0,80),
-token:'', pending:false
-};
-rows[jobId] = row;
-cbtAssignLoadSharedProtection()[jobId] = row;
-_cbtAssignSharedNodeToJobId[cbtAssignSharedNodeForJob(jobId)] = jobId;
-cbtAssignPersistProtection();
-cbtAssignSaveSharedProtection();
-cbtAssignSharedProtectionPut(jobId, row);
-try { cbtAssignScheduleProtectionRenderFast(); } catch(eRenderImmediate) {}
-// Re-check once after the short immediate-accept verification window.
-setTimeout(function(){
-try { cbtAssignScheduleProtectionRenderFast(); } catch(eRenderVerify) {}
-}, CBT_ASSIGN_INITIAL_VISUAL_VERIFY_MS + 60);
-}
-function cbtAssignProtection(jobId) {
-jobId = String(jobId || '');
-if (!jobId) return null;
-var now = cbtAssignNowMs();
-var local = cbtAssignLoadProtection();
-var shared = cbtAssignLoadSharedProtection();
-var a = local[jobId], b = shared[jobId];
-var row = null;
-if (a && Number(a.until) > now) row = a;
-if (b && Number(b.until) > now && (!row || Number(b.until) > Number(row.until))) row = b;
-if (a && Number(a.until) <= now) { delete local[jobId]; cbtAssignPersistProtection(); }
-if (b && Number(b.until) <= now) {
-delete shared[jobId];
-delete _cbtAssignSharedNodeToJobId[cbtAssignSharedNodeForJob(jobId)];
-cbtAssignSaveSharedProtection();
-}
-return row;
-}
-function cbtAssignIsProtected(jobId, ignoreReservationToken) {
-var row = cbtAssignProtection(jobId);
-if (!row) return false;
-if (ignoreReservationToken &&
-row.pending &&
-String(row.token || '') === String(ignoreReservationToken)) {
-return false;
-}
-return true;
-}
-function cbtAssignProtectionSeconds(jobId, knownRow) {
-var row = knownRow || cbtAssignProtection(jobId);
-if (!row) return 0;
-return Math.max(1, Math.ceil((Number(row.until) - cbtAssignNowMs()) / 1000));
-}
-var CBT_ASSIGN_ASSOC_PROTECT_PREFIX = '__assoc__:';
-function cbtAssignAssociateProtectKey(associate) {
-var name = cbtNormalizeAssociateName(associate || '');
-if (!name) return '';
-return CBT_ASSIGN_ASSOC_PROTECT_PREFIX + name.toLowerCase();
-}
-function cbtAssignAssociateProtection(associate) {
-var key = cbtAssignAssociateProtectKey(associate);
-return key ? cbtAssignProtection(key) : null;
-}
-function cbtAssignAssociateCooldownSeconds(associate, knownRow) {
-var row = knownRow || cbtAssignAssociateProtection(associate);
-if (!row) return 0;
-return Math.max(1, Math.ceil((Number(row.until) - cbtAssignNowMs()) / 1000));
-}
-function cbtAssignAcquireAssociateReservation(associate) {
-var key = cbtAssignAssociateProtectKey(associate);
-if (!key) return Promise.resolve({ok:true,token:''});
-return cbtAssignAcquireSharedReservation(key, associate);
-}
-function cbtAssignReleaseAssociateReservation(associate, token) {
-var key = cbtAssignAssociateProtectKey(associate);
-if (key && token) cbtAssignReleaseSharedReservation(key, token);
-}
-function cbtAssignProtectAssociate(associate) {
-var key = cbtAssignAssociateProtectKey(associate);
-if (!key) return;
-cbtAssignProtect(key, associate, '');
-}
+    if (!touched.length) return false;
+    for (var i = 0; i < touched.length; i++) {
+      if (!cbtIsOwnUiNode(touched[i])) return false;
+    }
+    return true;
+  }
 
-// v23.9.202: the global Assign-screen turn/lease is intentionally removed.
-// Every computer may open and use Assign at the same time with no countdown,
-// inactivity timer, or picker ownership. Cross-computer safety is enforced only
-// at the actual assignment boundary by the existing atomic shared associate and
-// cart reservations. Keep these tiny compatibility shims because older UI paths
-// still call the old helper names; none of them create timers or Firebase leases.
-var _cbtAssignUiSessionReleasePromise = Promise.resolve(true);
-function cbtAssignUiSessionRow() { return null; }
-function cbtAssignUiSessionSeconds() { return 0; }
-function cbtAssignUiSessionOwned() { return true; }
-function cbtAssignUiSessionOwnedByOther() { return null; }
-function cbtAssignPickerIsOpen() {
-var overlay = _afaOverlay;
-if (!overlay || !overlay.isConnected || _afaRunning) return false;
-var title = overlay.querySelector('#cbt-afa-title');
-return !!(title && /^Assign$/i.test(String(title.textContent || '').trim()));
-}
-function cbtAssignStopPickerKeepAlive() {}
-function cbtAssignPickerTouch() {}
-function cbtAssignPickerIdleExpired() { return false; }
-function cbtAssignPickerReturnAfterIdle() {}
-function cbtAssignStartPickerKeepAlive() {}
-function cbtAssignAcquireUiSessionLock() {
-return Promise.resolve({ok:true,concurrent:true});
-}
-function cbtAssignRenewUiSessionLock() { return Promise.resolve(true); }
-function cbtAssignReleaseUiSessionLock() {
-_cbtAssignUiSessionReleasePromise = Promise.resolve(true);
-return _cbtAssignUiSessionReleasePromise;
-}
-function cbtAssignStartUiSessionRunHeartbeat() {}
-function cbtAssignRenderGlobalSessionState() {}
-function cbtAssignOpenPickerWithGlobalLock() {
-afaAssignPicker();
-return Promise.resolve({ok:true,concurrent:true});
-}
-function cbtAssignUpdateProtectionMeta(jobId, associate, ref) {
-jobId = String(jobId || '');
-if (!jobId) return;
-var row = cbtAssignProtection(jobId);
-if (!row) return;
-row.associate = cbtAssignNormText(associate || row.associate || '');
-row.ref = cbtAssignNormText(ref || row.ref || '').slice(0, 80);
-row.pending = false;
-row.token = '';
-cbtAssignLoadProtection()[jobId] = row;
-cbtAssignLoadSharedProtection()[jobId] = row;
-_cbtAssignSharedNodeToJobId[cbtAssignSharedNodeForJob(jobId)] = jobId;
-cbtAssignPersistProtection();
-cbtAssignSaveSharedProtection();
-cbtAssignSharedProtectionPut(jobId, row);
-try { cbtAssignRenderProtectionCountdown(); } catch(eRender) {}
-}
-function cbtAssignEnsureProtectionStyle() {
-if (document.getElementById('cbt-assign-cooldown-style')) return;
-var style = document.createElement('style');
-style.id = 'cbt-assign-cooldown-style';
-style.textContent =
-'job-card.cbt-assign-cooldown{' +
-'display:block;' +
-'box-shadow:inset 4px 0 0 #f59e0b,inset 0 0 0 1px rgba(245,158,11,.62) !important;' +
-'background:rgba(245,158,11,.08) !important;' +
-'transition:none !important;' +
-'animation:none !important;' +
-'}' +
-'job-card.cbt-assign-cooldown > .row{' +
-'background:rgba(245,158,11,.06) !important;' +
-'transition:none !important;' +
-'animation:none !important;' +
-'}' +
-'.cbt-assign-cooldown-destination{' +
-'position:relative !important;' +
-'overflow:visible !important;' +
-'}' +
-'.cbt-assign-cooldown-destination::after{' +
-'content:attr(data-cbt-cooldown);' +
-'position:absolute;' +
-'left:calc(var(--cbt-destination-text-end,0px) + 1ch);' +
-'right:auto;' +
-'width:150px;' +
-'min-width:150px;' +
-'max-width:150px;' +
-'overflow:visible;' +
-'top:50%;' +
-'transform:translateY(-50%);' +
-'text-align:left;' +
-'display:block;' +
-'margin:0;' +
-'padding:0;' +
-'border:0;' +
-'background:transparent;' +
-'color:#d97706;' +
-'font-size:22px;' +
-'font-weight:600;' +
-'font-family:"Helvetica Neue",Helvetica,Arial,sans-serif;' +
-'font-variant-numeric:tabular-nums;' +
-'line-height:1;' +
-'white-space:nowrap;' +
-'pointer-events:none;' +
-'z-index:3;' +
-'transition:none !important;' +
-'animation:none !important;' +
-'}';
-(document.head || document.documentElement).appendChild(style);
-}
-// v23.9.215: pending visual rule is now strict: CREATED always keeps the 60s highlight/text. Early removal is allowed only after the exact associate was observed gray and then turns normal/black, or when the exact associate is normal/black and Amazon's task progress has advanced beyond CREATED. This prevents temporary DOM paint/style changes from clearing active protection.
-// v23.9.213: lightweight cross-computer 60s To Accept + immediate pending cart highlight. No live stream or per-second full DOM scan.
-// v23.9.197: stabilized Time Left through transient Amazon row rebuilds, restores removed timer columns before paint, coalesces fast protection renders for changed task rows, and reduces Firebase fallback sync latency without adding heavy DOM polling.
-// v23.9.200: preserves Time Left across task-detail Back navigation with per-job route caching and a short before-paint remount repair observer; v23.9.199 multi-computer Assign lease behavior is preserved.
-// v23.9.194 dashboard performance-only: coalesced table/search renders, removed redundant weekly sanitization, avoided cloned DOM search-count scans, cached Names sorting, and skipped unchanged summary DOM writes.
-// v23.9.191 performance-only: removed duplicate timer work, reduced redundant half-second heartbeats, suppressed self-induced sort/observer churn, and cached stable Destination text measurements. Assignment/data rules are unchanged.
-// v23.9.190: fixed gray-CREATED self-lock: the Assign run's own pending associate reservation no longer masquerades as a cooldown and disqualifies the cart before submit.
-// v23.9.189: gray CREATED rows are true open normal-Assign carts after the gray-name cooldown ends; they no longer require the selected associate to match the old gray name.
-// v23.9.188: use Amazon's exact Task Assignment associate-name element as the
-// authoritative visual signal for a pending, not-yet-accepted assignment.
-// In the live grid Amazon renders that name in:
-//   [data-dtk-test-id="job-grid-card-job-associate-id"]
-// and uses muted gray (for example #999999) while the job is still CREATED.
-// v23.9.187: gray CREATED normal-Assign retry survives unrelated backend operation
-// states and accepts any non-false 2xx response from the normal assign endpoint.
-function cbtAssignAssignmentNameElement(cell) {
-if (!cell || !cell.isConnected) return null;
-try {
-var exact = cell.querySelector('[data-dtk-test-id="job-grid-card-job-associate-id"]');
-if (exact && exact.isConnected) return exact;
-} catch(e0) {}
-return null;
-}
-function cbtAssignAssignmentText(cell) {
-if (!cell) return '';
-var exact = cbtAssignAssignmentNameElement(cell);
-if (exact) {
-var exactText = cbtAssignNormText(exact.textContent || '');
-if (exactText) return exactText;
-}
-return cbtAssignNormText(cell.textContent || '');
-}
-function cbtAssignStyleLooksGray(el) {
-if (!el || el.nodeType !== 1) return false;
-var hint = String(el.className || '') + ' ' + String(el.getAttribute && el.getAttribute('style') || '');
-var cs = null;
-try { cs = window.getComputedStyle(el); } catch(e0) { cs = null; }
-if (cs) {
-var m = String(cs.color || '').match(/rgba?\(\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)\s*,\s*(\d+(?:\.\d+)?)/i);
-if (m) {
-var r = Number(m[1]), g = Number(m[2]), b = Number(m[3]);
-if ([r,g,b].every(Number.isFinite)) {
-var max = Math.max(r,g,b), min = Math.min(r,g,b), avg = (r+g+b)/3;
-// Amazon pending assignment gray is #999999 (153/153/153). The computed
-// color is authoritative when available so a generic "secondary" class cannot
-// falsely mark a dark/accepted name as pending.
-return (max - min) <= 32 && avg >= 88 && avg <= 210;
-}
-}
-}
-// Class/style naming is only a fallback for environments where computed color
-// cannot be read or parsed.
-return /\b(?:text[-_ ]?muted|muted|secondary|gray|grey|disabled|inactive)\b/i.test(hint);
-}
-function cbtAssignAssignmentCellLooksGray(cell, assignmentText) {
-if (!cell || !cell.isConnected) return false;
-var exact = cbtAssignAssignmentNameElement(cell);
-if (exact) {
-var exactName = cbtAssignNormText(exact.textContent || '').toLowerCase();
-var wantedExact = cbtAssignNormText(assignmentText || '').toLowerCase();
-if (!exactName) return false;
-if (wantedExact && exactName !== wantedExact) return false;
-return cbtAssignStyleLooksGray(exact);
-}
-var wanted = cbtAssignNormText(assignmentText || '').toLowerCase();
-if (!wanted) return false;
-try {
-var walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT, null);
-var node = null;
-while ((node = walker.nextNode())) {
-var raw = cbtAssignNormText(node.nodeValue || '');
-if (!raw) continue;
-var low = raw.toLowerCase();
-if (low !== wanted && wanted.indexOf(low) === -1 && low.indexOf(wanted) === -1) continue;
-var el = node.parentElement || cell;
-if (cbtAssignStyleLooksGray(el)) return true;
-}
-} catch(e1) {}
-return cbtAssignStyleLooksGray(cell);
-}
-function cbtAssignProgressIsCreatedOnly(progressRaw) {
-var progress = cbtAssignNormText(progressRaw || '').toUpperCase();
-if (!/\bCREATED\b/.test(progress)) return false;
-return !/\b(BATCHING|IN_PROGRESS|ACCEPTED|STARTED|ACTIVE|COMPLETED|COMPLETE|DONE)\b/.test(progress);
-}
-function cbtAssignRowIsGrayCreated(r) {
-if (!r || !r.assignmentHasName || !r.assignmentGray) return false;
-return cbtAssignProgressIsCreatedOnly(r.progressRaw);
-}
-function cbtAssignRowIsGrayCreatedAvailable(r) {
-if (!cbtAssignRowIsGrayCreated(r)) return false;
-// A gray Task Assignment name means the cart is still waiting for acceptance.
-// Once the CURRENT gray assignee's real cooldown is over, treat this row as an
-// open normal-Assign cart. During the Assign run, do NOT mistake this browser's
-// own temporary associate reservation for a cooldown; that self-lock previously
-// made a valid gray retry become ineligible immediately before the request.
-var grayAssociate = cbtAssignNormText(r.assignment || '');
-if (!grayAssociate) return false;
-try {
-var grayLock = cbtAssignAssociateProtection(grayAssociate);
-if (grayLock) {
-var ownReservation = !!(
-grayLock.pending &&
-_cbtAssignCurrentAssociateReservationToken &&
-String(grayLock.token || '') === String(_cbtAssignCurrentAssociateReservationToken) &&
-cbtAssignNormText(_cbtAssignCurrentAssociateReservationName || '').toLowerCase() ===
-grayAssociate.toLowerCase()
-);
-if (!ownReservation) return false;
-}
-} catch(eCooldown) {
-// Cooldown safety is fail-closed: an unexpected read/scope/storage failure must
-// never make a gray cart look available.
-return false;
-}
-return true;
-}
-function cbtAssignRowIsGrayCreatedPending(r, associate) {
-if (!cbtAssignRowIsGrayCreatedAvailable(r)) return false;
-var wanted = cbtAssignNormText(associate || '').toLowerCase();
-if (!wanted) return true;
-return cbtAssignNormText(r.assignment || '').toLowerCase() === wanted;
-}
-function cbtAssignEntryIsGrayCreatedPending(entry, protectionRow) {
-if (!entry || !entry.card || !entry.card.isConnected) return false;
-var assignmentCell = entry.assignmentCell;
-var progressCell = entry.progressCell;
-if (!assignmentCell || !progressCell || !assignmentCell.isConnected || !progressCell.isConnected) return false;
-var assignment = cbtAssignAssignmentText(assignmentCell);
-if (!assignment || /^(?:ASSIGNABLE|UNASSIGNABLE)$/i.test(assignment)) return false;
-if (!cbtAssignProgressIsCreatedOnly(progressCell.textContent || '')) return false;
-var expected = protectionRow ? cbtAssignNormText(protectionRow.associate || '').toLowerCase() : '';
-if (expected && assignment.toLowerCase() !== expected) return false;
-return cbtAssignAssignmentCellLooksGray(assignmentCell, assignment);
-}
-var _cbtAssignCardIndexVersion = -1;
-var _cbtAssignCardIndex = null;
-var _cbtAssignHighlightedCards = new Set();
-var _cbtAssignCountdownCells = new Set();
-var _cbtAssignCountdownMeta = (typeof WeakMap === 'function' ? new WeakMap() : null);
-var _cbtAssignActiveVisualByRef = Object.create(null);
-var _cbtAssignProtectionRenderPending = false;
-// v23.9.214: remember what THIS browser has actually observed for each protection
-// record. This stops a temporary old/black assignment cell from being mistaken
-// for acceptance before Amazon has painted the newly assigned associate.
-var _cbtAssignVisualStates = Object.create(null);
-var CBT_ASSIGN_DIRECT_BLACK_GRACE_MS = 3500;
-var CBT_ASSIGN_INITIAL_VISUAL_VERIFY_MS = 650;
-function cbtAssignVisualStateKey(protectionRow) {
-if (!protectionRow) return '';
-return String(protectionRow.jobId || '') + '|' +
-String(Number(protectionRow.until) || 0) + '|' +
-cbtAssignNormText(protectionRow.associate || '').toLowerCase();
-}
-function cbtAssignVisualState(protectionRow) {
-var key = cbtAssignVisualStateKey(protectionRow);
-if (!key) return null;
-var state = _cbtAssignVisualStates[key];
-if (!state) {
-state = _cbtAssignVisualStates[key] = {
-key:key,
-sawExpected:false,
-sawGray:false,
-accepted:false,
-stableBlack:0,
-lastSeenAt:0
-};
-}
-return state;
-}
-function cbtAssignPruneVisualStates(activeRows, now) {
-var keep = Object.create(null);
-if (activeRows) {
-Object.keys(activeRows).forEach(function(jobId){
-var row = activeRows[jobId];
-if (!row || Number(row.until) <= now) return;
-var key = cbtAssignVisualStateKey(row);
-if (key) keep[key] = true;
-});
-}
-Object.keys(_cbtAssignVisualStates).forEach(function(key){
-if (!keep[key]) delete _cbtAssignVisualStates[key];
-});
-}
-function cbtAssignHasActiveVisualProtection() {
-var now = cbtAssignNowMs();
-function hasRows(rows) {
-if (!rows || typeof rows !== 'object') return false;
-var keys = Object.keys(rows);
-for (var i = 0; i < keys.length; i++) {
-var row = rows[keys[i]];
-if (!row || Number(row.until) <= now) continue;
-// Only actual cart/task protection has a visible ref. Associate and global UI
-// leases intentionally have no row highlight.
-if (cbtAssignNormText(row.ref || '')) return true;
-}
-return false;
-}
-try {
-return hasRows(cbtAssignLoadProtection()) || hasRows(cbtAssignLoadSharedProtection());
-} catch(e) { return _cbtAssignHighlightedCards.size > 0; }
-}
-function cbtAssignEntryAcceptedNow(entry, protectionRow) {
-if (!entry || !entry.card || !entry.card.isConnected || !protectionRow) return false;
-var state = cbtAssignVisualState(protectionRow);
-if (!state) return false;
-if (state.accepted) return true;
-var assignmentCell = entry.assignmentCell;
-var progressCell = entry.progressCell;
-if (!assignmentCell || !assignmentCell.isConnected) return false;
-var assignment = cbtAssignAssignmentText(assignmentCell);
-var actual = cbtAssignNormText(assignment || '').toLowerCase();
-var expected = cbtAssignNormText(protectionRow.associate || '').toLowerCase();
-var isNamed = !!actual && !/^(?:ASSIGNABLE|UNASSIGNABLE)$/i.test(actual);
-var expectedSeen = !!(isNamed && expected && actual === expected);
+  var _storeTimezoneCache = null;
+  var _storeTimezoneCacheAt = 0;
+  var _storeTimezoneCacheScope = '';
+  var _parseTimeMemo = Object.create(null);
+  var _parseTimeMemoDay = '';
 
-// Do not let stale/temporary text clear a new assignment. We only judge
-// acceptance after Amazon is actually showing the expected associate.
-if (!expectedSeen) {
-state.stableBlack = 0;
-return false;
-}
-state.sawExpected = true;
-state.lastSeenAt = cbtAssignNowMs();
-var isGray = cbtAssignAssignmentCellLooksGray(assignmentCell, assignment);
-var progressRaw = progressCell && progressCell.isConnected
-? cbtAssignNormText(progressCell.textContent || '').toUpperCase()
-: '';
-var createdOnly = cbtAssignProgressIsCreatedOnly(progressRaw);
-var advanced = /\b(BATCHING|IN_PROGRESS|ACCEPTED|STARTED|ACTIVE|COMPLETED|COMPLETE|DONE)\b/.test(progressRaw);
+  function getStoreTimezone() {
+    var nowMs = Date.now();
 
-if (isGray) {
-state.sawGray = true;
-state.stableBlack = 0;
-return false;
-}
+    /* Scope the cache to the store currently present in the COMO URL. If the
+       user switches stores through SPA navigation, the old store's timezone
+       is discarded immediately rather than being retained for 10 minutes. */
+    var scope = '';
+    try {
+      var sm = location.pathname.match(/\/store\/([^/]+)/i);
+      scope = sm && sm[1] ? sm[1] : (location.host + location.pathname);
+    } catch(e0) {
+      scope = location.host || '';
+    }
 
-// Strongest visual signal: this exact associate was visibly gray first and is
-// now black/normal. That means the associate accepted, so clear immediately.
-if (state.sawGray) {
-state.accepted = true;
-return true;
-}
+    if (_storeTimezoneCache && _storeTimezoneCacheScope === scope &&
+        nowMs - _storeTimezoneCacheAt < 10 * 60 * 1000) {
+      return _storeTimezoneCache;
+    }
 
-// Critical v23.9.215 rule: while Amazon still says CREATED, NEVER clear just
-// because the name happens to look black. That temporary style/paint state was
-// the reason the highlight disappeared early in v23.9.213/v23.9.214.
-if (createdOnly) {
-state.stableBlack = 0;
-return false;
-}
+    if (_storeTimezoneCacheScope !== scope) {
+      _storeTimezoneCache = null;
+      _parseTimeMemo = Object.create(null);
+      _parseTimeMemoDay = '';
+    }
 
-// Very fast acceptance can skip the visible gray state. In that case only an
-// advanced Amazon task status plus this exact associate shown black/normal is
-// enough to suppress/remove the pending visual immediately.
-if (advanced) {
-state.accepted = true;
-return true;
-}
+    var tz = null;
+    var tzEl = document.querySelector('[class*="timezone"], [class*="time-zone"], .store-time, .current-time');
+    if (tzEl) {
+      var match = (tzEl.textContent || '').match(/([A-Za-z]+\/[A-Za-z_]+)/);
+      if (match) tz = match[1];
+    }
 
-// Unknown/transient status is fail-safe: keep the visual until a real acceptance
-// signal appears or the 60-second protection expires.
-state.stableBlack = 0;
-return false;
-}
-function cbtAssignEntryShouldShowPendingVisual(entry, protectionRow, now) {
-if (!entry || !entry.card || !entry.card.isConnected || !protectionRow) return false;
-var state = cbtAssignVisualState(protectionRow);
-if (state && state.accepted) return false;
-if (cbtAssignEntryAcceptedNow(entry, protectionRow)) return false;
-var until = Number(protectionRow.until) || 0;
-if (until <= now) return false;
+    /* v23.9.91 reload-lag fix: never serialize the full page just to find the
+       timezone. COMO can have hundreds/thousands of live DOM nodes and
+       document.body.innerHTML creates a large string at exactly the moment the
+       page is trying to finish its first render. Check only likely header/nav
+       regions; if they are not ready yet, use the existing safe default and
+       let the normal cache refresh discover the explicit timezone later. */
+    if (!tz) {
+      try {
+        var tzCandidates = document.querySelectorAll(
+          'header,nav,.navbar,[class*="header"],[class*="store-time"],[class*="current-time"]'
+        );
+        for (var ti = 0; ti < tzCandidates.length && ti < 30; ti++) {
+          var tt = String(tzCandidates[ti].textContent || '');
+          var tm = tt.match(/America\/[A-Za-z_]+/);
+          if (tm) { tz = tm[0]; break; }
+        }
+      } catch(e1) {}
+    }
 
-// Give a brand-new assignment a tiny verification window before painting if we
-// have not yet seen a gray pending name. This lets an associate who accepts
-// essentially immediately reach an advanced/black accepted state without a
-// visible highlight flash. If gray is already visible, pending is confirmed and
-// the highlight can show immediately.
-var started = until - CBT_ASSIGN_PROTECT_MS;
-if (state && !state.sawGray && started > 0 &&
-(now - started) >= 0 && (now - started) < CBT_ASSIGN_INITIAL_VISUAL_VERIFY_MS) {
-return false;
-}
+    _storeTimezoneCache = tz || 'America/New_York';
+    _storeTimezoneCacheAt = nowMs;
+    _storeTimezoneCacheScope = scope;
+    return _storeTimezoneCache;
+  }
 
-// While this protection record is active, keep its visual present even if Amazon
-// is between DOM paints. Acceptance, not a temporary missing/mismatched cell, is
-// what removes the visual.
-return true;
-}
-function cbtAssignScheduleProtectionRenderFast() {
-if (_cbtAssignProtectionRenderPending || !isDashboardView()) return;
-_cbtAssignProtectionRenderPending = true;
-var run = function(){
-_cbtAssignProtectionRenderPending = false;
-if (!isDashboardView()) return;
-try { cbtAssignRenderProtectionCountdown(); } catch(e) {}
-};
-if (typeof requestAnimationFrame === 'function') requestAnimationFrame(run);
-else setTimeout(run, 0);
-}
-var _cbtAssignDestinationMeasureCache = (typeof WeakMap === 'function' ? new WeakMap() : null);
-var _cbtAssignDestinationTextMeasureCache = (typeof Map === 'function' ? new Map() : null);
-function cbtAssignMeasureDestinationTextEnd(cell) {
-if (!cell || !cell.isConnected) return 0;
-var textSig = cbtAssignNormText(cell.textContent || '');
-if (_cbtAssignDestinationMeasureCache) {
-var cached = _cbtAssignDestinationMeasureCache.get(cell);
-if (cached && cached.text === textSig && isFinite(cached.end)) return cached.end;
-}
-// Amazon replaces the whole job-card periodically. A WeakMap keyed only by the
-// old DOM cell therefore missed every replacement and forced synchronous layout
-// again. Destination text uses the same column geometry, so reuse the last
-// measured text endpoint across replacement cells.
-if (textSig && _cbtAssignDestinationTextMeasureCache && _cbtAssignDestinationTextMeasureCache.has(textSig)) {
-var sharedEnd = Number(_cbtAssignDestinationTextMeasureCache.get(textSig));
-if (isFinite(sharedEnd)) {
-try { if (_cbtAssignDestinationMeasureCache) _cbtAssignDestinationMeasureCache.set(cell, {text:textSig, end:sharedEnd}); } catch(eSharedCache) {}
-return sharedEnd;
-}
-}
-var textEndLocal = 0;
-try {
-var destRect = cell.getBoundingClientRect();
-var walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT, null);
-var node = null, best = null;
-while ((node = walker.nextNode())) {
-if (!node || !String(node.nodeValue || '').trim()) continue;
-var parent = node.parentElement;
-if (!parent) continue;
-var tag = String(parent.tagName || '').toUpperCase();
-if (tag === 'SCRIPT' || tag === 'STYLE') continue;
-var range = document.createRange();
-range.selectNodeContents(node);
-var rr = range.getBoundingClientRect();
-if (!rr || rr.width <= 0) continue;
-if (!best || rr.right > best.right) best = rr;
-}
-textEndLocal = best ? Math.max(0, best.right - destRect.left) : 0;
-} catch(eMeasure) { textEndLocal = 0; }
-if (_cbtAssignDestinationMeasureCache) {
-try { _cbtAssignDestinationMeasureCache.set(cell, {text:textSig, end:textEndLocal}); } catch(eCache) {}
-}
-if (textSig && _cbtAssignDestinationTextMeasureCache && isFinite(textEndLocal)) {
-try {
-_cbtAssignDestinationTextMeasureCache.set(textSig, textEndLocal);
-// Tiny bounded cache: destinations repeat heavily, but never let arbitrary text
-// grow this map forever during a long-running dashboard session.
-if (_cbtAssignDestinationTextMeasureCache.size > 128) {
-var firstKey = _cbtAssignDestinationTextMeasureCache.keys().next().value;
-_cbtAssignDestinationTextMeasureCache.delete(firstKey);
-}
-} catch(eTextCache) {}
-}
-return textEndLocal;
-}
-function cbtAssignBuildCardIndex() {
-if (_cbtAssignCardIndex &&
-_cbtAssignCardIndexVersion === _cbtRelevantDomVersion) {
-return { index:_cbtAssignCardIndex, rebuilt:false };
-}
-var index = {
-rows: [],
-byRef: Object.create(null),
-byCard: (typeof WeakMap === 'function' ? new WeakMap() : null)
-};
-var liveMap = null;
-try { liveMap = cbtAssignHeaderMap(); } catch(eMap) { liveMap = null; }
-var cards = document.querySelectorAll('job-card');
-for (var i = 0; i < cards.length; i++) {
-var card = cards[i];
-try { if (isInExcludedSection(card)) continue; }
-catch(eExcluded) {}
-var a = null;
-try { a = card.querySelector('a'); } catch(eA) {}
-var currentRef = a
-? cbtAssignNormText(a.textContent || '').toLowerCase()
-: '';
-var rememberedRef = cbtAssignNormText(
-card.getAttribute('data-cbt-protect-ref') || ''
-).toLowerCase();
-var destinationCell = null;
-var cartCell = null;
-var assignmentCell = null;
-var progressCell = null;
-try {
-var rowEl = card.querySelector('div.row');
-var cols = rowEl
-? rowEl.querySelectorAll(':scope > div[class*="col-"]')
-: null;
-if (cols && cols.length > 1) destinationCell = cols[1];
-if (cols && cols.length > 2) cartCell = cols[2];
-if (cols && liveMap) {
-if (liveMap.assignment >= 0 && cols.length > liveMap.assignment) assignmentCell = cols[liveMap.assignment];
-if (liveMap.progress >= 0 && cols.length > liveMap.progress) progressCell = cols[liveMap.progress];
-}
-} catch(eDest) {}
-var entry = {
-card: card,
-destinationCell: destinationCell,
-cartCell: cartCell,
-assignmentCell: assignmentCell,
-progressCell: progressCell,
-currentRef: currentRef,
-rememberedRef: rememberedRef
-};
-index.rows.push(entry);
-if (index.byCard) index.byCard.set(card, entry);
-function addRef(ref) {
-if (!ref) return;
-if (!index.byRef[ref]) index.byRef[ref] = [];
-index.byRef[ref].push(entry);
-}
-addRef(currentRef);
-if (rememberedRef && rememberedRef !== currentRef) addRef(rememberedRef);
-}
-_cbtAssignCardIndexVersion = _cbtRelevantDomVersion;
-_cbtAssignCardIndex = index;
-return { index:index, rebuilt:true };
-}
-function cbtAssignClearCooldownEntry(entry) {
-if (!entry || !entry.card) return;
-var card = entry.card;
-try {
-card.classList.remove('cbt-assign-cooldown');
-card.removeAttribute('data-cbt-protect-ref');
-} catch(e0) {}
-var cell = entry.destinationCell;
-if (!cell || !cell.isConnected) {
-try {
-var rowEl = card.querySelector('div.row');
-var cols = rowEl ? rowEl.querySelectorAll(':scope > div[class*="col-"]') : null;
-if (cols && cols.length > 1) cell = cols[1];
-} catch(e1) { cell = null; }
-}
-if (cell) {
-try {
-cell.classList.remove('cbt-assign-cooldown-destination');
-cell.removeAttribute('data-cbt-cooldown');
-cell.removeAttribute('data-cbt-protect-until');
-cell.style.removeProperty('--cbt-accept-gap-x');
-cell.style.removeProperty('--cbt-destination-text-end');
-try { _cbtAssignCountdownCells.delete(cell); } catch(eSet) {}
-try { if (_cbtAssignCountdownMeta) _cbtAssignCountdownMeta.delete(cell); } catch(eMeta) {}
-} catch(e2) {}
-}
-}
-function cbtAssignPrePaintRebindMutations(mutations) {
-if (!isDashboardView() || !_cbtAssignActiveVisualByRef) return 0;
-var hasActive = false;
-for (var activeRef in _cbtAssignActiveVisualByRef) {
-if (Object.prototype.hasOwnProperty.call(_cbtAssignActiveVisualByRef, activeRef)) { hasActive = true; break; }
-}
-if (!hasActive) return 0;
-var now = cbtAssignNowMs();
-var headerMap = null;
-try { headerMap = cbtAssignHeaderMap(); } catch(eMap) {}
-var cards = new Set();
-function addCard(card) {
-if (!card || card.nodeType !== 1 || !card.isConnected) return;
-try {
-if (!(card.matches && card.matches('job-card'))) card = card.closest ? card.closest('job-card') : null;
-} catch(eClosest) { card = null; }
-if (card && card.isConnected) cards.add(card);
-}
-function scanNode(node) {
-if (!node || node.nodeType !== 1) return;
-try {
-if (node.matches && node.matches('job-card')) cards.add(node);
-else addCard(node);
-if (node.querySelectorAll) node.querySelectorAll('job-card').forEach(function(card){ cards.add(card); });
-} catch(eScan) {}
-}
-for (var mi = 0; mi < (mutations ? mutations.length : 0); mi++) {
-var m = mutations[mi];
-if (!m) continue;
-scanNode(m.target);
-var added = m.addedNodes || [];
-for (var ai = 0; ai < added.length; ai++) scanNode(added[ai]);
-}
-var bound = 0;
-cards.forEach(function(card){
-if (!card || !card.isConnected) return;
-var ref = '';
-try {
-var a = card.querySelector('a');
-ref = cbtAssignNormText(a ? a.textContent : '').toLowerCase();
-} catch(eRef) {}
-var remembered = '';
-try { remembered = cbtAssignNormText(card.getAttribute('data-cbt-protect-ref') || '').toLowerCase(); } catch(eRemember) {}
-var selectedRef = (ref && _cbtAssignActiveVisualByRef[ref]) ? ref :
-(remembered && _cbtAssignActiveVisualByRef[remembered] ? remembered : '');
-if (!selectedRef) return;
-var info = _cbtAssignActiveVisualByRef[selectedRef];
-if (!info || !info.row || Number(info.row.until) <= now) return;
-var rowEl = null, cols = null;
-try {
-rowEl = card.querySelector('div.row');
-cols = rowEl ? rowEl.querySelectorAll(':scope > div[class*="col-"]') : null;
-} catch(eCols) {}
-if (!cols || cols.length < 2) return;
-var destinationCell = cols[1];
-var assignmentCell = headerMap && headerMap.assignment >= 0 && cols.length > headerMap.assignment ? cols[headerMap.assignment] : null;
-var progressCell = headerMap && headerMap.progress >= 0 && cols.length > headerMap.progress ? cols[headerMap.progress] : null;
-var entry = {
-card:card,
-destinationCell:destinationCell,
-assignmentCell:assignmentCell,
-progressCell:progressCell,
-currentRef:ref,
-rememberedRef:remembered
-};
-try {
-if (!cbtAssignEntryShouldShowPendingVisual(entry, info.row, now)) return;
-} catch(eShow) {}
-try {
-card.classList.add('cbt-assign-cooldown');
-card.setAttribute('data-cbt-protect-ref', selectedRef);
-destinationCell.classList.add('cbt-assign-cooldown-destination');
-var seconds = Math.max(1, Math.ceil((Number(info.row.until) - now) / 1000));
-var nextText = seconds + 's To Accept';
-if (destinationCell.getAttribute('data-cbt-cooldown') !== nextText) destinationCell.setAttribute('data-cbt-cooldown', nextText);
-var protectUntil = String(Number(info.row.until) || 0);
-if (destinationCell.getAttribute('data-cbt-protect-until') !== protectUntil) destinationCell.setAttribute('data-cbt-protect-until', protectUntil);
-var textEndLocal = cbtAssignMeasureDestinationTextEnd(destinationCell);
-var textEndCss = textEndLocal.toFixed(2) + 'px';
-if (destinationCell.style.getPropertyValue('--cbt-destination-text-end') !== textEndCss) destinationCell.style.setProperty('--cbt-destination-text-end', textEndCss);
-_cbtAssignHighlightedCards.add(card);
-_cbtAssignCountdownCells.add(destinationCell);
-if (_cbtAssignCountdownMeta) _cbtAssignCountdownMeta.set(destinationCell, {entry:entry, row:info.row, ref:selectedRef});
-bound++;
-} catch(eBind) {}
-});
-return bound;
-}
-function cbtAssignRenderProtectionCountdown() {
-if (!isDashboardView()) return;
-cbtAssignEnsureProtectionStyle();
-var now = cbtAssignNowMs();
-var localRows = cbtAssignLoadProtection();
-var sharedRows = cbtAssignLoadSharedProtection();
-var mergedRows = Object.create(null);
-var byRef = Object.create(null);
-var changedLocal = false;
-var changedShared = false;
-function mergeProtection(jobId, p, source) {
-if (!p || Number(p.until) <= now) {
-if (source === 'local' && localRows[jobId]) {
-delete localRows[jobId];
-changedLocal = true;
-}
-if (source === 'shared' && sharedRows[jobId]) {
-delete sharedRows[jobId];
-changedShared = true;
-}
-return;
-}
-var existing = mergedRows[jobId];
-if (!existing ||
-Number(p.until) > Number(existing.until) ||
-(Number(p.until) === Number(existing.until) &&
-!cbtAssignNormText(existing.ref || '') &&
-!!cbtAssignNormText(p.ref || ''))) {
-mergedRows[jobId] = p;
-}
-}
-Object.keys(localRows).forEach(function(jobId){
-mergeProtection(jobId, localRows[jobId], 'local');
-});
-Object.keys(sharedRows).forEach(function(jobId){
-mergeProtection(jobId, sharedRows[jobId], 'shared');
-});
-Object.keys(mergedRows).forEach(function(jobId){
-var p = mergedRows[jobId];
-var ref = cbtAssignNormText(p.ref || '').toLowerCase();
-if (!ref) return;
-byRef[ref] = {
-jobId: String(jobId),
-row: p,
-seconds: Math.max(1, Math.ceil((Number(p.until) - now) / 1000))
-};
-});
-if (changedLocal) cbtAssignPersistProtection();
-if (changedShared) cbtAssignSaveSharedProtection();
-var refs = Object.keys(byRef);
-_cbtAssignActiveVisualByRef = byRef;
-cbtAssignPruneVisualStates(mergedRows, now);
-// No active cart protection means there is nothing to index. The old path still
-// walked every job-card once per second even when zero carts were protected.
-if (!refs.length) {
-_cbtAssignHighlightedCards.forEach(function(card){
-if (!card || !card.isConnected) return;
-try {
-card.classList.remove('cbt-assign-cooldown');
-card.removeAttribute('data-cbt-protect-ref');
-var cell0 = card.querySelector('.cbt-assign-cooldown-destination');
-if (cell0) {
-cell0.classList.remove('cbt-assign-cooldown-destination');
-cell0.removeAttribute('data-cbt-cooldown');
-cell0.removeAttribute('data-cbt-protect-until');
-cell0.style.removeProperty('--cbt-accept-gap-x');
-cell0.style.removeProperty('--cbt-destination-text-end');
-}
-} catch(eClear0) {}
-});
-_cbtAssignHighlightedCards.clear();
-_cbtAssignCountdownCells.forEach(function(cell){
-if (!cell) return;
-try {
-cell.classList.remove('cbt-assign-cooldown-destination');
-cell.removeAttribute('data-cbt-cooldown');
-cell.removeAttribute('data-cbt-protect-until');
-cell.style.removeProperty('--cbt-accept-gap-x');
-cell.style.removeProperty('--cbt-destination-text-end');
-} catch(eClear1) {}
-});
-_cbtAssignCountdownCells.clear();
-return;
-}
-var built = cbtAssignBuildCardIndex();
-var cardIndex = built.index;
-var nextHighlighted = new Set();
-// Never blank every active highlight just because Amazon rebuilt the task grid.
-// Reconcile below and clear only cards that are truly stale/no longer protected.
-_cbtAssignHighlightedCards.forEach(function(card){
-if (!card || !card.isConnected) return;
-});
-for (var ri = 0; ri < refs.length; ri++) {
-var wantedRef = refs[ri];
-var candidates = cardIndex.byRef[wantedRef] || [];
-for (var ci = 0; ci < candidates.length; ci++) {
-var entry = candidates[ci];
-var card = entry.card;
-if (!card || !card.isConnected) continue;
-var selectedRef =
-(entry.currentRef && byRef[entry.currentRef])
-? entry.currentRef
-: (entry.rememberedRef && byRef[entry.rememberedRef]
-? entry.rememberedRef
-: entry.currentRef);
-var protectedInfo = selectedRef ? byRef[selectedRef] : null;
-if (!protectedInfo) continue;
-// Keep the pending visual stable for the full active protection window.
-// Amazon frequently rebuilds/repaints these cells; a transient missing/old/black
-// paint must not make the orange highlight or countdown disappear and reappear.
-// The visual clears only on a real acceptance signal or protection expiry.
-if (!cbtAssignEntryShouldShowPendingVisual(entry, protectedInfo.row, now)) {
-cbtAssignClearCooldownEntry(entry);
-continue;
-}
-try {
-card.classList.add('cbt-assign-cooldown');
-card.setAttribute('data-cbt-protect-ref', selectedRef);
-} catch(eCard) {}
-var destinationCell = entry.destinationCell;
-if (destinationCell && destinationCell.isConnected) {
-try {
-destinationCell.classList.add('cbt-assign-cooldown-destination');
-var nextText = protectedInfo.seconds + 's To Accept';
-if (destinationCell.getAttribute('data-cbt-cooldown') !== nextText) {
-destinationCell.setAttribute('data-cbt-cooldown', nextText);
-}
-var protectUntil = String(Number(protectedInfo.row.until) || 0);
-if (destinationCell.getAttribute('data-cbt-protect-until') !== protectUntil) {
-destinationCell.setAttribute('data-cbt-protect-until', protectUntil);
-}
-_cbtAssignCountdownCells.add(destinationCell);
-try {
-if (_cbtAssignCountdownMeta) _cbtAssignCountdownMeta.set(destinationCell, {entry:entry, row:protectedInfo.row, ref:selectedRef});
-} catch(eMetaBind) {}
-// Keep the countdown anchored after Destination. Its 150px text slot has a
-// fixed left edge, so changing 60s -> 59s -> ... cannot visually shift/twitch.
-// Reuse the cached Destination measurement instead of forcing layout every second.
-var textEndLocal = cbtAssignMeasureDestinationTextEnd(destinationCell);
-var textEndCss = textEndLocal.toFixed(2) + 'px';
-if (destinationCell.style.getPropertyValue('--cbt-destination-text-end') !== textEndCss) {
-destinationCell.style.setProperty('--cbt-destination-text-end', textEndCss);
-}
-} catch(eCell) {}
-}
-nextHighlighted.add(card);
-}
-}
-_cbtAssignHighlightedCards.forEach(function(card){
-if (!card || !card.isConnected || nextHighlighted.has(card)) return;
-var entry = cardIndex.byCard ? cardIndex.byCard.get(card) : null;
-if (!entry) {
-for (var i2 = 0; i2 < cardIndex.rows.length; i2++) {
-if (cardIndex.rows[i2].card === card) { entry = cardIndex.rows[i2]; break; }
-}
-}
-if (entry) cbtAssignClearCooldownEntry(entry);
-else {
-try {
-card.classList.remove('cbt-assign-cooldown');
-card.removeAttribute('data-cbt-protect-ref');
-var oldCell = card.querySelector('.cbt-assign-cooldown-destination');
-if (oldCell) {
-oldCell.classList.remove('cbt-assign-cooldown-destination');
-oldCell.removeAttribute('data-cbt-cooldown');
-oldCell.removeAttribute('data-cbt-protect-until');
-oldCell.style.removeProperty('--cbt-accept-gap-x');
-oldCell.style.removeProperty('--cbt-destination-text-end');
-try { _cbtAssignCountdownCells.delete(oldCell); } catch(eSetOld) {}
-try { if (_cbtAssignCountdownMeta) _cbtAssignCountdownMeta.delete(oldCell); } catch(eMetaOld) {}
-}
-} catch(eOld) {}
-}
-});
-_cbtAssignHighlightedCards = nextHighlighted;
-}
-function cbtAssignTickProtectionCountdown() {
-// Lightweight 1-second path: only active bound cells are touched. No document
-// query, no Firebase request, and no task-table scan. It also checks the already
-// cached assignment cell so black/normal acceptance clears the visual promptly.
-if (!_cbtAssignCountdownCells.size) return;
-var now = cbtAssignNowMs();
-var expired = [];
-_cbtAssignCountdownCells.forEach(function(cell){
-if (!cell || !cell.isConnected) { expired.push(cell); return; }
-var meta = _cbtAssignCountdownMeta ? _cbtAssignCountdownMeta.get(cell) : null;
-if (meta && cbtAssignEntryAcceptedNow(meta.entry, meta.row)) {
-try { if (meta.ref) delete _cbtAssignActiveVisualByRef[String(meta.ref).toLowerCase()]; } catch(eDropActive) {}
-try {
-var acceptedCard = meta.entry && meta.entry.card;
-if (acceptedCard) {
-acceptedCard.classList.remove('cbt-assign-cooldown');
-acceptedCard.removeAttribute('data-cbt-protect-ref');
-_cbtAssignHighlightedCards.delete(acceptedCard);
-}
-cell.classList.remove('cbt-assign-cooldown-destination');
-cell.removeAttribute('data-cbt-cooldown');
-cell.removeAttribute('data-cbt-protect-until');
-cell.style.removeProperty('--cbt-accept-gap-x');
-cell.style.removeProperty('--cbt-destination-text-end');
-} catch(eAccepted) {}
-expired.push(cell);
-return;
-}
-var until = Number(cell.getAttribute('data-cbt-protect-until')) || 0;
-if (until <= now) {
-try { if (meta && meta.ref) delete _cbtAssignActiveVisualByRef[String(meta.ref).toLowerCase()]; } catch(eDropExpired) {}
-try {
-var card = cell.closest && cell.closest('job-card');
-if (card) {
-card.classList.remove('cbt-assign-cooldown');
-card.removeAttribute('data-cbt-protect-ref');
-_cbtAssignHighlightedCards.delete(card);
-}
-cell.classList.remove('cbt-assign-cooldown-destination');
-cell.removeAttribute('data-cbt-cooldown');
-cell.removeAttribute('data-cbt-protect-until');
-cell.style.removeProperty('--cbt-accept-gap-x');
-cell.style.removeProperty('--cbt-destination-text-end');
-} catch(e0) {}
-expired.push(cell);
-return;
-}
-var seconds = Math.max(1, Math.ceil((until - now) / 1000));
-var text = seconds + 's To Accept';
-try { if (cell.getAttribute('data-cbt-cooldown') !== text) cell.setAttribute('data-cbt-cooldown', text); } catch(e1) {}
-});
-for (var i = 0; i < expired.length; i++) _cbtAssignCountdownCells.delete(expired[i]);
-}
-function cbtAssignReadRows() {
-var map = cbtAssignHeaderMap();
-if (!map) return [];
-var out = [];
-var cards = document.querySelectorAll('job-card');
-for (var i = 0; i < cards.length; i++) {
-var card = cards[i];
-try {
-if (isInExcludedSection(card)) continue;
-} catch(eExcluded) {}
-var row = null;
-try {
-row = card.querySelector('div.row');
-} catch(eRow) {}
-if (!row) continue;
-var cols = cbtAssignDirectCols(row);
-if (cols.length <= Math.max(
-map.cart,
-map.assignment,
-map.batch,
-map.progress >= 0 ? map.progress : 0
-)) {
-continue;
-}
-var a = null;
-try {
-a = card.querySelector('a');
-} catch(eLink) {}
-var ref = a ? cbtAssignNormText(a.textContent || '') : '';
-if (!ref) continue;
-var linkInfo = cbtAssignLinkInfoFromCard(card, ref);
-var id = linkInfo && linkInfo.id;
-if (!id) continue;
-var cart = cbtAssignNormText(cols[map.cart].textContent || '');
-var assignment = cbtAssignAssignmentText(cols[map.assignment]);
-var batchRaw = cbtAssignNormText(cols[map.batch].textContent || '');
-var batchMatch = batchRaw.match(/\d{1,2}:\d{2}\s*(?:AM|PM)/i);
-var batchMs = batchMatch ? parseTime(batchMatch[0]) : null;
-var progressRaw =
-(map.progress >= 0 && cols[map.progress])
-? cbtAssignNormText(cols[map.progress].textContent || '')
-: '';
-var packageCount = cbtAssignPackageCount(progressRaw);
-var cartBlank = cbtAssignCartIsBlank(cart);
-out.push({
-key: String(id),
-id: id,
-detailsUrl: linkInfo && linkInfo.detailsUrl,
-ref: ref,
-cart: cart,
-cartBlank: cartBlank,
-cartHasValue: !cartBlank,
-assignment: assignment,
-assignmentHasName:
-!!assignment &&
-assignment.toUpperCase() !== 'ASSIGNABLE' &&
-assignment.toUpperCase() !== 'UNASSIGNABLE',
-assignmentGray: cbtAssignAssignmentCellLooksGray(cols[map.assignment], assignment),
-assignable: assignment.toUpperCase() === 'ASSIGNABLE',
-unassignable: assignment.toUpperCase() === 'UNASSIGNABLE',
-batchRaw: batchRaw,
-batchMs: batchMs,
-progressRaw: progressRaw,
-packageCount: packageCount,
-rowOrder: i
-});
-}
-return out;
-}
-var CBT_FORCED_PARTIAL_PENDING_MS = 10 * 60 * 1000;
-function cbtForcedPartialPendingKey() {
-return 'cbt_forced_partial_pending_v1_' +
-String(STORE_ID || 'unknown').trim().toUpperCase();
-}
-function cbtLoadForcedPartialPending() {
-var now = Date.now();
-var list = [];
-try {
-var raw = sessionStorage.getItem(
-cbtForcedPartialPendingKey()
-);
-if (raw) {
-var parsed = JSON.parse(raw);
-if (Array.isArray(parsed)) list = parsed;
-}
-} catch(e0) {
-list = [];
-}
-var clean = [];
-for (var i = 0; i < list.length; i++) {
-var x = list[i] || {};
-var id = String(x.id || '');
-var ref = cbtAssignNormText(x.ref || '');
-var ts = Number(x.ts) || 0;
-if (!id || !ref || !ts) continue;
-if (now - ts > CBT_FORCED_PARTIAL_PENDING_MS) continue;
-clean.push({
-id: id,
-ref: ref,
-ts: ts
-});
-}
-if (clean.length !== list.length) {
-try {
-sessionStorage.setItem(
-cbtForcedPartialPendingKey(),
-JSON.stringify(clean)
-);
-} catch(e1) {}
-}
-return clean;
-}
-function cbtSaveForcedPartialPending(list) {
-try {
-sessionStorage.setItem(
-cbtForcedPartialPendingKey(),
-JSON.stringify(list || [])
-);
-} catch(e) {}
-}
-function cbtRememberForcedPartial(jobId, ref) {
-var id = String(jobId || '');
-var shortRef = cbtAssignNormText(ref || '');
-if (!id || !shortRef) return;
-var list = cbtLoadForcedPartialPending().filter(function(x){
-return String(x.id || '') !== id;
-});
-list.push({
-id: id,
-ref: shortRef,
-ts: Date.now()
-});
-cbtSaveForcedPartialPending(list);
-try { cbtSchedulePartialCheckboxRefresh(); } catch(eRefresh) {}
-}
-function cbtForgetForcedPartial(jobId) {
-var id = String(jobId || '');
-if (!id) return;
-var list = cbtLoadForcedPartialPending().filter(function(x){
-return String(x.id || '') !== id;
-});
-cbtSaveForcedPartialPending(list);
-try { cbtSchedulePartialCheckboxRefresh(); } catch(eRefresh) {}
-}
-function cbtForcedPartialIdentity(jobId, ref) {
-var id = String(jobId || '');
-var shortRef = cbtAssignNormText(ref || '').toLowerCase();
-if (!id || !shortRef) return false;
-var list = cbtLoadForcedPartialPending();
-for (var i = 0; i < list.length; i++) {
-var x = list[i] || {};
-if (String(x.id || '') !== id) continue;
-if (cbtAssignNormText(x.ref || '').toLowerCase() !== shortRef) continue;
-return true;
-}
-return false;
-}
-function cbtForcedPartialRows() {
-var list = cbtLoadForcedPartialPending();
-var out = [];
-var taskRows = [];
-try {
-taskRows = cbtAssignReadRows() || [];
-} catch(e0) {
-taskRows = [];
-}
-var taskById = Object.create(null);
-for (var ti = 0; ti < taskRows.length; ti++) {
-var tr = taskRows[ti] || {};
-var tid = String(tr.key || tr.id || '');
-if (!tid || taskById[tid]) continue;
-taskById[tid] = tr;
-}
-for (var i = 0; i < list.length; i++) {
-var item = list[i] || {};
-var id = String(item.id || '');
-var ref = cbtAssignNormText(item.ref || '');
-if (!id || !ref) continue;
-var currentTask = taskById[id] || null;
-out.push({
-key: id,
-id: id,
-detailsUrl:
-COMO_BASE +
-'/store/' +
-encodeURIComponent(STORE_ID) +
-'/jobdetails?jobId=' +
-encodeURIComponent(id),
-ref: ref,
-partial: true,
-partialSectionVerified: true,
-explicitPartialId: true,
-partialOriginForced: true,
-cart: currentTask ? (currentTask.cart || '') : '',
-cartBlank: currentTask ? !!currentTask.cartBlank : true,
-cartHasValue: currentTask ? !!currentTask.cartHasValue : false,
-assignment: currentTask ? (currentTask.assignment || '') : '',
-assignmentHasName:
-currentTask ? !!currentTask.assignmentHasName : false,
-assignable: true,
-batchRaw:
-currentTask && currentTask.batchRaw
-? currentTask.batchRaw
-: 'Waiting For Task Timing',
-batchMs:
-currentTask && Number.isFinite(Number(currentTask.batchMs))
-? Number(currentTask.batchMs)
-: Number.MAX_SAFE_INTEGER,
-progressRaw:
-currentTask ? (currentTask.progressRaw || '') : '',
-packageCount:
-currentTask && Number.isFinite(Number(currentTask.packageCount))
-? Number(currentTask.packageCount)
-: 0,
-rowOrder:
-currentTask && Number.isFinite(Number(currentTask.rowOrder))
-? Number(currentTask.rowOrder)
-: i
-});
-}
-return out;
-}
-function cbtAssignFindStrictPartialSection() {
-var sections = [];
-try {
-sections = Array.prototype.slice.call(
-document.querySelectorAll('dropped-job[state="SIDELINED"]')
-);
-if (!sections.length) {
-sections = Array.prototype.slice.call(
-document.querySelectorAll('dropped-job')
-);
-}
-} catch(e) {
-return null;
-}
-for (var i = 0; i < sections.length; i++) {
-var section = sections[i];
-var headings = [];
-try {
-headings = section.querySelectorAll('h1,h2,h3,h4');
-} catch(e2) {
-headings = [];
-}
-for (var h = 0; h < headings.length; h++) {
-var title = cbtAssignNormText(
-headings[h].textContent || ''
-);
-if (/^Partially\s+Batched(?:\s*\(\d+\))?$/i.test(title)) {
-return section;
-}
-}
-}
-return null;
-}
-function cbtAssignExplicitJobIdFromNode(node) {
-if (!node) return '';
-var nodes = [node];
-try {
-var ownerCard = node.closest && node.closest('job-card');
-if (ownerCard && nodes.indexOf(ownerCard) === -1) nodes.push(ownerCard);
-} catch(e0) {}
-for (var i = 0; i < nodes.length; i++) {
-var el = nodes[i];
-if (!el || !el.getAttribute) continue;
-var attrs = [
-'href',
-'ng-href',
-'data-ng-href',
-'data-href',
-'data-job-id',
-'data-jobid',
-'job-id',
-'jobid',
-'id'
-];
-for (var a = 0; a < attrs.length; a++) {
-var raw = '';
-try { raw = el.getAttribute(attrs[a]) || ''; }
-catch(eAttr) { raw = ''; }
-if (!raw) continue;
-var m = String(raw).match(/jobId=([^&#"']+)/i);
-if (m) {
-try { return decodeURIComponent(m[1]); }
-catch(eDec) { return m[1]; }
-}
-if (afaLooksLikeJobId(raw)) return String(raw);
-}
-}
-var root = nodes.length > 1 ? nodes[1] : node;
-var descendants = [];
-try {
-descendants = Array.prototype.slice.call(
-root.querySelectorAll(
-'[href*="jobId="],[ng-href*="jobId="],[data-ng-href*="jobId="],' +
-'[data-job-id],[data-jobid],[job-id],[jobid]'
-)
-);
-} catch(eQ) {
-descendants = [];
-}
-for (var d = 0; d < descendants.length; d++) {
-var got = cbtAssignExplicitJobIdFromNode(descendants[d]);
-if (got) return got;
-}
-return '';
-}
-function cbtAssignMainTaskIdentityConflict(jobId, ref) {
-var rows = [];
-try { rows = cbtAssignReadRows() || []; }
-catch(e) { rows = []; }
-var idKey = String(jobId || '');
-var refKey = cbtAssignNormText(ref || '').toLowerCase();
-for (var i = 0; i < rows.length; i++) {
-var r = rows[i] || {};
-if (idKey && String(r.key || '') === idKey) {
-return true;
-}
-if (refKey &&
-cbtAssignNormText(r.ref || '').toLowerCase() === refKey) {
-return true;
-}
-}
-return false;
-}
-function cbtAssignStrictPartialCandidates() {
-var section = cbtAssignFindStrictPartialSection();
-if (!section) return [];
-var holder = null;
-try {
-holder =
-section.querySelector('.job-cards') ||
-section.querySelector('[class*="job-cards"]');
-} catch(e0) {}
-if (!holder) return [];
-var found = [];
-var seen = Object.create(null);
-var cards = [];
-try {
-cards = Array.prototype.slice.call(
-holder.querySelectorAll('job-card')
-);
-} catch(e1) {
-cards = [];
-}
-// v23.9.205: build the main-task identity index once.  The old code called
-// cbtAssignReadRows() again for every Partially Batched candidate, which could
-// turn one Run click into many full task-table scans.  This is the same
-// conflict rule, only cached for this one scan.
-var mainTaskIds = Object.create(null);
-var mainTaskRefs = Object.create(null);
-try {
-var mainTaskRows = cbtAssignReadRows() || [];
-for (var mr = 0; mr < mainTaskRows.length; mr++) {
-var mainRow = mainTaskRows[mr] || {};
-var mainId = String(mainRow.key || mainRow.id || '');
-var mainRef = cbtAssignNormText(mainRow.ref || '').toLowerCase();
-if (mainId) mainTaskIds[mainId] = true;
-if (mainRef) mainTaskRefs[mainRef] = true;
-}
-} catch(eMainIndex) {}
-function mainTaskIdentityConflictFast(jobId, ref) {
-var idKey = String(jobId || '');
-var refKey = cbtAssignNormText(ref || '').toLowerCase();
-return !!((idKey && mainTaskIds[idKey]) || (refKey && mainTaskRefs[refKey]));
-}
-function addFromAnchor(a, rowOrder) {
-if (!a) return;
-try {
-var owner = a.closest('dropped-job');
-if (owner !== section) return;
-} catch(eOwner) {
-return;
-}
-var ref = cbtAssignNormText(a.textContent || '');
-if (!ref || ref.length > 24) return;
-var id = cbtAssignExplicitJobIdFromNode(a);
-if (!id) return;
-id = String(id);
-if (mainTaskIdentityConflictFast(id, ref)) return;
-var key = id;
-if (seen[key]) return;
-seen[key] = true;
-found.push({
-ref: ref,
-id: id,
-partial: true,
-partialSectionVerified: true,
-explicitPartialId: true,
-rowOrder: rowOrder
-});
-}
-if (cards.length) {
-for (var i = 0; i < cards.length; i++) {
-var card = cards[i];
-var a = null;
-try {
-a =
-card.querySelector('a[href*="jobId="]') ||
-card.querySelector('a');
-} catch(eCard) {}
-addFromAnchor(a, i);
-}
-return found;
-}
-var anchors = [];
-try {
-anchors = Array.prototype.slice.call(
-holder.querySelectorAll('a')
-);
-} catch(eAnchors) {
-anchors = [];
-}
-for (var j = 0; j < anchors.length; j++) {
-addFromAnchor(anchors[j], j);
-}
-return found;
-}
-function cbtAssignReadPartialRows() {
-// v23.9.224: Assign Cart follows Amazon's current Partially Batched section.
-// A prior Force Assign is NOT required. The real job-details Assign to Associate
-// button is verified immediately before the normal assignment request.
-var strict = [];
-try { strict = cbtAssignStrictPartialCandidates() || []; } catch(eStrict) { strict = []; }
-var forcedById = Object.create(null);
-try {
-var forced = cbtForcedPartialRows() || [];
-for (var fi = 0; fi < forced.length; fi++) {
-var f = forced[fi] || {};
-var fid = String(f.id || f.key || '');
-if (fid) forcedById[fid] = f;
-}
-} catch(eForced) {}
-var ready = [];
-for (var si = 0; si < strict.length; si++) {
-var s = strict[si] || {};
-var id = String(s.id || s.key || '');
-var ref = cbtAssignNormText(s.ref || '');
-if (!id || !ref) continue;
-var remembered = forcedById[id] || null;
-ready.push({
-key: id,
-id: id,
-detailsUrl: COMO_BASE + '/store/' + encodeURIComponent(STORE_ID) + '/jobdetails?jobId=' + encodeURIComponent(id),
-ref: ref,
-partial: true,
-partialSectionVerified: true,
-explicitPartialId: true,
-partialOriginForced: !!remembered,
-rowOrder: Number(s.rowOrder) || si
-});
-}
-return ready;
-}
-function cbtAssignHasPartialTasks() {
-return cbtAssignReadPartialRows().length > 0;
-}
-function cbtAssignPartialCheckboxAvailable() {
-try {
-return cbtAssignReadPartialRows().length > 0;
-} catch(e) {
-return false;
-}
-}
-function cbtAssignRefreshPartialCheckboxState() {
-var box = document.getElementById('cbt-afa-type-partial');
-if (!box) return;
-var available = cbtAssignPartialCheckboxAvailable();
-var label = box.closest ? box.closest('label.cbt-afa-opt') : null;
-box.disabled = !available;
-if (label) {
-label.style.opacity = available ? '1' : '0.45';
-label.style.cursor = available ? '' : 'not-allowed';
-label.title = available
-? 'Current Partially Batched carts are available for Assign Cart.'
-: 'No current Partially Batched carts are ready to assign right now.';
-}
-if (!available && box.checked) {
-box.checked = false;
-try {
-box.dispatchEvent(new Event('change', { bubbles: true }));
-} catch(e) {}
-}
-}
-function cbtAssignTaskType(r) {
-if (!r) return '';
-if (r.partial) return 'partial';
-if (!r.assignmentHasName && !r.cartHasValue) return 'blank';
-if (r.assignmentHasName && !r.cartHasValue) return 'name';
-if (!r.assignmentHasName && r.cartHasValue) return 'cart';
-return 'both';
-}
-function cbtAssignNormalizeTaskTypes(options) {
-options = options || {};
-var partialOnly = !!options.partialOnly;
-return {
-partialOnly: partialOnly,
-partialIds: options.partialIds || null,
-uiFallback: !!options.uiFallback,
-associate: cbtAssignNormText(options.associate || ''),
-name: !partialOnly,
-blank: !partialOnly,
-cart: !partialOnly && !!options.cart,
-both: !partialOnly && !!options.both
-};
-}
-function cbtAssignTaskTypeAllowed(r, options) {
-var scope = cbtAssignNormalizeTaskTypes(options);
-var type = cbtAssignTaskType(r);
-if (scope.partialOnly) return type === 'partial';
-// A gray CREATED row is still waiting for acceptance, so after the gray-name
-// cooldown ends it is treated as an available normal-Assign cart regardless of
-// which associate is selected in the Assign workflow.
-if (cbtAssignRowIsGrayCreatedAvailable(r)) return true;
-if (type === 'blank') return true;
-if (type === 'name') return scope.name;
-if (type === 'cart') return scope.cart;
-if (type === 'both') return scope.both;
-return false;
-}
-function cbtAssignVisibleRowLooksAccepted(r) {
-if (!r) return false;
-var progress =
-cbtAssignNormText(r.progressRaw || '').toUpperCase();
-return /\b(BATCHING|IN_PROGRESS|ACCEPTED|STARTED|COMPLETED|COMPLETE|DONE)\b/.test(progress);
-}
-function cbtAssignRowCanBeTried(r, options) {
-if (!r) return false;
-var scope = cbtAssignNormalizeTaskTypes(options);
-if (scope.partialOnly) {
-if (!r.partial || !r.partialSectionVerified || !r.explicitPartialId) {
-return false;
-}
-if (scope.partialIds && !scope.partialIds[String(r.key)]) {
-return false;
-}
-return true;
-}
-if (r.partial || r.batchMs == null) return false;
-// A visible gray-name CREATED row is still an open normal-assignment cart once
-// the CURRENT gray assignee cooldown is over. This branch runs before ordinary
-// Name/Cart type gates so it cannot be filtered out as an occupied cart.
-if (cbtAssignRowIsGrayCreated(r)) {
-return cbtAssignRowIsGrayCreatedAvailable(r);
-}
-// Normal Assign must never touch a cart/task Amazon marks UNASSIGNABLE.
-// Partially Batched Only keeps its separate verified Force-Assign workflow.
-if (r.unassignable || cbtAssignNormText(r.assignment || '').toUpperCase() === 'UNASSIGNABLE') return false;
-var type = cbtAssignTaskType(r);
-if (type === 'name' && cbtAssignVisibleRowLooksAccepted(r)) {
-return false;
-}
-return cbtAssignTaskTypeAllowed(r, scope);
-}
-function cbtAssignEligibleRows(claimed, blocked, options) {
-claimed = claimed || Object.create(null);
-blocked = blocked || Object.create(null);
-options = cbtAssignNormalizeTaskTypes(options);
-var sourceRows = options.partialOnly
-? cbtAssignReadPartialRows()
-: cbtAssignReadRows();
-var rows = sourceRows
-.filter(function(r){
-return !claimed[r.key] &&
-!blocked[r.key] &&
-!cbtAssignIsProtected(r.key) &&
-cbtAssignRowCanBeTried(r, options);
-});
-return rows
-.sort(function(a, b){
-if (options.partialOnly) {
-return a.rowOrder - b.rowOrder;
-}
-// An available gray CREATED row is treated like a blank task for priority.
-// Batch Target decides which open cart is earliest.
-var aPrimary = (cbtAssignTaskType(a) === 'blank' ||
-cbtAssignRowIsGrayCreatedAvailable(a)) ? 0 : 1;
-var bPrimary = (cbtAssignTaskType(b) === 'blank' ||
-cbtAssignRowIsGrayCreatedAvailable(b)) ? 0 : 1;
-if (aPrimary !== bPrimary) return aPrimary - bPrimary;
-var aBatch = Number(a.batchMs);
-var bBatch = Number(b.batchMs);
-var hasA = Number.isFinite(aBatch);
-var hasB = Number.isFinite(bBatch);
-if (hasA && hasB && aBatch !== bBatch) return aBatch - bBatch;
-if (hasA && !hasB) return -1;
-if (!hasA && hasB) return 1;
-return a.rowOrder - b.rowOrder;
-});
-}
-function cbtAssignUiFallbackRows(claimed, blocked, options) {
-claimed = claimed || Object.create(null);
-blocked = blocked || Object.create(null);
-options = cbtAssignNormalizeTaskTypes(options);
-if (options.partialOnly) return [];
-var rows = [];
-try { rows = cbtAssignReadRows() || []; } catch(e) { rows = []; }
-return rows.filter(function(r){
-return r &&
-!r.partial &&
-r.batchMs != null &&
-!claimed[r.key] &&
-!blocked[r.key] &&
-!cbtAssignIsProtected(r.key);
-}).map(function(r){
-var copy = Object.assign({}, r);
-copy.uiAssignFallback = true;
-return copy;
-}).sort(function(a, b){
-// Prefer what the Tasks table already says is assignable. Rows requiring the
-// UI-button fallback come after ordinary open rows, then use Batch Target.
-var ar = a.assignable ? 0 : (cbtAssignRowIsGrayCreatedAvailable(a) ? 1 : (a.unassignable ? 3 : 2));
-var br = b.assignable ? 0 : (cbtAssignRowIsGrayCreatedAvailable(b) ? 1 : (b.unassignable ? 3 : 2));
-if (ar !== br) return ar - br;
-var ab = Number(a.batchMs), bb = Number(b.batchMs);
-if (Number.isFinite(ab) && Number.isFinite(bb) && ab !== bb) return ab - bb;
-return a.rowOrder - b.rowOrder;
-});
-}
+  function parseTime(raw) {
+    if (!raw) return null;
+    var str = raw.replace(/[^\d:APMapm\s]/g, '').trim();
+    var m = str.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)?$/i);
+    if (!m) return null;
 
-function cbtAssignCurrentEligible(jobKey, options, ignoreReservationToken) {
-options = cbtAssignNormalizeTaskTypes(options);
-var rows = options.partialOnly
-? cbtAssignReadPartialRows()
-: cbtAssignReadRows();
-for (var i = 0; i < rows.length; i++) {
-var r = rows[i];
-if (r.key !== String(jobKey)) continue;
-if (options.uiFallback && !options.partialOnly) {
-return !cbtAssignIsProtected(r.key, ignoreReservationToken) &&
-!r.partial &&
-r.batchMs != null;
-}
-return !cbtAssignIsProtected(r.key, ignoreReservationToken) &&
-cbtAssignRowCanBeTried(r, options);
-}
-return false;
-}
-function cbtAssignHiddenUsable(el) {
-if (!el || !el.isConnected) return false;
-try {
-if (el.disabled || el.readOnly) return false;
-} catch(e) {}
-return true;
-}
-function cbtAssignExtractAssociateDeep(obj, depth) {
-if (obj == null || depth > 7) return null;
-if (Array.isArray(obj)) {
-for (var i = 0; i < obj.length && i < 500; i++) {
-var a = cbtAssignExtractAssociateDeep(
-obj[i],
-depth + 1
-);
-if (a) return a;
-}
-return null;
-}
-if (typeof obj !== 'object') return null;
-var preferred = [
-'associateId',
-'associateID',
-'associate',
-'assignedAssociate',
-'assignedTo',
-'assignee'
-];
-for (var p = 0; p < preferred.length; p++) {
-var v = obj[preferred[p]];
-if (typeof v !== 'string') continue;
-var s = cbtAssignNormText(v);
-if (s &&
-!/^(ASSIGNABLE|UNASSIGNABLE|NONE)$/i.test(s)) {
-return s;
-}
-}
-for (var k in obj) {
-var value = obj[k];
-if (typeof value !== 'string') continue;
-if (!/associate|assignee|assigned.*to/i.test(k)) continue;
-var s2 = cbtAssignNormText(value);
-if (s2 &&
-!/^(ASSIGNABLE|UNASSIGNABLE|NONE)$/i.test(s2)) {
-return s2;
-}
-}
-for (var k2 in obj) {
-var child = obj[k2];
-if (!child || typeof child !== 'object') continue;
-var r = cbtAssignExtractAssociateDeep(
-child,
-depth + 1
-);
-if (r) return r;
-}
-return null;
-}
-function cbtAssignOperationStateDeep(obj, depth) {
-if (!obj || typeof obj !== 'object' || depth > 4) return null;
-if (Array.isArray(obj)) {
-for (var i = 0; i < obj.length && i < 80; i++) {
-var ar = cbtAssignOperationStateDeep(obj[i], depth + 1);
-if (ar) return ar;
-}
-return null;
-}
-var preferred = [
-'operationState',
-'jobState',
-'taskState'
-];
-for (var p = 0; p < preferred.length; p++) {
-var pv = obj[preferred[p]];
-if (typeof pv === 'string' && pv.trim()) {
-return pv.trim().toUpperCase();
-}
-}
-if (depth <= 2 &&
-typeof obj.state === 'string' &&
-obj.state.trim()) {
-return obj.state.trim().toUpperCase();
-}
-var keys;
-try { keys = Object.keys(obj); } catch(e) { return null; }
-for (var k = 0; k < keys.length; k++) {
-var child = obj[keys[k]];
-if (!child || typeof child !== 'object') continue;
-var r = cbtAssignOperationStateDeep(child, depth + 1);
-if (r) return r;
-}
-return null;
-}
-function cbtAssignStateLooksAccepted(state) {
-state = String(state || '').toUpperCase();
-return (
-state === 'BATCHING' ||
-state === 'IN_PROGRESS' ||
-state === 'ACCEPTED' ||
-state === 'STARTED' ||
-state === 'COMPLETED' ||
-state === 'COMPLETE' ||
-state === 'DONE'
-);
-}
-var _cbtAssignUiProbeCache = Object.create(null);
-var CBT_ASSIGN_UI_PROBE_CACHE_MS = 1800;
-var CBT_ASSIGN_UI_PROBE_TIMEOUT_MS = 4200;
-function cbtAssignUiButtonStateFromDocument(doc) {
-if (!doc) return { ready: false, available: false, found: false };
-var bodyText = '';
-try { bodyText = cbtAssignNormText(doc.body && doc.body.textContent || ''); } catch(e0) {}
-var nodes = [];
-try {
-nodes = Array.prototype.slice.call(
-doc.querySelectorAll('button,a,input[type="button"],input[type="submit"]')
-);
-} catch(e1) { nodes = []; }
-for (var i = 0; i < nodes.length; i++) {
-var el = nodes[i];
-var label = '';
-try {
-label = cbtAssignNormText(
-el.textContent || el.value || el.getAttribute('aria-label') || el.getAttribute('title') || ''
-);
-} catch(e2) {}
-if (!/^Assign\s+to\s+Associate$/i.test(label)) continue;
-var disabled = false;
-try {
-disabled = !!(
-el.disabled ||
-el.hasAttribute('disabled') ||
-String(el.getAttribute('aria-disabled') || '').toLowerCase() === 'true' ||
-/\bdisabled\b/i.test(String(el.className || ''))
-);
-if (!disabled && el.ownerDocument && el.ownerDocument.defaultView) {
-var cs = el.ownerDocument.defaultView.getComputedStyle(el);
-if (cs && (cs.display === 'none' || cs.visibility === 'hidden' || cs.pointerEvents === 'none')) disabled = true;
-}
-} catch(e3) {}
-return { ready: true, available: !disabled, found: true };
-}
-var rendered = /Manager\s+Actions/i.test(bodyText) &&
-/(?:Force\s+Assignment|Skip\s+Packages|Complete\s+Task|Pull\s+QR\s+Codes)/i.test(bodyText);
-return { ready: rendered, available: false, found: false };
-}
-function cbtAssignProbeUiAssignable(jobId) {
-jobId = String(jobId || '');
-if (!jobId || !document.body) {
-return Promise.resolve({ available: false, found: false, reason: 'job details unavailable' });
-}
-var cached = _cbtAssignUiProbeCache[jobId];
-if (cached && (Date.now() - Number(cached.ts || 0)) <= CBT_ASSIGN_UI_PROBE_CACHE_MS) {
-return Promise.resolve({ available: !!cached.available, found: !!cached.found, cached: true });
-}
-return new Promise(function(resolve){
-var frame = document.createElement('iframe');
-var done = false;
-var started = Date.now();
-frame.setAttribute('aria-hidden', 'true');
-frame.className = 'cbt-assign-probe-frame';
-frame.tabIndex = -1;
-frame.style.cssText =
-'position:fixed!important;left:-10000px!important;top:-10000px!important;' +
-'width:1px!important;height:1px!important;opacity:0!important;' +
-'pointer-events:none!important;border:0!important;';
-function finish(result) {
-if (done) return;
-done = true;
-result = result || { available: false, found: false };
-_cbtAssignUiProbeCache[jobId] = {
-ts: Date.now(),
-available: !!result.available,
-found: !!result.found
-};
-try { frame.remove(); }
-catch(e0) { try { frame.parentNode && frame.parentNode.removeChild(frame); } catch(e1) {} }
-resolve(result);
-}
-function poll() {
-if (done) return;
-var elapsed = Date.now() - started;
-if (elapsed > CBT_ASSIGN_UI_PROBE_TIMEOUT_MS) {
-finish({ available: false, found: false, reason: 'Assign to Associate button could not be verified' });
-return;
-}
-var doc = null;
-try { doc = frame.contentDocument || (frame.contentWindow && frame.contentWindow.document); } catch(e2) {}
-if (doc) {
-var state = cbtAssignUiButtonStateFromDocument(doc);
-if (state.found) {
-finish({ available: !!state.available, found: true, reason: state.available ? 'Assign to Associate is enabled' : 'Assign to Associate is disabled' });
-return;
-}
-if (state.ready && elapsed > 1050) {
-finish({ available: false, found: false, reason: 'Assign to Associate button is not available on the rendered job page' });
-return;
-}
-}
-setTimeout(poll, 120);
-}
-frame.src = COMO_BASE + '/store/' + encodeURIComponent(STORE_ID) +
-'/jobdetails?jobId=' + encodeURIComponent(jobId) + '&cbtAssignProbe=1';
-document.body.appendChild(frame);
-setTimeout(poll, 100);
-});
-}
-function cbtAssignBackendPreflight(jobId, options) {
-options = options || {};
-return afaFetchJobInfo(jobId).then(function(info){
-if (!info) {
-if (options.requireUiAssignable) {
-return cbtAssignProbeUiAssignable(jobId).then(function(ui){
-if (ui && ui.available) {
-return { ok:true, verified:true, state:null, uiAssignable:true, reason:'Assign to Associate is enabled' };
-}
-return { ok:false, retryable:true, skipped:true, state:null, reason:(ui && ui.reason) || 'Assign to Associate could not be verified' };
-});
-}
-return {
-ok: true,
-verified: false,
-state: null,
-reason: 'backend state unavailable — assignment API will decide'
-};
-}
-var state = cbtAssignOperationStateDeep(info, 0);
-var allowGrayCreatedReassign = !!options.allowGrayCreatedReassign;
-var assignability = null;
-try { assignability = afaAssignabilityDeep(info, 0); } catch(eAssignability) {}
-// A visible gray-name CREATED row keeps the existing fast path. It is already
-// verified from the live Tasks row and still receives the final DOM guard.
-if (allowGrayCreatedReassign) {
-var grayAlreadyActive = false;
-try { grayAlreadyActive = cbtIsLiveBatch(info); } catch(eGrayLive) {}
-if (grayAlreadyActive) {
-return {
-ok: false,
-retryable: true,
-accepted: true,
-state: 'BATCHING',
-reason: 'task already active/accepted — BATCHING'
-};
-}
-return {
-ok: true,
-verified: true,
-state: state || null,
-grayCreatedRetry: true
-};
-}
-var backendWouldBlock =
-assignability === 'UNASSIGNABLE' ||
-cbtAssignStateLooksAccepted(state);
-// v23.9.224: Amazon's real enabled Assign to Associate control is authoritative
-// for the fallback path. This covers cases where the JSON says COMPLETE,
-// UNASSIGNABLE, or contains an accepted-looking nested state but the manager UI
-// still allows reassignment. We never Force Assign here; we still use the normal
-// assignToAssociate endpoint.
-if (options.requireUiAssignable || backendWouldBlock) {
-return cbtAssignProbeUiAssignable(jobId).then(function(ui){
-if (ui && ui.available) {
-return {
-ok: true,
-verified: true,
-state: state || null,
-uiAssignable: true,
-reassignAttempt: backendWouldBlock
-};
-}
-if (assignability === 'UNASSIGNABLE') {
-return {
-ok: false,
-retryable: true,
-skipped: true,
-unassignable: true,
-state: state || null,
-reason: (ui && ui.reason) || 'task is UNASSIGNABLE and Assign to Associate is not available'
-};
-}
-if (cbtAssignStateLooksAccepted(state)) {
-return {
-ok: false,
-retryable: true,
-accepted: true,
-state: state,
-reason: (ui && ui.reason) || ('task already active/accepted' + (state ? ' — ' + state : ''))
-};
-}
-return {
-ok: false,
-retryable: true,
-skipped: true,
-state: state || null,
-reason: (ui && ui.reason) || 'Assign to Associate is not available for this task'
-};
-});
-}
-return {
-ok: true,
-verified: true,
-state: state || null,
-reassignAttempt: false
-};
-});
-}
-function cbtAssignFreshPreflight(jobId, guardFn, options) {
-options = options || {};
-var localProtected = cbtAssignProtection(jobId);
-if (localProtected && (!options.sharedReservationToken || localProtected.token !== options.sharedReservationToken)) {
-return Promise.resolve({ok:false,retryable:true,protected:true,reason:'recently assigned'+(localProtected.associate?' to '+localProtected.associate:'')+' — protected for '+cbtAssignProtectionSeconds(jobId,localProtected)+'s more'});
-}
-var reservationToken = String(options.sharedReservationToken || '');
-var ownAtomicReservation = false;
-if (reservationToken) {
-try {
-var cachedReservation = cbtAssignLoadSharedProtection()[String(jobId || '')];
-ownAtomicReservation = !!(
-cachedReservation &&
-cachedReservation.pending &&
-String(cachedReservation.token || '') === reservationToken
-);
-} catch(eOwnReservation) {}
-}
-function runBackendCheck() {
-if (guardFn && !guardFn()) return Promise.resolve({ok:false,retryable:true,reason:'task changed before assignment'});
-var prefetched = options.prefetchedBackendCheck || null;
-var prefetchedAt = Number(options.prefetchedBackendCompletedAt) || 0;
-var prefetchFresh = !!(
-prefetched &&
-prefetchedAt &&
-(Date.now() - prefetchedAt) <= 1500
-);
-var backendPromise = prefetchFresh
-? Promise.resolve(prefetched)
-: cbtAssignBackendPreflight(jobId, options);
-return backendPromise.then(function(check){
-if(!check||!check.ok)return check||{ok:false,retryable:true,reason:'backend pre-check failed'};
-if(guardFn){try{if(!guardFn())return{ok:false,retryable:true,reason:'task changed during backend pre-check'};}catch(eGuard){return{ok:false,retryable:true,reason:'task changed during backend pre-check'};}}
-return check;
-});
-}
-// v23.9.206: once this device has just won the atomic Firebase cart
-// reservation, another same-version computer cannot own that node at the same
-// time. Avoid an immediate redundant GET of the exact node we just wrote.
-if (ownAtomicReservation) return runBackendCheck();
-return cbtAssignSharedProtectionCheck(jobId, reservationToken).then(function(sharedProtected){
-if (sharedProtected) return {ok:false,retryable:true,protected:true,reason:'recently assigned'+(sharedProtected.associate?' to '+sharedProtected.associate:'')+' — protected for '+cbtAssignProtectionSeconds(jobId,sharedProtected)+'s more'};
-return runBackendCheck();
-});
-}
-function cbtAssignVerifyAssociate(jobId, login) {
-var tries = 0;
-login = String(login || '').toLowerCase();
-function once() {
-tries++;
-return afaFetchJobInfo(jobId).then(function(info){
-var got = info
-? cbtAssignExtractAssociateDeep(info, 0)
-: null;
-if (got &&
-String(got).toLowerCase() === login) {
-return true;
-}
-if (tries >= 4) {
-return got ? false : null;
-}
-return new Promise(function(resolve){
-setTimeout(function(){
-resolve(once());
-}, 280);
-});
-});
-}
-return once();
-}
-function cbtAssignDirectResponseOk(r) {
-if (!r || !r.ok) return false;
-var body = String(
-r.body == null ? '' : r.body
-).trim().replace(/^"|"$/g, '');
-return /^true$/i.test(body);
-}
-function cbtAssignDirectSubmit(jobId, associate) {
-var url =
-COMO_BASE +
-'/api/store/' +
-encodeURIComponent(STORE_ID) +
-'/job/' +
-encodeURIComponent(jobId) +
-'/assignToAssociate';
-var ctrl =
-(typeof AbortController === 'function')
-? new AbortController()
-: null;
-var timer = setTimeout(function(){
-if (ctrl) ctrl.abort();
-}, AFA_TIMEOUT_MS);
-var opts = {
-method: 'POST',
-credentials: 'include',
-headers: {
-'Content-Type': 'application/json',
-'Accept': 'application/json'
-},
-body: JSON.stringify({
-associateId: String(associate || '')
-})
-};
-if (ctrl) opts.signal = ctrl.signal;
-return _origFetch(url, opts).then(
-function(res){
-clearTimeout(timer);
-return res.text().then(
-function(t){
-return {
-ok: res.ok,
-status: res.status,
-body: t
-};
-},
-function(){
-return {
-ok: res.ok,
-status: res.status,
-body: ''
-};
-}
-);
-},
-function(err){
-clearTimeout(timer);
-return {
-ok: false,
-status: 0,
-body:
-(err && err.message)
-? String(err.message)
-: 'network error'
-};
-}
-);
-}
-function cbtAssignViaUi(jobId, associate, guardFn, detailsUrl, assignOptions) {
-associate = cbtAssignNormText(associate);
-if (!jobId || !associate) {
-return Promise.resolve({
-ok: false,
-retryable: false,
-reason: 'missing task/associate'
-});
-}
-assignOptions = assignOptions || {};
-if (assignOptions.requirePartialOnly) {
-var partialIds = assignOptions.partialIds || null;
-var idKey = String(jobId || '');
-if (!partialIds || !partialIds[idKey]) {
-return Promise.resolve({
-ok: false,
-retryable: false,
-skipped: true,
-reason: 'blocked: job is not in the current Partially Batched whitelist'
-});
-}
-if (!guardFn || !guardFn()) {
-return Promise.resolve({
-ok: false,
-retryable: true,
-skipped: true,
-reason: 'blocked: Partially Batched job is no longer eligible for this run'
-});
-}
-}
-// v23.9.206: start the read-only Amazon backend pre-check at the same time as
-// the atomic Firebase cart reservation. The final DOM guard still runs after
-// the cart lock is owned, and stale prefetched checks are discarded below.
-var prefetchedBackendPromise = cbtAssignBackendPreflight(jobId, assignOptions).then(function(check){
-return { check: check, completedAt: Date.now() };
-});
-return cbtAssignAcquireSharedReservation(jobId, associate, 0, assignOptions.targetRef || '').then(function(lock){
-if (!lock || !lock.ok) {
-if (lock && (lock.error || lock.fatal)) {
-return {
-ok:false,
-retryable:false,
-fatal:true,
-reason:lock.reason || 'Shared cart lock is unavailable. Assignment was not started to prevent a cross-computer conflict.'
-};
-}
-var lr = lock && lock.row;
-return {
-ok:false, retryable:true, protected:true,
-reason:(lock && lock.reason) || ('recently assigned' + (lr && lr.associate ? ' to ' + lr.associate : '') +
-(lr ? ' — protected for ' + Math.max(1, Math.ceil((Number(lr.until)-cbtAssignNowMs())/1000)) + 's more' : ''))
-};
-}
-var reservationToken = lock.token || '';
-function releaseReservation() {
-if (reservationToken) cbtAssignReleaseSharedReservation(jobId, reservationToken);
-}
-function markSuccess(status, verified) {
-cbtAssignProtect(jobId, associate, assignOptions.targetRef || '');
-return {
-ok: true,
-attempted: true,
-verified: verified !== false,
-protectedMs: CBT_ASSIGN_PROTECT_MS,
-status: status
-};
-}
-function verifyAmbiguous(status, body, label) {
-return cbtAssignVerifyAssociate(jobId, associate).then(function(verified){
-if (verified === true) return markSuccess(status, true);
-releaseReservation();
-if (verified === false) {
-return {
-ok:false,
-attempted:true,
-retryable:true,
-reason:(label || 'Assignment could not be confirmed') +
-(status ? ' — HTTP ' + status : '') +
-(body ? ' — ' + body.slice(0,120) : '')
-};
-}
-return {
-ok:false,
-attempted:true,
-retryable:false,
-stopAssociate:true,
-reason:(label || 'Assignment response was ambiguous') +
-'. The script stopped trying this associate to avoid a duplicate assignment' +
-(status ? ' — HTTP ' + status : '') +
-(body ? ' — ' + body.slice(0,120) : '')
-};
-});
-}
-var reservedGuardFn = guardFn
-? function(){ return guardFn(reservationToken); }
-: null;
-return prefetchedBackendPromise.then(function(prefetchedBackend){
-var preflightOptions = Object.assign({}, assignOptions, {
-sharedReservationToken: reservationToken,
-prefetchedBackendCheck: prefetchedBackend && prefetchedBackend.check,
-prefetchedBackendCompletedAt: prefetchedBackend && prefetchedBackend.completedAt
-});
-return cbtAssignFreshPreflight(
-jobId,
-reservedGuardFn,
-preflightOptions
-);
-}).then(function(preflight){
-if (!preflight || !preflight.ok) {
-releaseReservation();
-return preflight || { ok:false, retryable:false, reason:'pre-check failed' };
-}
-if (reservedGuardFn) {
-try {
-if (!reservedGuardFn()) {
-releaseReservation();
-return {
-ok: false,
-retryable: true,
-reason: 'task changed before direct assignment'
-};
-}
-} catch(eGuard) {
-releaseReservation();
-return {
-ok: false,
-retryable: true,
-reason: 'task changed before direct assignment'
-};
-}
-}
-function submitDirectAssignment() {
-return cbtAssignDirectSubmit(
-jobId,
-associate
-).then(function(r){
-if (cbtAssignDirectResponseOk(r)) {
-return markSuccess(r.status, true);
-}
-var status = Number(r && r.status) || 0;
-var body = cbtAssignNormText(
-r && r.body != null ? r.body : ''
-);
-var plainBody = body.replace(/^"|"$/g, '').trim();
-if (status === 401 || status === 403) {
-releaseReservation();
-return {
-ok: false,
-attempted: true,
-retryable: false,
-fatal: true,
-reason:
-'Assign request denied — HTTP ' +
-status +
-(body ? ' — ' + body.slice(0, 120) : '')
-};
-}
-if (r && r.ok) {
-if (/^false$/i.test(plainBody)) {
-releaseReservation();
-return {
-ok:false,
-attempted:true,
-retryable:true,
-reason:'Assignment rejected by the API' +
-(status ? ' — HTTP ' + status : '')
-};
-}
-// The gray row already contains the same associate before the retry, so
-// associate-name verification cannot distinguish old from new. For this one
-// verified gray CREATED path, a successful 2xx response (unless the API
-// explicitly returned false above) is the authoritative confirmation that the
-// SAME normal Assign request was accepted.
-if (assignOptions.allowGrayCreatedReassign) {
-return markSuccess(status, true);
-}
-return verifyAmbiguous(status, body, 'Successful HTTP response did not explicitly confirm the assignment');
-}
-if (!status || status >= 500) {
-if (assignOptions.allowGrayCreatedReassign) {
-releaseReservation();
-return {
-ok:false,
-attempted:true,
-retryable:true,
-reason:(status ? 'Server error response' : 'No direct assignment response') +
-'. Gray CREATED normal Assign was not confirmed' +
-(status ? ' — HTTP ' + status : '') +
-(body ? ' — ' + body.slice(0,120) : '')
-};
-}
-return verifyAmbiguous(status, body, status ? ('Server error response') : 'No direct assignment response');
-}
-releaseReservation();
-return {
-ok: false,
-attempted: true,
-retryable: true,
-reason:
-'Assignment rejected' +
-(status ? ' — HTTP ' + status : '') +
-(body ? ' — ' + body.slice(0, 120) : '')
-};
-});
-}
+    var tz = getStoreTimezone();
+    var now = new Date();
+    var dateStr;
+    try { dateStr = now.toLocaleDateString('en-CA', { timeZone: tz }); }
+    catch(e0) { dateStr = now.toLocaleDateString('en-CA'); }
 
-// Gray CREATED rows use the exact same direct assignment endpoint as every
-// other normal Assign cart. The gray-state flag only changes eligibility and
-// ambiguous-response verification; it never Force Assigns or resets the job.
-return submitDirectAssignment();
-});
-});
-}
-function cbtAssignNoEligibleMessage(taskTypes) {
-if (taskTypes && taskTypes.partialOnly) {
-return (
-'Not Assigned. Reason: No Current Partially Batched Cart Could Be Assigned. ' +
-'The Cart May Have Moved, Become Protected, Or Amazon’s Assign to Associate Button Was Not Available.'
-);
-}
-var state = cbtAssignSiteTaskState();
-if (!state.ready && !cbtAssignHasNormalTasksNow()) {
-return (
-'Not Assigned. Reason: The Tasks Page Is Still Loading. ' +
-'Wait A Moment For The Page To Finish Loading, Then Try Again.'
-);
-}
-if (!state.hasTasks && !cbtAssignHasNormalTasksNow()) {
-return (
-'Not Assigned. Reason: No Task Cart Is Available Right Now.'
-);
-}
-return (
-'Not Assigned. Reason: No Available Cart Could Be Assigned. ' +
-'COMO Also Checked Amazon’s Assign to Associate availability for fallback carts.'
-);
-}
-function cbtAssignProgressView() {
-afaShell(
-'Assign Running',
-'<div id="cbt-afa-lead">' +
-'<span id="cbt-assign-count">' +
-'Starting…' +
-'</span>' +
-'</div>' +
-'<div id="cbt-afa-bar">' +
-'<div id="cbt-afa-fill"></div>' +
-'</div>' +
-'<div id="cbt-afa-live"></div>',
-'<button class="cbt-afa-act stop" ' +
-'data-afa="assign-stop">' +
-'⏹ Stop' +
-'</button>'
-);
-var card =
-_afaOverlay &&
-_afaOverlay.querySelector('#cbt-afa-card');
-if (!card) return;
-card.addEventListener('click', function(e){
-var b = e.target.closest('[data-afa]');
-if (!b ||
-b.getAttribute('data-afa') !== 'assign-stop') {
-return;
-}
-_afaStop = true;
-b.textContent = '⏹ Stopping…';
-b.disabled = true;
-});
-}
-function cbtAssignProgress(
-done,
-total,
-associate,
-target,
-results
-) {
-var c = document.getElementById(
-'cbt-assign-count'
-);
-if (c) {
-var countHtml =
-'Assigning <b>' +
-Math.min(done, total) +
-'</b> of <b>' +
-total +
-'</b>' +
-(associate
-? ': ' + afaEsc(associate)
-: '') +
-(target
-? ' → task ' +
-afaEsc(target.ref) +
-' (' +
-afaEsc(
-target.batchRaw || 'earliest'
-) +
-')'
-: '');
-if (c.__cbtAssignHtml !== countHtml) {
-c.__cbtAssignHtml = countHtml;
-c.innerHTML = countHtml;
-}
-}
-var fill = document.getElementById(
-'cbt-afa-fill'
-);
-if (fill) {
-var nextWidth = Math.round(
-(
-Math.max(0, done - 1) /
-Math.max(1, total)
-) * 100
-) + '%';
-if (fill.style.width !== nextWidth) fill.style.width = nextWidth;
-}
-var live = document.getElementById(
-'cbt-afa-live'
-);
-if (live && results.length) {
-var liveHtml = afaRowsHtml(results.slice(-8));
-if (live.__cbtAssignHtml !== liveHtml) {
-live.__cbtAssignHtml = liveHtml;
-live.innerHTML = liveHtml;
-}
-}
-}
-function cbtAssignSummary(results, stopped) {
-var okN = results.filter(function(r){
-return r.ok === true;
-}).length;
-var skipN = results.filter(function(r){
-return r.skip;
-}).length;
-var badN = results.filter(function(r){
-return r.ok === false && !r.skip;
-}).length;
-afaShell(
-'Assign Finished',
-'<div id="cbt-afa-lead">' +
-(stopped ? 'Stopped early. ' : '') +
-'<b>' + okN + '</b> assigned' +
-(skipN
-? ', <b>' + skipN + '</b> skipped'
-: '') +
-(badN
-? ', <b>' + badN + '</b> failed'
-: '') +
-'.</div>' +
-(
-results.length
-? afaRowsHtml(results)
-: '<div style="color:var(--cb-text2)">' +
-'Nothing was processed.' +
-'</div>'
-),
-'<button class="cbt-afa-act" ' +
-'data-afa="assign-summary-back">' +
-'Back' +
-'</button>' +
-'<button class="cbt-afa-act go" ' +
-'data-afa="assign-summary-done">' +
-'Done' +
-'</button>'
-);
-var card =
-_afaOverlay &&
-_afaOverlay.querySelector('#cbt-afa-card');
-if (!card) return;
-card.addEventListener('click', function(e){
-var b = e.target.closest('[data-afa]');
-if (!b) return;
-var action = b.getAttribute('data-afa');
-if (action === 'assign-summary-done') {
-afaClose();
-return;
-}
-if (action === 'assign-summary-back') {
-if (b.disabled) return;
-b.disabled = true;
-b.textContent = 'Opening…';
-try { afaAssignPicker(); }
-catch(eBackAssign) { if (_afaOverlay) afaConfirm(); }
-}
-});
-}
-// v23.9.177: fixes global Assign button visual reset and makes all result-screen Back paths fail-safe.
-// v23.9.176 audit: each associate gets its own 5-cart failure set; shared locks fail closed.
-var CBT_ASSIGN_MAX_ATTEMPTS_PER_ASSOCIATE = 5;
-// v23.9.203: Assign never auto-navigates to Cart Actions.  Only the explicit
-// Back button may do that.  If Amazon is temporarily rebuilding task data, keep
-// the current picker and make it usable again instead of replacing the screen.
-function cbtAssignStayOnPicker(message) {
-var overlay = _afaOverlay;
-if (!overlay || !overlay.isConnected) return;
-var title = overlay.querySelector('#cbt-afa-title');
-if (!title || !/^Assign$/i.test(String(title.textContent || '').trim())) return;
-var note = overlay.querySelector('#cbt-afa-assign-mode-note');
-if (note && message) note.textContent = String(message);
-var card = overlay.querySelector('#cbt-afa-card');
-if (!card) return;
-var startBtn = card.querySelector('[data-afa="assign-start"]');
-if (startBtn) startBtn.removeAttribute('data-cbt-start-pending');
-try {
-if (typeof card.__cbtAssignRefreshStartState === 'function') {
-card.__cbtAssignRefreshStartState();
-}
-} catch(eRefresh) {}
-}
-function cbtAssignRun(names, taskTypes) {
-names = Array.isArray(names)
-? names.map(cbtAssignNormText).filter(Boolean)
-: [];
-taskTypes = cbtAssignNormalizeTaskTypes(taskTypes);
-if (!names.length || _afaRunning) return;
-if (taskTypes.partialOnly) {
-var partialRowsNow = cbtAssignReadPartialRows();
-var partialIdsNow = Object.create(null);
-for (var spi = 0; spi < partialRowsNow.length; spi++) {
-var partialRow = partialRowsNow[spi];
-if (!partialRow || !partialRow.explicitPartialId || !partialRow.key) continue;
-partialIdsNow[String(partialRow.key)] = true;
-}
-if (!Object.keys(partialIdsNow).length) {
-cbtAssignStayOnPicker('Partially Batched carts are still refreshing or none are available right now. You are still in Assign.');
-return;
-}
-taskTypes.partialIds = partialIdsNow;
-} else if (!cbtAssignHasNormalTasksNow()) {
-cbtAssignStayOnPicker('Tasks are refreshing. You are still in Assign — wait a moment and press Assign again.');
-try { afaRefreshJobData(); } catch(eAssignWarmTasks) {}
-return;
-}
-_afaRunning = true;
-_afaStop = false;
-try { cbtAssignStartUiSessionRunHeartbeat(); } catch(eAssignTurnHeartbeat) {}
-afaSetBtn('⏹ Stop', true);
-var results = [];
-var claimed = Object.create(null);
-var nameIndex = 0;
-_cbtAssignCurrentAssociateReservationName = '';
-_cbtAssignCurrentAssociateReservationToken = '';
-function releaseCurrentAssociateReservation() {
-var name = _cbtAssignCurrentAssociateReservationName;
-var token = _cbtAssignCurrentAssociateReservationToken;
-_cbtAssignCurrentAssociateReservationName = '';
-_cbtAssignCurrentAssociateReservationToken = '';
-if (name && token) {
-try { cbtAssignReleaseAssociateReservation(name, token); } catch(eReleaseAssociate) {}
-}
-}
-cbtAssignProgressView();
-var assignNextTimer = 0;
-var assignNextResume = null;
-function resumeAssignPending() {
-if (!assignNextResume) return;
-var fn = assignNextResume;
-assignNextResume = null;
-if (assignNextTimer) {
-clearTimeout(assignNextTimer);
-assignNextTimer = 0;
-}
-fn();
-}
-function scheduleAssignStep(fn, delay) {
-assignNextResume = fn;
-if (document.hidden) {
-Promise.resolve().then(resumeAssignPending);
-return;
-}
-assignNextTimer = setTimeout(
-resumeAssignPending,
-delay == null ? 5 : Math.max(0, delay)
-);
-}
-function onAssignVisibilityChange() {
-if (!document.hidden || !assignNextResume) return;
-if (assignNextTimer) {
-clearTimeout(assignNextTimer);
-assignNextTimer = 0;
-}
-Promise.resolve().then(resumeAssignPending);
-}
-document.addEventListener('visibilitychange', onAssignVisibilityChange);
-function finish() {
-releaseCurrentAssociateReservation();
-_afaRunning = false;
-try { cbtAssignReleaseUiSessionLock(); } catch(eAssignTurnRelease) {}
-try {
-document.removeEventListener(
-'visibilitychange',
-onAssignVisibilityChange
-);
-} catch(eVis) {}
-if (assignNextTimer) {
-clearTimeout(assignNextTimer);
-assignNextTimer = 0;
-}
-assignNextResume = null;
-afaSetBtn('▶ Run', false);
-// v23.9.206: show the result immediately. Live/stats/job refreshes are useful
-// after the assignment, but they must not delay the user's finished screen.
-cbtAssignSummary(
-results,
-_afaStop
-);
-cbtAfterFirstPaint(function(){
-try { pollActiveTasks(); } catch(eLive) {}
-try { fetchAndUpdate(); } catch(eStats) {}
-try { afaRefreshJobData(); } catch(eJobs) {}
-}, 0);
-}
-function nextName(delay) {
-releaseCurrentAssociateReservation();
-nameIndex++;
-scheduleAssignStep(
-stepName,
-delay == null ? 5 : delay
-);
-}
-function stepName() {
-if (_afaStop ||
-nameIndex >= names.length) {
-finish();
-return;
-}
-var associate = names[nameIndex];
-var blocked = Object.create(null);
-var associateCooldown = cbtAssignAssociateProtection(associate);
-if (associateCooldown) {
-var associateCooldownSec = cbtAssignAssociateCooldownSeconds(associate, associateCooldown);
-results.push({
-ref: associate,
-skip: true,
-ok: false,
-msg: 'Not Assigned. Associate Cooldown Active — ' + associateCooldownSec + 's Remaining.'
-});
-cbtAssignProgress(
-nameIndex + 1,
-names.length,
-associate,
-null,
-results
-);
-nextName(5);
-return;
-}
-var attemptedForAssociate = 0;
-function ensureAssociateReservation() {
-if (_cbtAssignCurrentAssociateReservationToken &&
-cbtAssignNormText(_cbtAssignCurrentAssociateReservationName).toLowerCase() === cbtAssignNormText(associate).toLowerCase()) {
-return Promise.resolve({ok:true,token:_cbtAssignCurrentAssociateReservationToken,reused:true});
-}
-return cbtAssignAcquireAssociateReservation(associate).then(function(lock){
-if (lock && lock.ok) {
-_cbtAssignCurrentAssociateReservationName = associate;
-_cbtAssignCurrentAssociateReservationToken = lock.token || '';
-}
-return lock;
-});
-}
-function tryEarliest() {
-if (_afaStop) {
-finish();
-return;
-}
-if (!taskTypes.partialOnly) {
-var siteState = cbtAssignSiteTaskState();
-if (!siteState.ready && !cbtAssignHasNormalTasksNow()) {
-results.push({
-ref: associate,
-skip: true,
-ok: false,
-msg: cbtAssignNoEligibleMessage(taskTypes)
-});
-cbtAssignProgress(
-nameIndex + 1,
-names.length,
-associate,
-null,
-results
-);
-nextName(5);
-return;
-}
-}
-var associateTaskTypes = Object.assign({}, taskTypes, { associate: associate });
-var eligible =
-cbtAssignEligibleRows(
-claimed,
-blocked,
-associateTaskTypes
-);
-if (!eligible.length && !taskTypes.partialOnly) {
-eligible = cbtAssignUiFallbackRows(
-claimed,
-blocked,
-associateTaskTypes
-);
-}
-if (!eligible.length) {
-results.push({
-ref: associate,
-skip: true,
-ok: false,
-msg: cbtAssignNoEligibleMessage(taskTypes)
-});
-cbtAssignProgress(
-nameIndex + 1,
-names.length,
-associate,
-null,
-results
-);
-nextName(5);
-return;
-}
-var target = eligible[0];
-cbtAssignProgress(
-nameIndex + 1,
-names.length,
-associate,
-target,
-results
-);
-var targetEligibilityTypes = target.uiAssignFallback
-? Object.assign({}, associateTaskTypes, { uiFallback: true })
-: associateTaskTypes;
-function targetStillEligible(ignoreReservationToken) {
-return !claimed[target.key] &&
-!blocked[target.key] &&
-cbtAssignCurrentEligible(
-target.key,
-targetEligibilityTypes,
-ignoreReservationToken || ''
-);
-}
-if (!targetStillEligible()) {
-blocked[target.key] = true;
-scheduleAssignStep(tryEarliest, 5);
-return;
-}
-var targetType = cbtAssignTaskType(target);
-var allowPartialReassign =
-!!taskTypes.partialOnly &&
-targetType === 'partial' &&
-!!target.partialSectionVerified &&
-!!target.explicitPartialId &&
-!!(
-taskTypes.partialIds &&
-taskTypes.partialIds[String(target.key)]
-);
-var allowGrayCreatedReassign =
-!taskTypes.partialOnly &&
-cbtAssignRowIsGrayCreatedAvailable(target);
-if (taskTypes.partialOnly && !allowPartialReassign) {
-blocked[target.key] = true;
-results.push({
-ref: associate,
-id: target.id,
-skip: true,
-ok: false,
-msg: 'Not Assigned. Reason: The Cart Is No Longer In The Current Partially Batched List.'
-});
-cbtAssignProgress(
-nameIndex + 1,
-names.length,
-associate,
-null,
-results
-);
-scheduleAssignStep(tryEarliest, 5);
-return;
-}
-ensureAssociateReservation().then(function(associateLock){
-if (!associateLock || !associateLock.ok) {
-if (associateLock && (associateLock.error || associateLock.fatal)) {
-results.push({
-ref: associate,
-skip: true,
-ok: false,
-msg: 'Not Assigned. ' + (associateLock.reason || 'Shared Associate Lock Is Unavailable.')
-});
-cbtAssignProgress(nameIndex + 1, names.length, associate, null, results);
-finish();
-return;
-}
-var associateLockRow = associateLock && associateLock.row;
-var associateLockSec = associateLockRow
-? Math.max(1, Math.ceil((Number(associateLockRow.until) - cbtAssignNowMs()) / 1000))
-: cbtAssignAssociateCooldownSeconds(associate);
-results.push({
-ref: associate,
-skip: true,
-ok: false,
-msg: 'Not Assigned. Associate Cooldown Active' +
-(associateLockSec ? ' — ' + associateLockSec + 's Remaining.' : '.')
-});
-cbtAssignProgress(
-nameIndex + 1,
-names.length,
-associate,
-null,
-results
-);
-nextName(5);
-return;
-}
-cbtAssignViaUi(
-target.id,
-associate,
-targetStillEligible,
-target.detailsUrl,
-{
-allowPartialReassign: allowPartialReassign,
-allowGrayCreatedReassign: allowGrayCreatedReassign,
-requirePartialOnly: !!taskTypes.partialOnly,
-partialIds: taskTypes.partialIds,
-partialRef: taskTypes.partialOnly ? target.ref : '',
-targetRef: target.ref,
-requireUiAssignable: !!taskTypes.partialOnly || !!target.uiAssignFallback
-}
-).then(function(result){
-if (_afaStop) {
-if (result && result.ok) {
-try { cbtAssignProtectAssociate(associate); } catch(eAssociateStopProtect) {}
-_cbtAssignCurrentAssociateReservationName = '';
-_cbtAssignCurrentAssociateReservationToken = '';
-}
-finish();
-return;
-}
-if (result && result.ok) {
-try { cbtAssignProtectAssociate(associate); } catch(eAssociateProtect) {}
-_cbtAssignCurrentAssociateReservationName = '';
-_cbtAssignCurrentAssociateReservationToken = '';
-claimed[target.key] = true;
-if (taskTypes.partialOnly) {
-cbtForgetForcedPartial(target.key);
-}
-try {
-cbtAssignUpdateProtectionMeta(
-target.key,
-associate,
-target.ref
-);
-} catch(eProtectMeta) {}
-results.push({
-ref: associate,
-id: target.id,
-ok: true,
-msg:
-'Assigned To Task ' +
-target.ref +
-(taskTypes.partialOnly
-? '. Source: Partially Batched Only'
-: '. Batch Target: ' +
-(
-target.batchRaw ||
-'Earliest'
-)) +
-'. Protected For 1 Minute.'
-});
-cbtAssignProgress(
-nameIndex + 1,
-names.length,
-associate,
-target,
-results
-);
-nextName(5);
-return;
-}
-if (result && result.fatal) {
-results.push({
-ref: associate,
-id: target.id,
-ok: false,
-msg: 'Not Assigned. ' + (result.reason || 'A Fatal Assignment Error Occurred. The Run Was Stopped To Prevent A Conflict.')
-});
-cbtAssignProgress(nameIndex + 1, names.length, associate, target, results);
-finish();
-return;
-}
-if (result && result.stopAssociate) {
-attemptedForAssociate += result.attempted ? 1 : 0;
-blocked[target.key] = true;
-results.push({
-ref: associate,
-id: target.id,
-ok: false,
-msg: 'Not Assigned. ' + (result.reason || 'The Assignment Could Not Be Safely Confirmed.') + ' Skipping This Associate To Prevent A Duplicate Assignment.'
-});
-cbtAssignProgress(nameIndex + 1, names.length, associate, target, results);
-nextName(5);
-return;
-}
-if (result && result.attempted) {
-attemptedForAssociate++;
-blocked[target.key] = true;
-var reachedAttemptLimit = attemptedForAssociate >= CBT_ASSIGN_MAX_ATTEMPTS_PER_ASSOCIATE;
-results.push({
-ref: associate,
-id: target.id,
-ok: false,
-msg:
-'Not Assigned. Attempt ' + attemptedForAssociate + ' Of ' +
-CBT_ASSIGN_MAX_ATTEMPTS_PER_ASSOCIATE + ' Failed' +
-(
-result.reason
-? '. Details: ' + result.reason
-: '.'
-) +
-(reachedAttemptLimit
-? ' Skipping This Associate And Trying The Next Associate.'
-: ' Trying The Next Eligible Cart For This Associate.')
-});
-cbtAssignProgress(
-nameIndex + 1,
-names.length,
-associate,
-target,
-results
-);
-if (reachedAttemptLimit) {
-nextName(5);
-} else {
-scheduleAssignStep(tryEarliest, 5);
-}
-return;
-}
-if (result && result.retryable) {
-blocked[target.key] = true;
-scheduleAssignStep(tryEarliest, 5);
-return;
-}
-results.push({
-ref: associate,
-ok: false,
-msg:
-'Not Assigned. Reason: The Assignment Could Not Be Safely Started' +
-(
-result && result.reason
-? '. Details: ' + result.reason
-: '.'
-)
-});
-cbtAssignProgress(
-nameIndex + 1,
-names.length,
-associate,
-target,
-results
-);
-nextName(5);
-});
-});
-}
-tryEarliest();
-}
-stepName();
-}
-function afaSetBtn(text, busy) {
-var panel = null;
-try { panel = cbtDedupeMainPanels(); } catch(ePanelDedupeBtn) {}
-if (!panel) panel = document.getElementById('cbt-panel');
-var b = cbtKeepSingleRunButton(panel);
-if (!b) return;
-b.innerHTML = '<span class="cbt-afa-lbl">' + text + '</span>';
-if (busy) b.classList.add('busy'); else b.classList.remove('busy');
-}
-function afaClose() {
-if (_afaRunning) return;
-_afaConfirmOpenSeq++;
-_afaConfirmLoading = false;
-try { cbtAssignReleaseUiSessionLock(); } catch(eAssignUiCloseRelease) {}
-_afaMissingMenuInfo = null;
-_afaMissingMenuCheckSeq++;
-if (_afaOverlay && _afaOverlay.parentNode) _afaOverlay.parentNode.removeChild(_afaOverlay);
-_afaOverlay = null;
-afaSetBtn('▶ Run', false);
-}
-function afaShell(title, bodyHtml, footHtml) {
-if (!_afaOverlay) {
-_afaOverlay = document.createElement('div');
-_afaOverlay.id = 'cbt-afa-overlay';
-document.body.appendChild(_afaOverlay);
-_afaOverlay.addEventListener('mousedown', function(e){ if (e.target === _afaOverlay) afaClose(); });
-}
-_afaOverlay.innerHTML =
-'<div id="cbt-afa-card">' +
-'<div id="cbt-afa-head"><span id="cbt-afa-title">' + title + '</span>' +
-'<button id="cbt-afa-x" title="Close">\u2715</button></div>' +
-'<div id="cbt-afa-body">' + bodyHtml + '</div>' +
-'<div id="cbt-afa-foot">' + footHtml + '</div>' +
-'</div>';
-var x = _afaOverlay.querySelector('#cbt-afa-x');
-if (x) x.addEventListener('click', afaClose);
-try { applyPopupTheme(); } catch(e) {}
-try { applyUiScale(); } catch(e) {}
-}
-function afaEsc(s) {
-return String(s == null ? '' : s)
-.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-function afaRowsHtml(items) {
-return '<div class="cbt-afa-list">' + items.map(function(it){
-var cls = it.ok === true ? 'ok' : (it.skip ? 'skip' : (it.ok === false ? 'bad' : ''));
-return '<div class="cbt-afa-row ' + cls + '">' +
-'<span class="cbt-afa-ref">' + afaEsc(it.ref) + '</span>' +
-'<span class="cbt-afa-msg">' + afaEsc(it.msg || (it.id ? 'ready' : 'task ID not found')) + '</span>' +
-'</div>';
-}).join('') + '</div>';
-}
-function afaCollectMenuSnapshot() {
-var cardsSnapshot = [];
-try { cardsSnapshot = Array.prototype.slice.call(document.querySelectorAll('job-card')); } catch(eCards) {}
-var pbNow = afaScanPartiallyBatched();
-var expected = afaSectionCount(/^Partially\s+Batched(\s*\(\d+\))?$/i);
-var forceRows = afaScanDashboard(cardsSnapshot);
-var completionCandidates = afaScanCompletionCandidates(cardsSnapshot);
-var missingCandidates = afaScanMissingCandidates(cardsSnapshot);
-var assignTaskState = cbtAssignSiteTaskState();
-return {
-at: Date.now(),
-cards: cardsSnapshot,
-forceRows: forceRows,
-pbAll: pbNow,
-pbExpected: expected,
-completionCandidates: completionCandidates,
-missingCandidates: missingCandidates,
-assignTaskState: assignTaskState
-};
-}
-function afaWarmCartActionsSnapshot() {
-// v23.9.211 NoLag: intentionally disabled.  Opening/hovering Run must never
-// start a hidden multi-scan of the task DOM.
-}
-function afaCollectMenuSnapshotBatched(done) {
-var snapshot = {
-at: Date.now(),
-cards: [],
-forceRows: [],
-pbAll: [],
-pbExpected: null,
-completionCandidates: [],
-missingCandidates: [],
-assignTaskState: null
-};
-try { snapshot.cards = Array.prototype.slice.call(document.querySelectorAll('job-card')); } catch(eCards) {}
-var steps = [
-function(){ snapshot.pbAll = afaScanPartiallyBatched(); },
-function(){ snapshot.pbExpected = afaSectionCount(/^Partially\s+Batched(\s*\(\d+\))?$/i); },
-function(){ snapshot.forceRows = afaScanDashboard(snapshot.cards); },
-function(){ snapshot.completionCandidates = afaScanCompletionCandidates(snapshot.cards); },
-function(){ snapshot.missingCandidates = afaScanMissingCandidates(snapshot.cards); },
-function(){ snapshot.assignTaskState = cbtAssignSiteTaskState(); }
-];
-var idx = 0;
-var raf = (typeof requestAnimationFrame === 'function')
-? requestAnimationFrame
-: function(cb){ return setTimeout(cb, 16); };
-function next() {
-if (idx >= steps.length) {
-snapshot.at = Date.now();
-if (typeof done === 'function') done(snapshot);
-return;
-}
-raf(function(){
-setTimeout(function(){
-try { steps[idx](); } catch(eStep) {}
-idx++;
-next();
-}, 0);
-});
-}
-next();
-}
-function afaConfirmInstantShell() {
-// Paint the real Cart Actions structure immediately.  Only actions that require
-// a current scan remain disabled for this very short verification window;
-// Assign Cart is safe to open immediately and revalidates at assignment time.
-afaShell(
-'Cart Actions',
-'<div id="cbt-afa-lead">Choose an action. Each button performs <b>only the action shown</b>.</div>' +
-'<div class="cbt-afa-action-block off"><button type="button" class="cbt-afa-act cbt-afa-action-btn" disabled>▶ Force Assign (…)</button><span class="cbt-afa-action-copy">Checking current carts…</span></div>' +
-'<div class="cbt-afa-action-block off"><button type="button" class="cbt-afa-act cbt-afa-action-btn" disabled>▶ Partially Batched (…)</button><span class="cbt-afa-action-copy">Checking current carts…</span></div>' +
-'<div class="cbt-afa-action-block off"><button type="button" class="cbt-afa-act cbt-afa-action-btn" disabled><span class="cbt-afa-missing-triangle">▲</span>Checking…</button><span class="cbt-afa-action-copy">Checking Missing/Damaged packages…</span></div>' +
-'<div class="cbt-afa-action-block"><button type="button" class="cbt-afa-act go cbt-afa-action-btn" data-afa="assign">▶ Assign Cart</button><span class="cbt-afa-action-copy">Select associates in order. Normal Tasks are the default; Partially Batched can be selected exclusively inside Assign Cart.</span></div>' +
-'<div class="cbt-afa-action-block off"><button type="button" class="cbt-afa-act cbt-afa-action-btn" disabled>▶ Auto Complete (…)</button><span class="cbt-afa-action-copy">Checking current tasks…</span></div>' +
-'<div class="cbt-afa-note">Each action only affects its own cart group. Problem Solve is never touched. Missing Package QR is read-only.</div>',
-'<button class="cbt-afa-act" data-afa="close">Close</button>'
-);
-var quickCard = _afaOverlay && _afaOverlay.querySelector('#cbt-afa-card');
-if (!quickCard) return;
-quickCard.addEventListener('click', function(e){
-var b = e.target.closest('[data-afa]');
-if (!b) return;
-var action = b.getAttribute('data-afa');
-if (action === 'close') { afaClose(); return; }
-if (action === 'assign') { afaAssignPicker(); }
-});
-}
-function afaConfirm() {
-if (_afaRunning) { afaProgressView(); return; }
-if (_afaConfirmLoading && _afaOverlay && _afaOverlay.isConnected) return;
-try { cbtAssignReleaseUiSessionLock(); } catch(eAssignUiRelease) {}
-_afaMenuSnapshotWarmSeq++;
-_afaMenuSnapshotInFlight = false;
-_afaConfirmLoading = true;
-var openSeq = ++_afaConfirmOpenSeq;
+    if (_parseTimeMemoDay !== dateStr + '|' + tz) {
+      _parseTimeMemoDay = dateStr + '|' + tz;
+      _parseTimeMemo = Object.create(null);
+    }
 
-// Paint immediately, then split each expensive cart scan across separate frames.
-afaConfirmInstantShell();
-var menuOverlay = _afaOverlay;
-afaCollectMenuSnapshotBatched(function(snapshot){
-if (openSeq !== _afaConfirmOpenSeq || !_afaOverlay || _afaOverlay !== menuOverlay) return;
-try {
-_afaMenuSnapshotCache = snapshot;
-afaConfirmRender(
-snapshot.forceRows || [],
-snapshot.pbAll || [],
-snapshot.pbExpected,
-null,
-{
-cards: snapshot.cards || [],
-completionCandidates: snapshot.completionCandidates || [],
-missingCandidates: snapshot.missingCandidates || [],
-assignTaskState: snapshot.assignTaskState || null
-}
-);
-} catch(eConfirmScan) {
-_afaConfirmLoading = false;
-}
-});
-}
-var CBT_ASSIGN_SUGGEST_MAX = 10;
-var CBT_ASSIGN_RECENT_KEEP = 30;
-function cbtAssignRecentKey() {
-return 'cbt_assign_recent_v1_' + String(STORE_ID || 'unknown')
-.replace(/[^A-Za-z0-9_.-]/g, '_');
-}
-function cbtAssignLoadRecentNames() {
-try {
-var raw = localStorage.getItem(cbtAssignRecentKey());
-if (!raw) return [];
-var rows = JSON.parse(raw);
-if (!Array.isArray(rows)) return [];
-return rows
-.filter(function(r){
-return r && r.name && typeof r.name === 'string';
-})
-.sort(function(a, b){
-var atDiff = (Number(b.lastAt) || 0) - (Number(a.lastAt) || 0);
-if (atDiff) return atDiff;
-return (Number(b.count) || 0) - (Number(a.count) || 0);
-});
-} catch(e) {
-return [];
-}
-}
-function cbtAssignRememberRecentNames(names) {
-if (!Array.isArray(names) || !names.length) return;
-try {
-var rows = cbtAssignLoadRecentNames();
-var byName = Object.create(null);
-rows.forEach(function(r){
-byName[String(r.name).toLowerCase()] = {
-name: String(r.name),
-count: Math.max(1, Number(r.count) || 1),
-lastAt: Number(r.lastAt) || 0
-};
-});
-var nowMs = Date.now();
-names.forEach(function(name, idx){
-name = String(name || '').trim();
-if (!name) return;
-var key = name.toLowerCase();
-var old = byName[key] || { name: name, count: 0, lastAt: 0 };
-old.name = name;
-old.count = (Number(old.count) || 0) + 1;
-old.lastAt = nowMs - idx;
-byName[key] = old;
-});
-var merged = Object.keys(byName).map(function(k){ return byName[k]; });
-merged.sort(function(a, b){
-var atDiff = (Number(b.lastAt) || 0) - (Number(a.lastAt) || 0);
-if (atDiff) return atDiff;
-return (Number(b.count) || 0) - (Number(a.count) || 0);
-});
-localStorage.setItem(
-cbtAssignRecentKey(),
-JSON.stringify(merged.slice(0, CBT_ASSIGN_RECENT_KEEP))
-);
-} catch(e) {}
-}
-function cbtAssignSuggestedNames() {
-var rows = cbtAssignLoadRecentNames();
-var out = [];
-var seen = Object.create(null);
-for (var i = 0; i < rows.length && out.length < CBT_ASSIGN_SUGGEST_MAX; i++) {
-var name = String(rows[i].name || '').trim();
-if (!name) continue;
-var key = name.toLowerCase();
-if (seen[key]) continue;
-seen[key] = true;
-out.push(name);
-}
-return out;
-}
-function afaAssignPicker(options) {
-// v23.9.203: the Cart Actions shell performs delayed scans on the same overlay.
-// Invalidate those pending renders before drawing Assign so an older menu scan
-// can never overwrite this picker and look like an automatic Back action.
-_afaConfirmOpenSeq++;
-_afaConfirmLoading = false;
-_afaMissingMenuCheckSeq++;
-options = options || {};
-var lockPending = false;
-var selectedNames = [];
-var activeIndex = -1;
-var currentRows = [];
-var showingSuggestions = true;
-afaShell(
-'Assign',
-'<div id="cbt-afa-lead">Search and select one or more associates.</div>' +
-'<div id="cbt-afa-assign-turn" class="cbt-afa-note">' +
-'Concurrent Assign · conflicts are checked only when the assignment starts' +
-'</div>' +
-'<div id="cbt-afa-assign-types">' +
-'<div class="cbt-afa-assign-type-title">Assign Source</div>' +
-'<label class="cbt-afa-opt">' +
-'<input id="cbt-afa-type-partial" type="checkbox">' +
-'<span><b>Only Assign Partially Batched Carts</b></span>' +
-'</label>' +
-'<div id="cbt-afa-normal-task-types">' +
-'<div class="cbt-afa-assign-type-title" style="margin-top:8px;">Normal Tasks · Optional</div>' +
-'<label class="cbt-afa-opt">' +
-'<input id="cbt-afa-type-cart" type="checkbox">' +
-'<span><b>Task With Cart Number Only</b></span>' +
-'</label>' +
-'<label class="cbt-afa-opt">' +
-'<input id="cbt-afa-type-both" type="checkbox">' +
-'<span><b>Task With Associate Name + Cart Number</b></span>' +
-'</label>' +
-'</div>' +
-'</div>' +
-'<input id="cbt-afa-assign-search" type="text" autocomplete="off" spellcheck="false" ' +
-'placeholder="Search associate name..." aria-label="Search associate name">' +
-'<div id="cbt-afa-assign-results">' +
-'<div class="cbt-afa-assign-empty">Loading recent suggestions...</div>' +
-'</div>' +
-'<div id="cbt-afa-assign-selected"><div class="cbt-afa-selected-title">' +
-'<span>Selected associates</span>' +
-'<button id="cbt-afa-assign-clear" type="button" disabled>Clear</button>' +
-'</div>' +
-'<div class="cbt-afa-assign-empty">None selected.</div></div>' +
-'<div class="cbt-afa-note" id="cbt-afa-assign-mode-note">Normal Mode: Blank ASSIGNABLE tasks are tried first, earliest Batch Target first. UNASSIGNABLE tasks are always skipped. Time Left and overdue status do not block assignment. Each selected associate gets up to 5 real assignment attempts before the script moves to the next associate. An associate with an active 1-minute cooldown is skipped. A recently assigned cart is protected for 1 minute.</div>',
-'<button class="cbt-afa-act" data-afa="assign-back">Back</button>' +
-'<button class="cbt-afa-act primary" data-afa="assign-start" disabled>Assign</button>'
-);
-var card = _afaOverlay && _afaOverlay.querySelector('#cbt-afa-card');
-var input = document.getElementById('cbt-afa-assign-search');
-var results = document.getElementById('cbt-afa-assign-results');
-var selected = document.getElementById('cbt-afa-assign-selected');
-var typePartial = document.getElementById('cbt-afa-type-partial');
-var normalTypes = document.getElementById('cbt-afa-normal-task-types');
-var modeNote = document.getElementById('cbt-afa-assign-mode-note');
-var typeCart = document.getElementById('cbt-afa-type-cart');
-var typeBoth = document.getElementById('cbt-afa-type-both');
-if (!card ||
-!input ||
-!results ||
-!selected ||
-!typePartial ||
-!normalTypes ||
-!modeNote ||
-!typeCart ||
-!typeBoth) return;
-function esc(v) {
-return afaEsc(v);
-}
-function selectedIndex(name) {
-var low = String(name || '').toLowerCase();
-for (var i = 0; i < selectedNames.length; i++) {
-if (selectedNames[i].toLowerCase() === low) return i;
-}
-return -1;
-}
-function updateAssignStartState() {
-var startBtn = card.querySelector('[data-afa="assign-start"]');
-if (!startBtn) return;
-if (typePartial.checked) {
-startBtn.disabled =
-selectedNames.length === 0 ||
-!cbtAssignPartialCheckboxAvailable();
-return;
-}
-// v23.9.203: selecting an associate keeps the button usable even while
-// Amazon is briefly refreshing the task snapshot.  The click path performs the
-// real live-row check and stays on this screen if data is not ready.
-startBtn.disabled = selectedNames.length === 0;
-}
-function syncPartialOnlyMode() {
-var partialOnly = !!typePartial.checked;
-typeCart.disabled = partialOnly;
-typeBoth.disabled = partialOnly;
-normalTypes.style.opacity = partialOnly ? '0.45' : '1';
-modeNote.textContent = partialOnly
-? 'Partially Batched Only. Select an associate and press Assign. Any cart still in Amazon’s current Partially Batched section can be tried. Before assignment, COMO verifies that the real Assign to Associate button is enabled. Normal Tasks are never used as a fallback.'
-: 'Normal Mode: standard available Tasks are tried first, earliest Batch Target first. Cart Only and Name + Cart remain priority options. If none match, COMO may use another current cart only after verifying Amazon’s real Assign to Associate button is enabled. A cart assigned by this script is protected for 1 minute.';
-updateAssignStartState();
-}
-function renderSelected() {
-updateAssignStartState();
-if (!selectedNames.length) {
-selected.innerHTML =
-'<div class="cbt-afa-selected-title">' +
-'<span>Selected associates</span>' +
-'<button id="cbt-afa-assign-clear" type="button" disabled>Clear</button>' +
-'</div>' +
-'<div class="cbt-afa-assign-empty">None selected.</div>';
-return;
-}
-selected.innerHTML =
-'<div class="cbt-afa-selected-title">' +
-'<span>Selected associates (' + selectedNames.length + ')</span>' +
-'<button id="cbt-afa-assign-clear" type="button">Clear</button>' +
-'</div>' +
-selectedNames.map(function(name, i){
-return '<div class="cbt-afa-selected-row" data-selected-name="' + esc(name) + '" ' +
-'title="Click to remove ' + esc(name) + '">' +
-'<span class="cbt-afa-selected-num">' + (i + 1) + '</span>' +
-'<span class="cbt-afa-selected-name">' + esc(name) + '</span>' +
-'</div>';
-}).join('');
-}
-function renderResults() {
-if (!currentRows.length) {
-results.innerHTML = showingSuggestions
-? '<div class="cbt-afa-assign-empty">No recent suggestions yet. Type at least ' +
-AC_MIN_CHARS + ' characters to search.</div>'
-: '<div class="cbt-afa-assign-empty">No matches found.</div>';
-return;
-}
-var heading = showingSuggestions
-? '<div class="cbt-search-result-section">RECENTLY USED AT THIS WAREHOUSE</div>'
-: '';
-results.innerHTML = heading + currentRows.map(function(name, i){
-var order = selectedIndex(name);
-var checked = order >= 0;
-return '<div class="cbt-afa-assign-name' +
-(i === activeIndex ? ' on' : '') +
-(checked ? ' selected' : '') +
-'" data-name="' + esc(name) + '">' +
-'<input class="cbt-afa-assign-check" type="checkbox" tabindex="-1"' + (checked ? ' checked' : '') + '>' +
-'<span>' + esc(name) + '</span>' +
-'<span class="cbt-afa-assign-order' + (checked ? '' : ' hidden') + '">' +
-(checked ? (order + 1) : '') +
-'</span>' +
-'</div>';
-}).join('');
-}
-function updateActive() {
-var nodes = results.querySelectorAll('.cbt-afa-assign-name');
-for (var i = 0; i < nodes.length; i++) {
-nodes[i].classList.toggle('on', i === activeIndex);
-}
-if (activeIndex >= 0 && nodes[activeIndex] && nodes[activeIndex].scrollIntoView) {
-nodes[activeIndex].scrollIntoView({ block: 'nearest' });
-}
-}
-function toggleName(name) {
-if (!name) return;
-var idx = selectedIndex(name);
-if (idx >= 0) {
-selectedNames.splice(idx, 1);
-renderSelected();
-renderResults();
-} else {
-selectedNames.push(name);
-renderSelected();
-input.value = '';
-renderResults();
-}
-try { input.focus(); } catch(e) {}
-}
-function search(term) {
-term = String(term || '').trim();
-if (term.length < AC_MIN_CHARS) {
-showingSuggestions = true;
-currentRows = cbtAssignSuggestedNames();
-activeIndex = currentRows.length ? 0 : -1;
-renderResults();
-return;
-}
-showingSuggestions = false;
-var res = acSearch(term);
-currentRows = (res && res.rows) ? res.rows.slice() : [];
-activeIndex = currentRows.length ? 0 : -1;
-renderResults();
-}
-// Allow the async atomic-lock completion path to enable the real Assign
-// button without rebuilding the picker.
-card.__cbtAssignRefreshStartState = updateAssignStartState;
-typePartial.addEventListener('change', function(){
-syncPartialOnlyMode();
-});
-input.addEventListener('input', function(){
-search(input.value);
-});
-input.addEventListener('keydown', function(e){
-if (!currentRows.length) return;
-if (e.key === 'ArrowDown') {
-e.preventDefault();
-activeIndex = (activeIndex + 1 + currentRows.length) % currentRows.length;
-updateActive();
-} else if (e.key === 'ArrowUp') {
-e.preventDefault();
-activeIndex = (activeIndex - 1 + currentRows.length) % currentRows.length;
-updateActive();
-} else if ((e.key === 'Enter' || e.key === ' ') && activeIndex >= 0) {
-e.preventDefault();
-toggleName(currentRows[activeIndex]);
-}
-});
-results.addEventListener('mousedown', function(e){
-var row = e.target.closest('.cbt-afa-assign-name');
-if (!row) return;
-e.preventDefault();
-toggleName(row.getAttribute('data-name'));
-});
-selected.addEventListener('click', function(e){
-var clearBtn = e.target.closest('#cbt-afa-assign-clear');
-if (clearBtn) {
-if (!selectedNames.length) return;
-selectedNames.length = 0;
-renderSelected();
-renderResults();
-try { input.focus(); } catch(ignoreClearFocus) {}
-return;
-}
-var row = e.target.closest('.cbt-afa-selected-row');
-if (!row) return;
-var name = row.getAttribute('data-selected-name');
-if (!name) return;
-var idx = selectedIndex(name);
-if (idx >= 0) selectedNames.splice(idx, 1);
-renderSelected();
-renderResults();
-try { input.focus(); } catch(ignoreFocus) {}
-});
-card.addEventListener('click', function(e){
-var b = e.target.closest('[data-afa]');
-if (!b) return;
-if (b.getAttribute('data-afa') === 'assign-back') {
-afaConfirm();
-return;
-}
-if (b.getAttribute('data-afa') === 'assign-start') {
-if (!selectedNames.length || b.disabled) return;
-if (typePartial.checked && !cbtAssignPartialCheckboxAvailable()) {
-cbtAssignRefreshPartialCheckboxState();
-syncPartialOnlyMode();
-return;
-}
-if (!typePartial.checked && !cbtAssignHasNormalTasksNow()) {
-cbtAssignStayOnPicker('Tasks are refreshing. Stay here — COMO will not return to Cart Actions. Try Assign again in a moment.');
-try { afaRefreshJobData(); } catch(eAssignClickWarm) {}
-return;
-}
-if (b.getAttribute('data-cbt-start-pending') === '1') return;
-var frozenNames = selectedNames.slice();
-var frozenTypes = {
-partialOnly: !!typePartial.checked,
-cart: !typePartial.checked && !!typeCart.checked,
-both: !typePartial.checked && !!typeBoth.checked
-};
-b.setAttribute('data-cbt-start-pending','1');
-b.disabled = true;
-cbtAssignRememberRecentNames(frozenNames);
-cbtAssignRun(frozenNames, frozenTypes);
-return;
-}
-});
-// Paint/search first. The strict Partially Batched eligibility scan can be
-// comparatively expensive, so refresh that checkbox just after the picker is
-// already visible rather than blocking its first paint.
-typePartial.disabled = true;
-var partialLabel = typePartial.closest ? typePartial.closest('label.cbt-afa-opt') : null;
-if (partialLabel) partialLabel.style.opacity = '0.45';
-renderSelected();
-syncPartialOnlyMode();
-search('');
-cbtAfterFirstPaint(function(){
-if (!_afaOverlay || !_afaOverlay.isConnected || !card.isConnected) return;
-try { cbtAssignRefreshPartialCheckboxState(); } catch(ePartialWarm) {}
-try { syncPartialOnlyMode(); } catch(ePartialSync) {}
-}, 0);
-try { input.focus(); } catch(e) {}
-}
-function afaConfirmRender(list, pbAll, pbExpected, suppress, scanContext) {
-_afaConfirmLoading = false;
-suppress = suppress || {
-force: Object.create(null),
-partial: Object.create(null),
-complete: Object.create(null)
-};
-function isSuppressed(action, item) {
-var bucket = suppress[action];
-if (!bucket || !item) return false;
-if (item.id && bucket['id:' + String(item.id)]) return true;
-if (item.ref && bucket['ref:' + String(item.ref)]) return true;
-return false;
-}
-list = (list || []).filter(function(x){ return !isSuppressed('force', x); });
-pbAll = (pbAll || []).filter(function(x){ return !isSuppressed('partial', x); });
-var ready = list.filter(function(x){ return x.id; });
-var noId = list.filter(function(x){ return !x.id; });
-var pbReady = pbAll.filter(function(x){ return x.id; });
-var pbFound = (pbExpected != null) ? Math.max(pbExpected, pbAll.length) : pbAll.length;
-var pbUnresolved = Math.max(0, pbFound - pbReady.length);
-var sharedCards = scanContext && scanContext.cards ? scanContext.cards : null;
-var completionCandidates =
-scanContext && Array.isArray(scanContext.completionCandidates)
-? scanContext.completionCandidates.slice()
-: afaScanCompletionCandidates(sharedCards);
-completionCandidates = completionCandidates
-.filter(function(x){ return !isSuppressed('complete', x); });
-var completeReady = completionCandidates.filter(function(x){ return x.id; });
-var assignTaskState =
-scanContext && scanContext.assignTaskState
-? scanContext.assignTaskState
-: cbtAssignSiteTaskState();
-var assignHasPartial = pbReady.length > 0;
-// v23.9.203: never disable the entrance to Assign because Amazon may be in
-// a transient task-list remount.  Actual assignment remains fail-closed.
-var assignDisabled = false;
-var forceDisabled = ready.length === 0;
-var partialDisabled = pbReady.length === 0;
-var completeDisabled = !AFA_COMPLETE_PATH || completeReady.length === 0;
-function actionBlock(action, label, count, disabled, copy) {
-return '<div class="cbt-afa-action-block' + (disabled ? ' off' : '') + '">' +
-'<button type="button" class="cbt-afa-act go cbt-afa-action-btn" data-afa="' + action + '"' +
-(disabled ? ' disabled' : '') + '>' +
-label + (count != null ? ' (' + count + ')' : '') +
-'</button>' +
-'<span class="cbt-afa-action-copy">' + copy + '</span>' +
-'</div>';
-}
-var assignBlock = actionBlock(
-'assign',
-'▶ Assign Cart',
-null,
-assignDisabled,
-assignDisabled
-? (!assignTaskState.ready && !assignHasPartial
-? 'Tasks are still loading and no readable Partially Batched carts are available yet.'
-: 'No normal Tasks or readable Partially Batched carts are available right now.')
-: (!assignTaskState.hasTasks && assignHasPartial
-? 'Partially Batched carts are available. Open Assign Cart and check “Only Assign Partially Batched Carts”.'
-: 'Select associates in order. Normal Tasks are the default; Partially Batched can be selected exclusively inside Assign Cart.')
-);
-var forceBlock = actionBlock(
-'force',
-'▶ Force Assign',
-ready.length,
-forceDisabled,
-forceDisabled
-? 'No UNASSIGNABLE carts are available right now.'
-: 'Runs only the UNASSIGNABLE carts. Partially Batched is not included.'
-);
-var partialBlock = actionBlock(
-'partial',
-'▶ Partially Batched',
-pbReady.length,
-partialDisabled,
-partialDisabled
-? (pbFound
-? 'No Partially Batched cart has a readable task ID yet.'
-: 'No Partially Batched carts are available right now.')
-: 'Runs only Partially Batched carts. Each one is verified before Force Assign.'
-);
-var completeBlock = actionBlock(
-'complete',
-'▶ Auto Complete',
-completeReady.length,
-completeDisabled,
-!AFA_COMPLETE_PATH
-? 'Unavailable: the Complete Task request is not configured.'
-: (completeDisabled
-? 'No regular tasks are available to Auto Complete right now.'
-: 'Runs Complete Task only. It never Force Assigns and never includes Partially Batched.')
-);
-var missingCandidates =
-scanContext && Array.isArray(scanContext.missingCandidates)
-? scanContext.missingCandidates.slice()
-: afaScanMissingCandidates(sharedCards);
-_afaMissingMenuInfo = null;
-var missingBlock =
-'<div class="cbt-afa-action-block off" id="cbt-afa-missing-block">' +
-'<button type="button" class="cbt-afa-act cbt-afa-action-btn cbt-afa-missing-btn" ' +
-'id="cbt-afa-missing-btn" data-afa="missingqr" disabled>' +
-'<span class="cbt-afa-missing-triangle">▲</span>' +
-(missingCandidates.length ? 'Checking…' : 'No Missing/Damaged') +
-'</button>' +
-'<span class="cbt-afa-action-copy" id="cbt-afa-missing-copy">' +
-(missingCandidates.length
-? 'Checking warning rows in Tasks plus every Problem Solve and Partially Batched row. The button enables if a real MISSING or DAMAGED package is found.'
-: 'No readable task IDs are available in Tasks, Problem Solve, or Partially Batched right now. This button is disabled.') +
-'</span>' +
-'</div>';
-var warnings = '';
-if (noId.length) {
-warnings += '<div class="cbt-afa-warn">' + noId.length +
-' UNASSIGNABLE cart(s) have no readable task ID yet and are not included.</div>';
-}
-if (pbUnresolved) {
-warnings += '<div class="cbt-afa-warn">' + pbUnresolved +
-' Partially Batched cart(s) have no readable task ID yet and are not included.</div>';
-}
-var listHtml = '';
-if (list.length) {
-listHtml =
-'<div style="margin-top:12px;color:var(--cb-text2);font-size:12px;font-weight:700;">UNASSIGNABLE CARTS</div>' +
-afaRowsHtml(list);
-}
-afaShell(
-'Cart Actions',
-'<div id="cbt-afa-lead">Choose an action. Each button performs <b>only the action shown</b>.</div>' +
-forceBlock +
-partialBlock +
-missingBlock +
-assignBlock +
-completeBlock +
-warnings +
-listHtml +
-'<div class="cbt-afa-note">Each action only affects its own cart group. Problem Solve is never touched. Missing Package QR is read-only.</div>',
-'<button class="cbt-afa-act" data-afa="close">Close</button>'
-);
-var card = _afaOverlay.querySelector('#cbt-afa-card');
-if (!card) return;
-var missingCheckSeq = ++_afaMissingMenuCheckSeq;
-var missingOverlay = _afaOverlay;
-function setMissingMenuState(info, finished) {
-if (!_afaOverlay || _afaOverlay !== missingOverlay ||
-missingCheckSeq !== _afaMissingMenuCheckSeq) return;
-var btn = document.getElementById('cbt-afa-missing-btn');
-var block = document.getElementById('cbt-afa-missing-block');
-var copy = document.getElementById('cbt-afa-missing-copy');
-if (!btn || !block || !copy) return;
-var verifiedEntries = afaMissingQrEntries(info);
-if (verifiedEntries.length) {
-_afaMissingMenuInfo = info;
-btn.disabled = false;
-btn.innerHTML = '<span class="cbt-afa-missing-triangle">▲</span>Missing Package QR';
-block.classList.remove('off');
-var damagedCount = verifiedEntries.filter(function(entry){
-return afaMissingText(entry.packageStatus).toUpperCase() === 'DAMAGED';
-}).length;
-var missingCount = verifiedEntries.length - damagedCount;
-var parts = [];
-if (missingCount) parts.push(missingCount + ' MISSING');
-if (damagedCount) parts.push(damagedCount + ' DAMAGED');
-copy.textContent =
-parts.join(' + ') + ' package' +
-(verifiedEntries.length === 1 ? '' : 's') +
-' found. Click to open QR' +
-(verifiedEntries.length === 1 ? '' : 's') +
-(verifiedEntries.length > 1 ? ' with left/right navigation.' : '.');
-return;
-}
-_afaMissingMenuInfo = null;
-btn.disabled = true;
-block.classList.add('off');
-if (finished) {
-btn.innerHTML = '<span class="cbt-afa-missing-triangle">▲</span>No Missing/Damaged';
-copy.textContent =
-'No MISSING or DAMAGED package was found in Tasks, Problem Solve, or Partially Batched. This button is disabled.';
-}
-}
-if (missingCandidates.length) {
-cbtAfterFirstPaint(function(){
-cbtIdle(function(){
-if (!_afaOverlay || _afaOverlay !== missingOverlay ||
-missingCheckSeq !== _afaMissingMenuCheckSeq) return;
-afaFindAllMissingJobs(missingCandidates, function(done, total, item){
-if (!_afaOverlay || _afaOverlay !== missingOverlay ||
-missingCheckSeq !== _afaMissingMenuCheckSeq) return;
-var copy = document.getElementById('cbt-afa-missing-copy');
-if (copy) {
-copy.textContent = 'Checking ' + (item.section || 'Tasks') +
-' · ' + done + ' of ' + total + '…';
-}
-}).then(function(info){
-setMissingMenuState(info || null, true);
-}).catch(function(){
-setMissingMenuState(null, true);
-});
-}, 350);
-}, 30);
-} else {
-setMissingMenuState(null, true);
-}
-function runFresh(action, button) {
-if (!button || button.disabled || _afaRunning) return;
-var original = button.textContent;
-button.disabled = true;
-afaRefreshJobData().then(function(){
-if (!_afaOverlay || _afaRunning) return;
-var queue = [];
-var opts = {};
-if (action === 'force') {
-queue = afaScanDashboard()
-.filter(function(x){ return x.id && !isSuppressed('force', x); });
-opts = { mode: 'force', autoComplete: false, completeOnly: false };
-} else if (action === 'partial') {
-queue = afaScanPartiallyBatched()
-.filter(function(x){ return x.id && !isSuppressed('partial', x); });
-opts = { mode: 'partial', autoComplete: false, completeOnly: false };
-} else if (action === 'complete') {
-queue = afaScanCompletionCandidates()
-.filter(function(x){ return x.id && !isSuppressed('complete', x); });
-opts = { mode: 'complete', autoComplete: true, completeOnly: true };
-}
-if (!queue.length) {
-var pbNow2 = afaScanPartiallyBatched();
-var expected2 = afaSectionCount(/^Partially\s+Batched(\s*\(\d+\))?$/i);
-afaConfirmRender(afaScanDashboard(), pbNow2, expected2, suppress);
-return;
-}
-afaRun(queue, opts);
-}).catch(function(){
-if (!_afaOverlay) return;
-button.disabled = false;
-button.textContent = original;
-});
-}
-card.addEventListener('click', function(e){
-var b = e.target.closest('[data-afa]');
-if (!b) return;
-var action = b.getAttribute('data-afa');
-if (action === 'close') {
-afaClose();
-return;
-}
-if (action === 'assign') {
-// v23.9.203: opening Assign is unconditional.  A stale/empty task snapshot
-// must never bounce the user back to Cart Actions.
-if (b.disabled) b.disabled = false;
-afaAssignPicker();
-return;
-}
-if (action === 'missingqr') {
-if (b.disabled || !afaMissingQrEntries(_afaMissingMenuInfo).length) {
-return;
-}
-afaMissingQrResult(_afaMissingMenuInfo);
-return;
-}
-if (action === 'force' || action === 'partial' || action === 'complete') {
-runFresh(action, b);
-}
-});
-}
-function afaProgressView(mode) {
-var isComplete = mode === 'complete';
-var isPartial = mode === 'partial';
-var title = isComplete ? 'Auto Complete' : (isPartial ? 'Partially Batched' : 'Force Assign');
-afaShell(title + ' \u2014 running',
-'<div id="cbt-afa-lead"><span id="cbt-afa-count">Starting\u2026</span></div>' +
-'<div id="cbt-afa-bar"><div id="cbt-afa-fill"></div></div>' +
-'<div id="cbt-afa-live"></div>',
-'<button class="cbt-afa-act stop" data-afa="stop">⏹ Stop</button>');
-var card = _afaOverlay.querySelector('#cbt-afa-card');
-card.addEventListener('click', function(e){
-var b = e.target.closest('[data-afa]');
-if (b && b.getAttribute('data-afa') === 'stop') {
-_afaStop = true;
-b.textContent = '⏹ Stopping\u2026';
-b.disabled = true;
-}
-});
-}
-function afaProgress(done, total, ref, results) {
-var c = document.getElementById('cbt-afa-count');
-if (c) c.innerHTML = 'Processing <b>' + done + '</b> of <b>' + total + '</b>' + (ref ? ' \u2014 cart ' + afaEsc(ref) : '');
-var f = document.getElementById('cbt-afa-fill');
-if (f) f.style.width = Math.round((done / Math.max(1, total)) * 100) + '%';
-var live = document.getElementById('cbt-afa-live');
-if (live && results.length) live.innerHTML = afaRowsHtml(results.slice(-6));
-}
-function afaSummary(results, stopped, retryable, mode) {
-var isComplete = mode === 'complete';
-var isPartial = mode === 'partial';
-var title = isComplete ? 'Auto Complete' : (isPartial ? 'Partially Batched' : 'Force Assign');
-var okN = results.filter(function(r){ return r.ok === true; }).length;
-var skipN = results.filter(function(r){ return r.skip; }).length;
-var badN = results.filter(function(r){ return r.ok === false && !r.skip; }).length;
-afaShell(title + ' \u2014 finished',
-'<div id="cbt-afa-lead">' + (stopped ? 'Stopped early. ' : '') +
-'<b>' + okN + '</b> ' + (isComplete ? 'completed' : 'assigned') +
-(skipN ? ', <b>' + skipN + '</b> skipped' : '') +
-(badN ? ', <b>' + badN + '</b> failed' : '') + '.</div>' +
-(isPartial && retryable
-? '<div class="cbt-afa-warn">' + retryable + ' cart(s) are still listed under Partially Batched. Press the Partially Batched button again to retry them.</div>'
-: '') +
-(results.length ? afaRowsHtml(results) : '<div style="color:var(--cb-text2)">Nothing was processed.</div>'),
-'<button class="cbt-afa-act" data-afa="back">Back</button>' +
-'<button class="cbt-afa-act go" data-afa="close">Done</button>');
-var card = _afaOverlay.querySelector('#cbt-afa-card');
-card.addEventListener('click', function(e){
-var b = e.target.closest('[data-afa]');
-if (!b) return;
-var action = b.getAttribute('data-afa');
-if (action === 'close') {
-afaClose();
-return;
-}
-if (action === 'back') {
-if (b.disabled) return;
-b.disabled = true;
-b.textContent = 'Opening…';
-try {
-var suppress = {
-force: Object.create(null),
-partial: Object.create(null),
-complete: Object.create(null)
-};
-var bucketName = mode === 'complete'
-? 'complete'
-: (mode === 'partial' ? 'partial' : 'force');
-results.forEach(function(r){
-if (!r || r.ok !== true) return;
-if (r.id) suppress[bucketName]['id:' + String(r.id)] = true;
-if (r.ref) suppress[bucketName]['ref:' + String(r.ref)] = true;
-});
-var pbNow = afaScanPartiallyBatched();
-var expected = afaSectionCount(/^Partially\s+Batched(\s*\(\d+\))?$/i);
-afaConfirmRender(afaScanDashboard(), pbNow, expected, suppress);
-} catch(eBackRender) {
-try { afaConfirm(); } catch(eBackFallback) {}
-}
-try { afaRefreshJobData(); } catch(e) {}
-return;
-}
-});
-}
-function afaRun(list, opts) {
-opts = opts || {};
-var runMode = opts.mode || (opts.autoComplete ? 'complete' : 'force');
-var autoComplete = runMode === 'complete' || !!opts.autoComplete;
-var completeOnly = runMode === 'complete' || !!opts.completeOnly || autoComplete;
-_afaRunning = true; _afaStop = false;
-_afaDone = Object.create(null);
-var partialRefs = Object.create(null);
-list.forEach(function(it){ if (it.partial) partialRefs[it.ref] = true; });
-var btn = document.getElementById('cbt-afa-btn');
-afaSetBtn('⏹ Stop', true);
-afaProgressView(runMode);
-var results = [], i = 0;
-var afaNextTimer = 0;
-var afaNextResume = null;
-function resumePendingStep() {
-if (!afaNextResume) return;
-var fn = afaNextResume;
-afaNextResume = null;
-if (afaNextTimer) {
-clearTimeout(afaNextTimer);
-afaNextTimer = 0;
-}
-fn();
-}
-function onRunVisibilityChange() {
-if (!document.hidden || !afaNextResume) return;
-if (afaNextTimer) {
-clearTimeout(afaNextTimer);
-afaNextTimer = 0;
-}
-Promise.resolve().then(resumePendingStep);
-}
-document.addEventListener('visibilitychange', onRunVisibilityChange);
-function finish() {
-_afaRunning = false;
-try { document.removeEventListener('visibilitychange', onRunVisibilityChange); } catch(eVis) {}
-if (afaNextTimer) {
-clearTimeout(afaNextTimer);
-afaNextTimer = 0;
-}
-afaNextResume = null;
-afaSetBtn('▶ Run', false);
-var stopped = _afaStop;
-afaRefreshJobData().then(function(){
-var stillThere = Object.create(null), retryable = 0;
-try {
-afaScanPartiallyBatched().forEach(function(x){
-stillThere[x.ref] = true;
-if (x.id) stillThere[x.id] = true;
-});
-} catch(e) {}
-results.forEach(function(r){
-if (partialRefs[r.ref] && stillThere[r.ref]) { r.retry = true; retryable++; }
-});
-_afaDone = Object.create(null);
-afaSummary(results, stopped, retryable, runMode);
-});
-}
-function next(delay) {
-i++;
-afaNextResume = function() {
-step();
-};
-if (document.hidden) {
-Promise.resolve().then(resumePendingStep);
-return;
-}
-afaNextTimer = setTimeout(
-resumePendingStep,
-delay == null ? AFA_DELAY_MS : delay
-);
-}
-function step() {
-if (_afaStop || i >= list.length) return finish();
-var item = list[i];
-afaProgress(i + 1, list.length, item.ref, results);
-if (!item.id) { results.push({ ref: item.ref, ok: false, msg: 'task ID not found' }); return next(20); }
-if (_afaDone[item.id]) { results.push({ ref: item.ref, skip: true, ok: false, msg: 'already handled in this run' }); return next(20); }
-function doneResult(row, delay) {
-results.push(row);
-afaProgress(i + 1, list.length, item.ref, results);
-next(delay == null ? AFA_DELAY_MS : delay);
-}
-function forceNow(noteWhy) {
-_afaDone[item.id] = true;
-return afaForceAssign(item.id).then(function(r){
-if (r.ok) {
-if (runMode === 'partial' &&
-item.partial &&
-item.id &&
-item.ref) {
-cbtRememberForcedPartial(
-item.id,
-item.ref
-);
-}
-doneResult({ ref: item.ref, id: item.id, ok: true, msg: 'Force Assigned (HTTP ' + r.status + ')' + (noteWhy ? ' \u2014 ' + noteWhy : '') });
-} else {
-var why = r.status ? ('HTTP ' + r.status) : 'no response';
-if (r.body) why += ' \u2014 ' + String(r.body).replace(/\s+/g, ' ').slice(0, 90);
-doneResult({ ref: item.ref, ok: false, msg: why });
-}
-});
-}
-function continueWithoutCompletion(probeReason) {
-if (item.partial) {
-afaVerifyForcible(item).then(function(v){
-if (!v.eligible) {
-doneResult({ ref: item.ref, skip: true, ok: false, msg: 'partially batched \u2014 ' + v.reason }, 120);
-return;
-}
-forceNow('partially batched' + (probeReason ? '; ' + probeReason : ''));
-});
-return;
-}
-if (item.completeCandidate && !item.unassignable) {
-doneResult({ ref: item.ref, skip: true, ok: false, msg: probeReason || 'Complete Task not available' }, 80);
-return;
-}
-var live = afaScanDashboard();
-var still = live.some(function(x){ return x.id ? x.id === item.id : x.ref === item.ref; });
-if (!still) {
-doneResult({ ref: item.ref, skip: true, ok: false, msg: 'no longer unassignable \u2014 skipped' }, 60);
-return;
-}
-forceNow(probeReason || '');
-}
-if (runMode === 'partial' && !item.partial) {
-doneResult({ ref: item.ref, skip: true, ok: false, msg: 'Skipped \u2014 not a Partially Batched cart' }, 60);
-return;
-}
-if (runMode === 'force' && item.partial) {
-doneResult({ ref: item.ref, skip: true, ok: false, msg: 'Skipped \u2014 use Partially Batched button' }, 60);
-return;
-}
-if (autoComplete || completeOnly) {
-if (item.partial) {
-doneResult({ ref: item.ref, skip: true, ok: false, msg: 'Skipped \u2014 Partially Batched is Force Assign only' }, 80);
-return;
-}
-_afaDone[item.id] = true;
-afaCompleteTask(item.id).then(function(r){
-if (_afaStop) return finish();
-if (afaCompletedOk(r)) {
-doneResult({ ref: item.ref, id: item.id, ok: true, msg: 'Completed \u2014 server allowed Complete Task' });
-return;
-}
-if (!r || !r.status || r.status === 401 || r.status === 403 || r.status >= 500) {
-var hardWhy = (!r || !r.status)
-? ((r && r.body) ? String(r.body) : 'no response')
-: ('HTTP ' + r.status + (r.body ? ' \u2014 ' + String(r.body).replace(/\s+/g, ' ').slice(0, 80) : ''));
-doneResult({ ref: item.ref, ok: false, msg: 'Complete Task check failed \u2014 ' + hardWhy });
-return;
-}
-var rejectWhy = 'Skipped \u2014 Complete Task not allowed';
-if (r.status) rejectWhy += ' (HTTP ' + r.status + ')';
-if (r.ok && r.body) rejectWhy += ' \u2014 response ' + String(r.body).replace(/\s+/g, ' ').slice(0, 50);
-doneResult({ ref: item.ref, skip: true, ok: false, msg: rejectWhy }, 80);
-});
-return;
-}
-continueWithoutCompletion('');
-}
-step();
-}
-var AC_MIN_CHARS = 2;
-var AC_MAX_ROWS = 12;
-var _acDrop = null, _acInput = null, _acItems = [], _acIdx = -1;
-var _acHost = null;
-var _acWatch = null, _acRect = '';
-function acRealTarget(e) {
-try {
-if (typeof e.composedPath === 'function') {
-var path = e.composedPath();
-if (path && path.length) return path[0];
-}
-} catch(err) {}
-return e.target;
-}
-function acFindKatInput(scope) {
-var modal = scope ||
-document.querySelector('kat-modal[data-testid="assign-modal"]') ||
-document.querySelector('kat-modal');
-if (!modal) return null;
-var group = modal.querySelector('kat-input-group.assign-searchbar') ||
-(modal.shadowRoot && modal.shadowRoot.querySelector('kat-input-group.assign-searchbar')) ||
-modal.querySelector('kat-input-group') ||
-(modal.shadowRoot && modal.shadowRoot.querySelector('kat-input-group'));
-if (!group) return null;
-var host = group.querySelector('kat-input[data-testid="assign-searchbar-input"]') ||
-(group.shadowRoot && group.shadowRoot.querySelector('kat-input[data-testid="assign-searchbar-input"]')) ||
-group.querySelector('kat-input') ||
-(group.shadowRoot && group.shadowRoot.querySelector('kat-input'));
-if (!host) return null;
-var input = (host.shadowRoot && host.shadowRoot.querySelector('input[part="input"][placeholder="Enter associate ID"]')) ||
-(host.shadowRoot && host.shadowRoot.querySelector('input[part="input"]')) ||
-(host.shadowRoot && host.shadowRoot.querySelector('input')) ||
-host.querySelector('input');
-if (!input) return null;
-return { host: host, input: input };
-}
-function acDeepFindInput(root, depth) {
-if (!root || depth > 6) return null;
-var nodes;
-try { nodes = root.querySelectorAll('*'); } catch(e) { return null; }
-for (var i = 0; i < nodes.length; i++) {
-var n = nodes[i];
-if (n.tagName === 'INPUT' && acIsAssociateField(n)) return { host: n.getRootNode && n.getRootNode().host || null, input: n };
-if (n.shadowRoot) {
-var found = acDeepFindInput(n.shadowRoot, depth + 1);
-if (found) return found;
-}
-}
-return null;
-}
-function acIsOurs(el) {
-if (!el || !el.id) return false;
-return el.id.indexOf('cbt-') === 0;
-}
-function acContextText(el) {
-var bits = [];
-try {
-if (el.id) {
-var lab = document.querySelector('label[for="' + (window.CSS && CSS.escape ? CSS.escape(el.id) : el.id) + '"]');
-if (lab) bits.push(lab.textContent || '');
-}
-var wrapLab = el.closest ? el.closest('label') : null;
-if (wrapLab) bits.push(wrapLab.textContent || '');
-var p = el.parentElement;
-for (var i = 0; i < 3 && p; i++) { bits.push(p.textContent || ''); p = p.parentElement; }
-} catch(e) {}
-return bits.join(' ').slice(0, 400);
-}
-function acIsSearchResolvePage() {
-if (!isOutboundSite()) return false;
-var path = (location.pathname || '').toLowerCase();
-if (/search[^a-z0-9]*and[^a-z0-9]*resolve|search[^a-z0-9]*resolve/.test(path)) return true;
-try {
-var heads = document.querySelectorAll('h1,h2,h3,[role="heading"]');
-for (var i = 0; i < heads.length; i++) {
-var t = (heads[i].textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
-if (t === 'search and resolve') return true;
-}
-} catch(e) {}
-return false;
-}
-function acSearchResolveModeIsAssociate(input) {
-var scope = null;
-try {
-scope = input.closest('form') ||
-input.closest('[class*="search"]') ||
-input.parentElement;
-} catch(e) {
-scope = input.parentElement;
-}
-try {
-var selects = (scope || document).querySelectorAll('select');
-for (var i = 0; i < selects.length; i++) {
-var s = selects[i];
-var txt = '';
-try {
-txt = ((s.options && s.selectedIndex >= 0 && s.options[s.selectedIndex])
-? s.options[s.selectedIndex].textContent
-: s.value) || '';
-} catch(e2) { txt = s.value || ''; }
-txt = txt.replace(/\s+/g, ' ').trim().toLowerCase();
-if (/associate\s*id|associate/.test(txt)) return true;
-}
-} catch(e3) {}
-try {
-var root = scope || document;
-var custom = root.querySelectorAll('kat-select,[role="combobox"],button,[aria-haspopup="listbox"]');
-for (var j = 0; j < custom.length; j++) {
-var ct = (custom[j].textContent || custom[j].getAttribute('value') || custom[j].getAttribute('aria-label') || '')
-.replace(/\s+/g, ' ').trim().toLowerCase();
-if (/^associate\s*id$|associate\s*id/.test(ct)) return true;
-}
-} catch(e4) {}
-var own = [
-input.getAttribute('placeholder'),
-input.getAttribute('aria-label'),
-input.getAttribute('name'),
-input.getAttribute('id')
-].filter(Boolean).join(' ').toLowerCase();
-return /associate\s*id/.test(own) &&
-(/procurement\s*list\s*id/.test(own) || /order\s*id/.test(own) || /status/.test(own));
-}
-function acIsSearchResolveAssociateField(el) {
-if (!el || el.tagName !== 'INPUT' || acIsOurs(el)) return false;
-if (!isOutboundSite()) return false;
-var type = (el.getAttribute('type') || 'text').toLowerCase();
-if (type !== 'text' && type !== 'search' && type !== '') return false;
-if (el.disabled || el.readOnly) return false;
-var own = [
-el.getAttribute('placeholder'),
-el.getAttribute('aria-label'),
-el.getAttribute('name'),
-el.getAttribute('id')
-].filter(Boolean).join(' ').toLowerCase();
-var knownSearchBox =
-/associate\s*id/.test(own) &&
-(/procurement\s*list\s*id/.test(own) || (/status/.test(own) && /zone/.test(own)));
-if (!knownSearchBox && !acIsSearchResolvePage()) return false;
-return acSearchResolveModeIsAssociate(el);
-}
-function acInAssignmentContainer(el) {
-var n = el, guard = 0;
-while (n && guard++ < 200) {
-if (n.nodeType === 1) {
-var tag = (n.tagName || '').toLowerCase();
-if (tag === 'kat-modal') {
-var tid = n.getAttribute ? (n.getAttribute('data-testid') || '') : '';
-return /assign/i.test(tid);
-}
-var role = n.getAttribute ? (n.getAttribute('role') || '') : '';
-var cls = (typeof n.className === 'string') ? n.className : '';
-if (tag === 'dialog' || role === 'dialog' || role === 'alertdialog' ||
-/(^|\s|-)(modal|dialog)(\s|-|$)/i.test(cls)) {
-var txt = '';
-try { txt = (n.textContent || '').slice(0, 800); } catch(e) {}
-return /assign/i.test(txt);
-}
-}
-if (n.nodeType === 11 && n.host) { n = n.host; continue; }
-n = n.parentNode;
-}
-return false;
-}
-function acIsAssociateField(el) {
-if (!el || el.tagName !== 'INPUT' || acIsOurs(el)) return false;
-if (acIsSearchResolveAssociateField(el)) return true;
-if (!acInAssignmentContainer(el)) return false;
-var type = (el.getAttribute('type') || 'text').toLowerCase();
-if (type !== 'text' && type !== 'search' && type !== '') return false;
-if (el.disabled || el.readOnly) return false;
-var own = [el.getAttribute('placeholder'), el.getAttribute('name'), el.getAttribute('id'),
-el.getAttribute('aria-label'), el.getAttribute('ng-model'), el.getAttribute('formcontrolname')]
-.filter(Boolean).join(' ');
-var hay = (own + ' ' + acContextText(el)).toLowerCase();
-if (/associate|assoc\b|\blogin\b|user\s*id|userid|employee|\bassign/.test(hay)) return true;
-return false;
-}
-function acSearch(term) {
-term = (term || '').toLowerCase().trim();
-if (term.length < AC_MIN_CHARS) return [];
-var all = loadAllNames(), pre = [], mid = [];
-for (var k in all) {
-var idx = k.indexOf(term);
-if (idx === 0) pre.push(all[k]);
-else if (idx > 0) mid.push(all[k]);
-if (pre.length + mid.length > 400) break;
-}
-function byName(a, b){ return a.toLowerCase().localeCompare(b.toLowerCase()); }
-pre.sort(byName); mid.sort(byName);
-return { rows: pre.concat(mid).slice(0, AC_MAX_ROWS), total: pre.length + mid.length };
-}
-function acEsc(s) {
-return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
-.replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-}
-function acHighlight(name, term) {
-var i = name.toLowerCase().indexOf(term.toLowerCase());
-if (i === -1 || !term) return acEsc(name);
-return acEsc(name.slice(0, i)) + '<mark>' + acEsc(name.slice(i, i + term.length)) +
-'</mark>' + acEsc(name.slice(i + term.length));
-}
-function acClose() {
-if (_acDrop && _acDrop.parentNode) _acDrop.parentNode.removeChild(_acDrop);
-_acDrop = null; _acItems = []; _acIdx = -1;
-}
-function acPlace() {
-if (!_acDrop || !_acInput) return;
-var z = (typeof _uiScale === 'number' && _uiScale > 0) ? _uiScale : 1;
-var r = _acInput.getBoundingClientRect();
-var w = Math.max(r.width, 240);
-var left = Math.min(r.left, window.innerWidth - w - 8);
-_acDrop.style.width = (w / z) + 'px';
-_acDrop.style.left = (Math.max(8, left) / z) + 'px';
-var below = window.innerHeight - r.bottom;
-if (below < 180 && r.top > below) {
-_acDrop.style.top = 'auto';
-_acDrop.style.bottom = ((window.innerHeight - r.top + 4) / z) + 'px';
-_acDrop.style.maxHeight = (Math.max(120, r.top - 12) / z) + 'px';
-} else {
-_acDrop.style.bottom = 'auto';
-_acDrop.style.top = ((r.bottom + 4) / z) + 'px';
-_acDrop.style.maxHeight = (Math.max(120, below - 12) / z) + 'px';
-}
-}
-function acRender(term) {
-if (!_acInput) return;
-var res = acSearch(term);
-var rows = res.rows || [], total = res.total || 0;
-if (!_acDrop) {
-_acDrop = document.createElement('div');
-_acDrop.id = 'cbt-ac-drop';
-document.body.appendChild(_acDrop);
-try { _acDrop.style.zoom = _uiScale; } catch(e) {}
-try { applyPopupTheme(); } catch(e) {}
-_acDrop.addEventListener('mousedown', function(e){
-var row = e.target.closest('.cbt-ac-item');
-if (!row) return;
-e.preventDefault(); e.stopPropagation();
-acPick(row.getAttribute('data-name'));
-});
-}
-_acItems = rows;
-_acIdx = rows.length ? 0 : -1;
-var html = '<div class="cbt-ac-hd">Associates</div>';
-if (!rows.length) {
-html += '<div class="cbt-ac-none">No matches found</div>';
-} else {
-html += rows.map(function(n, i){
-return '<div class="cbt-ac-item' + (i === 0 ? ' on' : '') + '" data-name="' + acEsc(n) + '">' +
-'<span class="cbt-ac-nm">' + acHighlight(n, term) + '</span>' +
-'<span class="cbt-ac-tag">login</span>' +
-'</div>';
-}).join('');
-if (total > rows.length) {
-html += '<div class="cbt-ac-foot">' + (total - rows.length) + ' more \u2014 keep typing to narrow</div>';
-}
-}
-_acDrop.innerHTML = html;
-acPlace();
-}
-function acMove(step) {
-if (!_acDrop || !_acItems.length) return;
-_acIdx = (_acIdx + step + _acItems.length) % _acItems.length;
-var nodes = _acDrop.querySelectorAll('.cbt-ac-item');
-for (var i = 0; i < nodes.length; i++) nodes[i].classList.toggle('on', i === _acIdx);
-if (nodes[_acIdx] && nodes[_acIdx].scrollIntoView) nodes[_acIdx].scrollIntoView({ block: 'nearest' });
-}
-function acFire(el) {
-try { el.dispatchEvent(new Event('input', { bubbles: true, composed: true })); } catch(e) {}
-try { el.dispatchEvent(new Event('change', { bubbles: true, composed: true })); } catch(e) {}
-try { el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, composed: true })); } catch(e) {}
-}
-function acSetValue(el, value, host) {
-try {
-var proto = (el instanceof HTMLTextAreaElement) ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-var desc = Object.getOwnPropertyDescriptor(proto, 'value');
-if (desc && desc.set) desc.set.call(el, value); else el.value = value;
-} catch(e) { el.value = value; }
-acFire(el);
-if (host && host !== el) {
-try { host.value = value; } catch(e) {}
-try { if (host.setAttribute) host.setAttribute('value', value); } catch(e) {}
-acFire(host);
-}
-}
-function acPick(name) {
-if (!name || !_acInput) return;
-var el = _acInput;
-acSetValue(el, name, _acHost);
-acClose();
-try { el.focus(); if (el.setSelectionRange) el.setSelectionRange(name.length, name.length); } catch(e) {}
-}
-document.addEventListener('focusin', function(e){
-var el = acRealTarget(e);
-if (!acIsAssociateField(el)) return;
-acBind(el, null);
-_acInput = el;
-if ((el.value || '').trim().length >= AC_MIN_CHARS) acRender(el.value);
-}, true);
-document.addEventListener('input', function(e){
-var t = acRealTarget(e);
-if (t !== _acInput && acIsSearchResolveAssociateField(t)) {
-acBind(t, null);
-_acInput = t;
-_acHost = null;
-}
-if (t !== _acInput) return;
-var v = t.value || '';
-if (v.trim().length < AC_MIN_CHARS) { acClose(); return; }
-acRender(v);
-}, true);
-document.addEventListener('keydown', function(e){
-if (!_acDrop || acRealTarget(e) !== _acInput) return;
-if (e.key === 'ArrowDown') { e.preventDefault(); acMove(1); }
-else if (e.key === 'ArrowUp') { e.preventDefault(); acMove(-1); }
-else if (e.key === 'Enter') {
-if (_acIdx >= 0 && _acItems[_acIdx]) { e.preventDefault(); e.stopPropagation(); acPick(_acItems[_acIdx]); }
-}
-else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); acClose(); }
-else if (e.key === 'Tab') { acClose(); }
-}, true);
-document.addEventListener('mousedown', function(e){
-if (!_acDrop) return;
-var t = acRealTarget(e);
-if (_acDrop.contains(t) || _acDrop.contains(e.target) || t === _acInput) return;
-acClose();
-}, true);
-function acInModal(el) {
-var n = el, guard = 0;
-while (n && guard++ < 200) {
-if (n.nodeType === 1) {
-var tag = (n.tagName || '').toLowerCase();
-if (tag === 'kat-modal' || tag === 'dialog') return true;
-if (n.getAttribute) {
-var role = n.getAttribute('role');
-if (role === 'dialog' || role === 'alertdialog') return true;
-}
-var cls = (typeof n.className === 'string') ? n.className : '';
-if (/(^|\s|-)(modal|dialog|popup)(\s|-|$)/i.test(cls)) return true;
-}
-if (n.nodeType === 11 && n.host) { n = n.host; continue; }
-n = n.parentNode;
-}
-return false;
-}
-function acDeepActive() {
-var a = null;
-try { a = document.activeElement; } catch(e) { return null; }
-var guard = 0;
-while (a && a.shadowRoot && a.shadowRoot.activeElement && guard++ < 12) {
-a = a.shadowRoot.activeElement;
-}
-return a;
-}
-function acAutoFocus(input) {
-if (!input || input._cbtAcFocused) return;
-input._cbtAcFocused = true;
-var tries = 0, MAX = 40;
-function userIsElsewhere() {
-var a = acDeepActive();
-return !!(a && a !== input && a !== document.body &&
-(a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable));
-}
-function again(delay) {
-if (typeof requestAnimationFrame === 'function' && delay <= 16) requestAnimationFrame(attempt);
-else setTimeout(attempt, delay);
-}
-function attempt(){
-if (++tries > MAX || !input.isConnected) return;
-var r;
-try { r = input.getBoundingClientRect(); } catch(e) { return; }
-if (!r || (!r.width && !r.height)) { again(100); return; }
-if (acDeepActive() === input) return;
-if (userIsElsewhere()) return;
-try { input.focus({ preventScroll: true }); } catch(e) { try { input.focus(); } catch(e2) {} }
-again(tries < 6 ? 16 : 120);
-}
-attempt();
-}
-function acBind(input, host) {
-if (!input || input._cbtAcBound) { if (host && input) input._cbtAcHost = host; return; }
-input._cbtAcBound = true;
-if (host) input._cbtAcHost = host;
-if (acInModal(input)) {
-var br;
-try { br = input.getBoundingClientRect(); } catch(e) { br = null; }
-if (br && (br.width || br.height)) acAutoFocus(input);
-}
-input.addEventListener('focus', function(){
-_acInput = input; _acHost = input._cbtAcHost || null;
-if ((input.value || '').trim().length >= AC_MIN_CHARS) acRender(input.value);
-});
-input.addEventListener('input', function(){
-_acInput = input; _acHost = input._cbtAcHost || null;
-var v = input.value || '';
-if (v.trim().length < AC_MIN_CHARS) { acClose(); return; }
-acRender(v);
-});
-input.addEventListener('keydown', function(e){
-if (!_acDrop || _acInput !== input) return;
-if (e.key === 'ArrowDown') { e.preventDefault(); acMove(1); }
-else if (e.key === 'ArrowUp') { e.preventDefault(); acMove(-1); }
-else if (e.key === 'Enter') { if (_acIdx >= 0 && _acItems[_acIdx]) { e.preventDefault(); e.stopPropagation(); acPick(_acItems[_acIdx]); } }
-else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); acClose(); }
-else if (e.key === 'Tab') { acClose(); }
-});
-}
-var _acModalSeen = null;
-function acModalIsOpen(m) {
-if (!m) return false;
-var v = m.getAttribute && m.getAttribute('visible');
-if (v === 'false') return false;
-var r;
-try { r = m.getBoundingClientRect(); } catch(e) { return false; }
-return !!(r && (r.width || r.height));
-}
-function acAssignModalEl() {
-var all;
-try { all = document.querySelectorAll('kat-modal'); } catch(e) { return null; }
-var fallback = null;
-for (var i = 0; i < all.length; i++) {
-if (!acModalIsOpen(all[i])) continue;
-if (all[i].getAttribute('data-testid') === 'assign-modal') return all[i];
-if (!fallback) fallback = all[i];
-}
-return fallback;
-}
-function acGenericModalEl() {
-var sels = ['[role="dialog"]', '[role="alertdialog"]', 'dialog[open]', '.modal.in', '.modal'];
-for (var s = 0; s < sels.length; s++) {
-var nodes;
-try { nodes = document.querySelectorAll(sels[s]); } catch(e) { continue; }
-for (var i = 0; i < nodes.length; i++) {
-var n = nodes[i];
-var r;
-try { r = n.getBoundingClientRect(); } catch(e) { continue; }
-if (!r.width && !r.height) continue;
-try {
-var ins = n.querySelectorAll('input');
-for (var k = 0; k < ins.length; k++) if (acIsAssociateField(ins[k])) return n;
-} catch(e) {}
-}
-}
-return null;
-}
-function acWatchAssignModal() {
-var modal = acAssignModalEl() || acGenericModalEl();
-if (!modal) { _acModalSeen = null; return; }
-if (_acModalSeen === modal) return;
-var found = acFindKatInput(modal) || acFindKatInput();
-if (!found) {
-var deep = acDeepFindInput(modal, 0) || acDeepFindInput(document, 0);
-if (!deep) return;
-found = deep;
-}
-var rr;
-try { rr = found.input.getBoundingClientRect(); } catch(e) { rr = null; }
-if (!rr || (!rr.width && !rr.height)) return;
-_acModalSeen = modal;
-acBind(found.input, found.host);
-found.input._cbtAcFocused = false;
-acAutoFocus(found.input);
-}
-function acScanForFields() {
-try { acWatchAssignModal(); } catch(e) {}
-var found = acFindKatInput();
-if (found) { acBind(found.input, found.host); return; }
-try {
-var plain = document.querySelectorAll('input');
-for (var i = 0; i < plain.length; i++) {
-if (!plain[i]._cbtAcBound && acIsAssociateField(plain[i])) acBind(plain[i], null);
-}
-} catch(e) {}
-if (document.querySelector('kat-modal, [role="dialog"], .modal')) {
-var deep = acDeepFindInput(document, 0);
-if (deep) acBind(deep.input, deep.host);
-}
-}
-function acTick() {
-if (!_acDrop) return;
-if (!_acInput || !_acInput.isConnected) { acClose(); return; }
-var r = _acInput.getBoundingClientRect();
-if (!r.width && !r.height) { acClose(); return; }
-var sig = Math.round(r.left) + ':' + Math.round(r.top) + ':' + Math.round(r.width);
-if (sig !== _acRect) { _acRect = sig; acPlace(); }
-}
-window.addEventListener('resize', function(){
-try { applyUiScale(); } catch(e) {}
-try { _cbtAssignDestinationMeasureCache = (typeof WeakMap === 'function' ? new WeakMap() : null); } catch(eMeasureReset) {}
-try { if (_cbtAssignDestinationTextMeasureCache) _cbtAssignDestinationTextMeasureCache.clear(); } catch(eTextMeasureReset) {}
-});
-window.addEventListener('resize', function(){ if (_acDrop) acPlace(); });
-var _acScrollPlaceRAF = 0;
-function cbtAutocompleteScrollPlace() {
-if (!_acDrop || _acScrollPlaceRAF) return;
-var raf = (typeof requestAnimationFrame === 'function')
-? requestAnimationFrame
-: function(cb){ return setTimeout(cb, 16); };
-_acScrollPlaceRAF = raf(function(){
-_acScrollPlaceRAF = 0;
-if (_acDrop) {
-try { acPlace(); } catch(e) {}
-}
-});
-}
-try {
-window.addEventListener('scroll', cbtAutocompleteScrollPlace, { capture:true, passive:true });
-} catch(eAcScrollPassive) {
-window.addEventListener('scroll', cbtAutocompleteScrollPlace, true);
-}
-function acWatchRelevant() {
-if (isOutboundSite() || isTaskDetailPage()) return true;
-return !!document.querySelector('kat-modal, [role="dialog"], .modal');
-}
-function cbtAutocompleteMutationMayMatter(m) {
-if (!m) return false;
-var target = m.target && m.target.nodeType === 1 ? m.target : null;
-try {
-if (target && (
-(target.matches && target.matches('kat-modal,[role="dialog"],[role="alertdialog"],.modal,input')) ||
-(target.closest && target.closest('kat-modal,[role="dialog"],[role="alertdialog"],.modal'))
-)) {
-return true;
-}
-} catch(eTarget) {}
-var added = m.addedNodes || [];
-for (var j = 0; j < added.length; j++) {
-var n = added[j];
-if (!n || n.nodeType !== 1) continue;
-try {
-if ((n.matches && n.matches('kat-modal,[role="dialog"],[role="alertdialog"],.modal,input')) ||
-(n.querySelector && n.querySelector('kat-modal,[role="dialog"],[role="alertdialog"],.modal,input'))) {
-return true;
-}
-} catch(eAdded) {}
-}
-return false;
-}
-function startAutocompleteWatch() {
-if (_acWatch) return;
-_acMutationRun = coalesced(function(){
-if (!acWatchRelevant() && !_acDrop) return;
-acScanForFields();
-}, 140);
-_acWatch = setInterval(function(){
-try {
-if (_acDrop) acTick();
-if (!document.hidden && acWatchRelevant()) acScanForFields();
-} catch(e2) {}
-}, 5000);
-try { if (acWatchRelevant()) acScanForFields(); } catch(e3) {}
-}
-var _cbtStartupDone = false;
-function cbtResetTodayWeeklyV2() {
-var RESET_KEY = 'cbt_today_weekly_reset_v239128_v3_' + CBT_HISTORY_STORE_SCOPE;
-try {
-if (gmGet(RESET_KEY, null) || localStorage.getItem(RESET_KEY)) return;
-} catch(e0) {}
-var today = todayStr();
-var week = currentWeekStartStr();
-var empty = '{}';
-try { gmSet(STORAGE_KEY, empty); } catch(e1) {}
-try { gmSet(DATE_KEY, today); } catch(e2) {}
-try { localStorage.setItem(STORAGE_KEY, empty); } catch(e3) {}
-try { localStorage.setItem(DATE_KEY, today); } catch(e4) {}
-try { gmSet(REMOTE_HISTORY_KEY, empty); } catch(e5) {}
-try { gmSet(REMOTE_HISTORY_DATE_KEY, today); } catch(e6) {}
-try { localStorage.setItem(REMOTE_HISTORY_KEY, empty); } catch(e7) {}
-try { localStorage.setItem(REMOTE_HISTORY_DATE_KEY, today); } catch(e8) {}
-try { gmSet(OWN_WEEKLY_KEY, empty); } catch(e9) {}
-try { gmSet(WEEKLY_KEY, empty); } catch(e10) {}
-try { gmSet(WEEKLY_PERIOD_KEY, week); } catch(e11) {}
-try { localStorage.setItem(OWN_WEEKLY_KEY, empty); } catch(e12) {}
-try { localStorage.setItem(WEEKLY_KEY, empty); } catch(e13) {}
-try { localStorage.setItem(WEEKLY_PERIOD_KEY, week); } catch(e14) {}
-try { gmSet(REMOTE_WEEKLY_KEY, empty); } catch(e15) {}
-try { gmSet(REMOTE_WEEKLY_PERIOD_KEY, week); } catch(e16) {}
-try { localStorage.setItem(REMOTE_WEEKLY_KEY, empty); } catch(e17) {}
-try { localStorage.setItem(REMOTE_WEEKLY_PERIOD_KEY, week); } catch(e18) {}
-_dispHistCache = null;
-_dispWeekCache = null;
-gmSet(RESET_KEY, '1');
-try { localStorage.setItem(RESET_KEY, '1'); } catch(e19) {}
-}
-function cbtTrustedRateMigration() {
-var KEY = 'cbt_trusted_rate_migration_v23940';
-try {
-if (gmGet(KEY, null) || localStorage.getItem(KEY)) return;
-} catch(e0) {}
-try {
-var h = null;
-var gh = gmGet(STORAGE_KEY, null);
-if (gh) h = typeof gh === 'string' ? JSON.parse(gh) : gh;
-if (!h) h = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-if (h && typeof h === 'object') {
-var cleanH = sanitizeHistory(h);
-var hJson = JSON.stringify(cleanH);
-gmSet(STORAGE_KEY, hJson);
-localStorage.setItem(STORAGE_KEY, hJson);
-}
-} catch(e1) {}
-try {
-var wk = null;
-var gw = gmGet(OWN_WEEKLY_KEY, null);
-if (gw) wk = typeof gw === 'string' ? JSON.parse(gw) : gw;
-if (!wk) wk = JSON.parse(localStorage.getItem(OWN_WEEKLY_KEY) || '{}');
-if (wk && typeof wk === 'object') {
-var cleanW = sanitizeWeekly(wk);
-var wJson = JSON.stringify(cleanW);
-gmSet(OWN_WEEKLY_KEY, wJson);
-localStorage.setItem(OWN_WEEKLY_KEY, wJson);
-}
-} catch(e2) {}
-try {
-var peaks = hofLoadPeaks(), cleanP = {};
-for (var pk in peaks) {
-if (Number(peaks[pk] && peaks[pk].rate) > 0 &&
-Number(peaks[pk].rate) <= CBT_MAX_VALID_RATE) cleanP[pk] = peaks[pk];
-}
-hofSavePeaks(cleanP);
-var latest = hofLoadLatest(), cleanL = {};
-for (var lk in latest) {
-if (Number(latest[lk] && latest[lk].rate) > 0 &&
-Number(latest[lk].rate) <= CBT_MAX_VALID_RATE) cleanL[lk] = latest[lk];
-}
-hofSaveLatest(cleanL);
-} catch(e3) {}
-_dispHistCache = null;
-_dispWeekCache = null;
-gmSet(KEY, '1');
-try { localStorage.setItem(KEY, '1'); } catch(e4) {}
-}
-function installRouteHealth() {
-var wasDashboard = isDashboardView();
-function onRoute() {
-var routedStore = cbtStoreIdFromLocation();
-if (routedStore && STORE_ID && String(routedStore) !== String(STORE_ID)) {
-location.reload();
-return;
-}
-var nowDashboard = isDashboardView();
-var leavingDashboard = !nowDashboard && wasDashboard;
-var returnedToDashboard = nowDashboard && !wasDashboard;
-if (leavingDashboard) {
-try { cbtTimerSnapshotVisibleTargets(); } catch(eTimerSnapshot) {}
-}
-wasDashboard = nowDashboard;
-if (!nowDashboard) {
-try { cbtStopTimerRouteRepair(); } catch(eTimerRepairStop) {}
-detachMainPanel();
-}
-if (returnedToDashboard) {
-try { cbtStartTimerRouteRepair(); } catch(eTimerRepairStart) {}
-_cbtLiveDashboardSyncPending = true;
-_cbtStaleLiveZeroTaskPolls = 0;
-requestLiveRender();
-}
-_fastMountUntil = Date.now() + 15000;
-try { ensureSortAttachment(); } catch(e0) {}
-panelHealthCheck();
-if (returnedToDashboard) {
-try { pollActiveTasks(); } catch(e1) {}
-try { fetchAndUpdate(); } catch(e2) {}
-}
-}
-var _push = history.pushState, _repl = history.replaceState;
-history.pushState = function () {
-try { if (isDashboardView()) cbtTimerSnapshotVisibleTargets(); } catch(eTimerPushSnapshot) {}
-var r = _push.apply(this, arguments);
-onRoute();
-return r;
-};
-history.replaceState = function () {
-try { if (isDashboardView()) cbtTimerSnapshotVisibleTargets(); } catch(eTimerReplaceSnapshot) {}
-var r = _repl.apply(this, arguments);
-onRoute();
-return r;
-};
-window.addEventListener('popstate', onRoute);
-window.addEventListener('hashchange', onRoute);
-window.addEventListener('pageshow', function(){
-if (!isDashboardView()) return;
-try { cbtStartTimerRouteRepair(); } catch(eTimerPageShow) {}
-});
-var lastPath = location.pathname + location.hash;
-var hbBoot = Date.now();
-var hbLastLive = hbBoot, hbLastSecond = hbBoot, hbLastHealth = hbBoot;
-var hbLastTaskPoll = hbBoot, hbLastStatsPoll = hbBoot, hbLastTimers = hbBoot;
-var CBT_LIVE_REFRESH_MS = 4500;
-var CBT_STATS_REFRESH_MS = 9000;
-setInterval(function () {
-var nowMs = Date.now();
-var nowPath = location.pathname + location.hash;
-if (nowPath !== lastPath) {
-lastPath = nowPath;
-onRoute();
-}
-if (nowMs - hbLastLive >= 1000) {
-hbLastLive = nowMs;
-if (isComoSite()) {
-try { tickLive(); } catch(eLiveTick) {}
-}
-}
-if (nowMs - hbLastSecond >= 1000) {
-hbLastSecond = nowMs;
-if (!document.hidden && boardIsMisplaced()) detachMainPanel();
-if (isComoSite()) {
-try { tickTimers(); } catch(eTimerTick) {}
-}
-}
-if (nowMs - hbLastHealth >= PANEL_HEALTH_MS) {
-hbLastHealth = nowMs;
-try { panelHealthCheck(); } catch(eHealth) {}
-// Cheap container health check only every 5s. This does not re-sort a healthy
-// grid; it only reconnects the scoped timer watcher if Amazon replaced the
-// whole task container.
-if (isDashboardView() && (!_attached || !_attached.isConnected)) {
-try { ensureSortAttachment(); } catch(eAttachHealth) {}
-}
-}
-if (nowMs - hbLastTaskPoll >= CBT_LIVE_REFRESH_MS) {
-hbLastTaskPoll = nowMs;
-if (!document.hidden && isComoSite() && isDashboardView()) {
-try { pollActiveTasks(); } catch(ePoll) {}
-}
-}
-if (nowMs - hbLastStatsPoll >= CBT_STATS_REFRESH_MS) {
-hbLastStatsPoll = nowMs;
-if (!document.hidden && isComoSite() && isDashboardView()) {
-try { fetchAndUpdate(); } catch(eStats) {}
-}
-}
-// MutationObserver repairs normal timer changes.  This is only a low-frequency
-// safety scan instead of walking all task cards every 15 seconds.
-if (nowMs - hbLastTimers >= 60000) {
-hbLastTimers = nowMs;
-if (isComoSite() && !document.hidden && isDashboardView()) {
-if (cbtIsActivelyScrolling()) {
-cbtRunAfterScroll('timer-safety-scan', function(){
-try { injectAllTimers(); } catch(eTimerScan) {}
-});
-} else {
-try { injectAllTimers(); } catch(eTimerScan) {}
-}
-}
-}
-if (Date.now() < _fastMountUntil && !document.hidden && isDashboardView()) {
-var mp = document.getElementById('cbt-panel');
-if (!mp || !mp.isConnected) {
-try { panelHealthCheck(); } catch(eFast) {}
-}
-}
-}, 1000);
-}
+    var memoKey = str.toUpperCase();
+    if (Object.prototype.hasOwnProperty.call(_parseTimeMemo, memoKey)) {
+      return _parseTimeMemo[memoKey];
+    }
 
-// v23.9.204 — reload-smooth startup only.
-// Keep every feature/result the same, but never make Amazon's first visible
-// reload frame compete with warm-cache ingestion, full timer scans, sorting,
-// Firebase startup, stats startup, and history/name storage work at once.
-function cbtStartupNextFrame(fn) {
-var raf = (typeof requestAnimationFrame === 'function')
-? requestAnimationFrame
-: function(cb){ return setTimeout(cb, 16); };
-raf(function(){
-setTimeout(function(){ try { fn(); } catch(e) {} }, 0);
-});
-}
-function cbtLiveWarmHydrateStartupBatched(done) {
-var p = null;
-try { p = cbtLiveWarmRead(); } catch(e0) {}
-if (!p || !Array.isArray(p.items) || !p.items.length) {
-if (typeof done === 'function') cbtStartupNextFrame(done);
-return;
-}
-var i = 0;
-var count = 0;
-var perFrame = 6;
-function step() {
-var end = Math.min(p.items.length, i + perFrame);
-for (; i < end; i++) {
-var item = p.items[i];
-if (!item || item.shortClientRef == null || !cbtIsLiveBatch(item)) continue;
-var ref = String(item.shortClientRef);
-try {
-if (ingestItem(item, false)) {
-_cbtWarmLiveRefs.add(ref);
-count++;
-}
-} catch(e1) {}
-}
-if (i < p.items.length) {
-cbtStartupNextFrame(step);
-return;
-}
-try { if (count && activeTab === 'live') requestLiveRender(); } catch(e2) {}
-if (typeof done === 'function') cbtStartupNextFrame(done);
-}
-cbtStartupNextFrame(step);
-}
-function cbtInjectAllTimersStartupBatched() {
-if (!isDashboardView()) return;
-var cards = [];
-var headers = [];
-try { cards = Array.prototype.slice.call(document.querySelectorAll('job-card')); } catch(e0) {}
-try { headers = Array.prototype.slice.call(document.querySelectorAll('div.row.job-card-header')); } catch(e1) {}
-var ci = 0;
-var hi = 0;
-var perFrame = 6;
-function step() {
-var budget = perFrame;
-while (ci < cards.length && budget > 0) {
-var card = cards[ci++];
-budget--;
-if (!card || !card.isConnected) continue;
-if (isInExcludedSection(card)) {
-try { card.querySelectorAll('.etf-col-cell').forEach(function(col){ col.remove(); }); } catch(e2) {}
-continue;
-}
-var row = null;
-try { row = card.querySelector('div.row'); } catch(e3) {}
-if (row) {
-try { injectRowTimer(row); } catch(e4) {}
-}
-}
-while (ci >= cards.length && hi < headers.length && budget > 0) {
-var header = headers[hi++];
-budget--;
-if (!header || !header.isConnected) continue;
-var insideCard = null;
-try { insideCard = header.closest('job-card'); } catch(e5) {}
-if (insideCard) continue;
-if (isInExcludedSection(header)) {
-try { header.querySelectorAll('.etf-col-cell').forEach(function(col){ col.remove(); }); } catch(e6) {}
-continue;
-}
-try { injectRowTimer(header); } catch(e7) {}
-}
-if (ci < cards.length || hi < headers.length) cbtStartupNextFrame(step);
-}
-cbtStartupNextFrame(step);
-}
-function startCoreFeatures() {
-try {
-if (!style.isConnected) document.head.appendChild(style);
-} catch(e) {}
-try {
-_uiScale = loadUiScale();
-_uiScaleLoaded = true;
-} catch(e2) {
-_uiScale = UI_SCALE_DEFAULT;
-}
-_fastMountUntil = Date.now() + 60000;
+    var h = parseInt(m[1], 10), mn = parseInt(m[2], 10);
+    var ap = m[3] ? m[3].toUpperCase() : null;
+    if (ap === 'PM' && h < 12) h += 12;
+    if (ap === 'AM' && h === 12) h = 0;
 
-// Reload-smooth rule: first mount only the visible dashboard shell. Everything
-// else starts in later frames/idle turns so the page never gets one large COMO
-// startup task while Amazon is painting its own dashboard.
-try { cbtTimerLoadRouteCache(); } catch(eTimerCacheLoad) {}
-try { if (isDashboardView()) injectPanel(); } catch(e7) {}
+    var result = null;
+    try {
+      var fullStr = dateStr + 'T' + String(h).padStart(2,'0') + ':' + String(mn).padStart(2,'0') + ':00';
+      result = new Date(fullStr + ' ' + Intl.DateTimeFormat('en-US', {
+        timeZone: tz, timeZoneName: 'short'
+      }).formatToParts(now).find(function(p){ return p.type === 'timeZoneName'; }).value).getTime();
+      if (isNaN(result)) throw new Error('fallback');
+      if (result > Date.now() + 8 * 3600000) result -= 86400000;
+    } catch(e) {
+      var d = new Date(); d.setHours(h, mn, 0, 0);
+      if (d.getTime() > Date.now() + 8 * 3600000) d.setDate(d.getDate() - 1);
+      result = d.getTime();
+    }
 
-window.addEventListener('load', function(){
-cbtIdle(function(){ try { panelHealthCheck(); } catch(e4) {} }, 900);
-}, { once:true });
+    _parseTimeMemo[memoKey] = result;
+    return result;
+  }
 
-// Route/timer repair starts in its own frame.
-cbtStartupNextFrame(function(){
-try { installRouteHealth(); } catch(eRoute) {}
-try { if (isDashboardView()) cbtStartTimerRouteRepair(); } catch(eTimerBootRepair) {}
-try { cbtStartTodayBoundaryClock(); } catch(e10) {}
-});
+  function getBatchTarget(card) {
+    /* textContent does not force a layout flush; innerText can. */
+    var text = card.textContent || '';
+    var matches = text.match(/\b(\d{1,2}:\d{2}\s*(?:AM|PM))\b/gi);
+    if (!matches) return null;
+    var times = matches.map(parseTime).filter(Boolean);
+    return times.length ? Math.min.apply(null, times) : null;
+  }
 
-// v23.9.211 NoLag: no continuous assignment-sync startup.  The silent
-// cross-computer lock is acquired only when an assignment is actually attempted.
+  function sortNow(container) {
+    if (_sorting) return;
+    var cards = Array.from(container.querySelectorAll(':scope > job-card'));
+    if (cards.length < 2) return;
+    var data = cards.map(function (card) { return { card: card, btMs: getBatchTarget(card) }; });
+    data.sort(function (a, b) {
+      var hasA = a.btMs != null, hasB = b.btMs != null;
+      if (hasA && hasB) return a.btMs - b.btMs;
+      if (hasA) return -1; if (hasB) return 1; return 0;
+    });
+    var current = Array.from(container.querySelectorAll(':scope > job-card'));
+    if (data.every(function (item, i) { return item.card === current[i]; })) return;
+    _sorting = true;
+    var frag = document.createDocumentFragment();
+    data.forEach(function (item) { frag.appendChild(item.card); });
+    container.appendChild(frag);
+    _sorting = false;
+  }
 
-// Cached Live rows are ingested in tiny frame-sized batches. Fresh backend Live
-// starts after that cache is finished, preserving the existing "fresh wins"
-// behavior without a synchronous reload spike.
-cbtLiveWarmHydrateStartupBatched(function(){
-if (isComoSite()) {
-try { pollActiveTasks(); } catch(eLiveStart) {}
-}
-});
+  function attach(container) {
+    if (_attached === container) return;
+    if (_sortObserver) _sortObserver.disconnect();
+    _attached = container;
+    sortNow(container);
+    _sortObserver = new MutationObserver(function (mutations) {
+      if (_sorting) return;
+      for (var i = 0; i < mutations.length; i++) {
+        if (mutations[i].type === 'childList') {
+          sortNow(container);
+          return;
+        }
+      }
+    });
+    _sortObserver.observe(container, { childList: true });
 
-// Fresh staffing stats begin after the visible panel has had a paint opportunity.
-cbtStartupNextFrame(function(){
-if (isComoSite() && (!_statsLastRequestAt || (Date.now() - _statsLastRequestAt) > 700)) {
-try { fetchAndUpdate(); } catch(eStatsStart) {}
-}
-});
+    /* v23.9.93 SPA handoff fix: Amazon replaces the entire Tasks container
+       when navigating away and back. Rebind the lightweight Time Left watcher
+       AND immediately restore timers for rows that already existed before the
+       new observer attached. This removes the visible disappear/reappear gap
+       without bringing back a document-wide timer observer. */
+    try {
+      if (typeof ensureTimerWatcherAttachment === 'function' &&
+          typeof restoreTimersForContainer === 'function' &&
+          timerWatcher && timerWatcher.__cbtStarted) {
+        ensureTimerWatcherAttachment(container);
+        restoreTimersForContainer(container);
+        try { _timerSafetyCardCount = container.querySelectorAll('job-card').length; } catch(eCount) {}
+      }
+    } catch(eTimerAttach) {}
 
-// Stable visible task order: initial Batch Target sort, then preserve exact
-// positions through Amazon refreshes. Only a real Batch Target change can move
-// a task after that.
-cbtIdle(function(){
-try { ensureSortAttachment(); } catch(e6) {}
-}, 850);
+    /* Once we have the actual job-card container, stop watching the entire
+       Angular document. The local container observer above is sufficient. */
+    try {
+      if (bodyWatcher) bodyWatcher.disconnect();
+      _bodyWatcherStarted = false;
+    } catch(e) {}
+  }
 
-// Preserve the exact Time Left logic, but split the one initial full scan over
-// small frames. The normal MutationObserver/ticker behavior is unchanged after.
-cbtIdle(function(){
-try {
-cbtRetargetTimerWatcher((_attached && _attached.isConnected) ? _attached : getContainer());
-cbtInjectAllTimersStartupBatched();
-} catch(e12) {}
-}, 1000);
+  function getContainer() {
+    var c = document.querySelector('div.container-fluid.job-cards');
+    if (c) return c;
+    var first = document.querySelector('job-card');
+    return first ? first.parentElement : null;
+  }
 
-// v23.9.211 NoLag: do not attach the broad body-wide panel MutationObserver.
-// Route heartbeat/panel health recovery remains, and autocomplete has its own
-// lightweight relevance-gated interval.
-cbtIdle(function(){
-try { startAutocompleteWatch(); } catch(e9) {}
-}, 1250);
-}
+  var _bodyWatcherStarted = false;
+  var bodyWatcher = new MutationObserver(coalesced(function () {
+    var c = getContainer();
+    if (c) attach(c);
+  }, 80));
 
-function startBackgroundFeatures() {
-// Non-critical reload work is intentionally serialized. These functions keep
-// the same data/side effects; they simply no longer compete in the same reload
-// window and cause a visible main-thread pause.
-cbtIdle(function(){
-try { cbtResetTodayWeeklyV2(); } catch(eReset) {}
-}, 1800);
-setTimeout(function(){ cbtIdle(function(){
-try { cbtTrustedRateMigration(); } catch(e0) {}
-}, 1800); }, 350);
-setTimeout(function(){ cbtIdle(function(){
-try { cbtBatchEventsPull(); } catch(eEvents) {}
-}, 1800); }, 750);
-setTimeout(function(){ cbtIdle(function(){
-try { syncPull(function(){ syncPush(); }); } catch(e2) {}
-}, 1800); }, 1200);
-setTimeout(function(){ cbtIdle(function(){
-try { syncNamesFromAllTabs(); } catch(e3) {}
-}, 1800); }, 1700);
-// Full localStorage name discovery is intentionally NOT run during dashboard
-// startup. renderNames() performs the same scan on demand when the Names tab is
-// opened, avoiding a large JSON/localStorage parsing spike several seconds after
-// every reload while preserving the Names feature.
+  function ensureSortAttachment() {
+    if (!isComoSite() || !isDashboardView()) {
+      /* v23.9.93: do not leave observers attached to a detached Tasks tree
+         while the user is on another COMO page. Besides avoiding stale work,
+         clearing these references guarantees a clean immediate rebind when the
+         dashboard route returns. */
+      try { bodyWatcher.disconnect(); } catch(e) {}
+      try { if (_sortObserver) _sortObserver.disconnect(); } catch(eSort) {}
+      try { if (typeof timerWatcher !== 'undefined' && timerWatcher) timerWatcher.disconnect(); } catch(eTimer) {}
+      _bodyWatcherStarted = false;
+      _attached = null;
+      try { _timerObservedContainer = null; } catch(eObs) {}
+      try { _timerMutationHosts.clear(); _timerMutationPending = false; } catch(eHosts) {}
+      return;
+    }
 
-setInterval(function(){
-if (document.hidden) return;
-cbtIdle(function(){
-if (document.hidden) return;
-if (syncNamesFromAllTabs() && activeTab === 'names') renderNames();
-}, 700);
-}, 30000);
-setInterval(function(){ if (!document.hidden) { try { cbtBatchEventsPull(); } catch(eEvents2) {} } }, 60000);
-setInterval(function(){ if (!document.hidden) syncPull(); }, 120000);
-// v23.9.213 lightweight To Accept/highlight sync: no event stream and no 1-second
-// Firebase loop. One conditional ETag request every 3 seconds while visible;
-// 304 responses do not trigger DOM scans or countdown rebinding.
-// v23.9.217: 5-second passive cross-computer snapshot cadence; assignment-time locks remain immediate.
-setTimeout(function(){
-if (!document.hidden && isComoSite() && isDashboardView()) {
-try { cbtAssignSharedProtectionPull(true); } catch(eProtectInitial) {}
-}
-}, 900);
-setInterval(function(){
-if (document.hidden || !isComoSite() || !isDashboardView()) return;
-try { cbtAssignSharedProtectionPull(false); } catch(eProtectLight) {}
-}, 5000);
+    var c = getContainer();
+    if (c) {
+      if (_attached !== c || !_attached || !_attached.isConnected) attach(c);
+      return;
+    }
 
-document.addEventListener('visibilitychange', function(){
-if (document.hidden) return;
-try { panelHealthCheck(); } catch(e9p) {}
-if (isComoSite() && isDashboardView()) {
-try { pollActiveTasks(); } catch(e9live) {}
-try { fetchAndUpdate(); } catch(e9stats) {}
-}
-try { cbtBatchEventsPull(); } catch(e9events) {}
-try { cbtAssignSharedProtectionPull(true); } catch(e9protect) {}
-try { syncPull(); } catch(e9c) {}
-});
-if (isComoSite()) {
-setTimeout(function(){ cbtIdle(function(){
-try {
-GM_xmlhttpRequest({
-method: 'GET',
-url: DRIVE_URL + '&_=' + Date.now(),
-responseType: 'json',
-onload: function(res) {
-if (res.status >= 200 && res.status < 300 && res.response) {
-batchRateCache = res.response[STORE_ID] || 200;
-}
-fetchAndUpdate();
-},
-onerror: function(){}
-});
-} catch(e9) {}
-}, 900); }, 900);
-}
-}
-function start() {
-if (_cbtStartupDone) return;
-_cbtStartupDone = true;
-MY_DEVICE_ID = getDeviceId();
-_statsStartupGraceUntil = Date.now() + 2500;
-// The tiny staffing warm cache is safe to prime synchronously. Live-cache
-// ingestion and fresh requests are deliberately deferred to post-paint startup
-// frames so document-start cannot freeze Amazon's reload.
-try { cbtStatsPrimeStartupWarm(); } catch(eWarmPrime) {}
-cbtAfterFirstPaint(startCoreFeatures, 40);
-cbtAfterFirstPaint(function(){
-cbtIdle(startBackgroundFeatures, 1600);
-}, 900);
-}
-if (document.readyState === 'loading') {
-document.addEventListener('DOMContentLoaded', start);
-} else {
-start();
-}
+    /* Only while the container does not exist do we need a document-wide
+       observer. It disconnects itself as soon as attach() succeeds. */
+    if (!_bodyWatcherStarted) {
+      try {
+        bodyWatcher.observe(document.documentElement, { childList: true, subtree: true });
+        _bodyWatcherStarted = true;
+      } catch(e2) {}
+    }
+  }
+
+  /* ══════════════════════════════════════════
+     PART 2 — TIME LEFT COLUMN
+  ══════════════════════════════════════════ */
+  function fmtTimeLeft(targetMs) {
+    var diffMs  = targetMs - Date.now();
+    var diffMin = Math.floor(Math.abs(diffMs) / 60000);
+    var diffSec = Math.floor((Math.abs(diffMs) % 60000) / 1000);
+    if (diffMs < 0) return { text: 'Overdue ' + diffMin + 'm', cls: 'overdue' };
+    if (diffMin < 10) return { text: diffMin + ':' + String(diffSec).padStart(2,'0') + ' left', cls: 'critical' };
+    return { text: diffMin + ' min left', cls: 'ok' };
+  }
+
+  function findBatchTargetCol(row) {
+    var cols = row.querySelectorAll(':scope > div[class*="col-"]');
+    for (var i = 0; i < cols.length; i++) {
+      if (/\d{1,2}:\d{2}\s*(AM|PM)/i.test(cols[i].textContent) ||
+          /batch\s*target/i.test(cols[i].textContent)) {
+        return { col: cols[i], idx: i };
+      }
+    }
+    return null;
+  }
+
+  function injectRowTimer(row) {
+    if (row.querySelector('.etf-col-cell')) return;
+    var isHeader = row.classList.contains('job-card-header');
+    var found = findBatchTargetCol(row);
+    if (!found) return;
+    var btCol  = found.col;
+    var newCol = document.createElement('div');
+    newCol.className = 'col-lg-2 etf-col-cell';
+    newCol.style.cssText = 'padding-left:5px;padding-right:5px;';
+    if (isHeader) {
+      newCol.innerHTML = '<span class="etf-col-header">\u23F1 Time Left</span>';
+    } else {
+      var btRaw = btCol.textContent.replace(/[^\d:APMapm\s]/g, '').trim();
+      var m2 = btRaw.match(/\d{1,2}:\d{2}\s*(?:AM|PM)/i);
+      var btMs = m2 ? parseTime(m2[0]) : null;
+      if (btMs) {
+        var result = fmtTimeLeft(btMs);
+        newCol.innerHTML = '<span class="etf-timeleft ' + result.cls + '" data-target="' + btMs + '">' + result.text + '</span>';
+      } else {
+        newCol.innerHTML = '<span class="etf-timeleft ok">\u2014</span>';
+      }
+    }
+    btCol.parentNode.insertBefore(newCol, btCol.nextSibling);
+  }
+
+  /* Hoisted: this was a literal inside a doubly-nested loop that runs for
+     every job card, every second. Same pattern, allocated once. */
+  var EXCLUDED_SECTION_RE = /problem\s*solve|partially\s*batched|staged\s*for\s*pickup/i;
+
+  function isInExcludedSection(el) {
+    var node = el;
+    while (node && node !== document.body) {
+      var prev = node.previousElementSibling;
+      while (prev) {
+        if (EXCLUDED_SECTION_RE.test(prev.textContent || '')) return true;
+        prev = prev.previousElementSibling;
+      }
+      if (node.parentElement) {
+        var parentPrev = node.parentElement.previousElementSibling;
+        if (parentPrev && EXCLUDED_SECTION_RE.test(parentPrev.textContent || '')) return true;
+      }
+      node = node.parentElement;
+    }
+    return false;
+  }
+
+  /* Restore Time Left only inside the newly mounted Tasks area. This is used
+     on SPA route return so we never need a full-document reinjection just to
+     repair a replaced Angular container. */
+  function restoreTimersForContainer(container) {
+    if (!container || !container.isConnected || !isDashboardView()) return;
+
+    var headers = [];
+    try { headers = Array.from(container.querySelectorAll('div.row.job-card-header')); } catch(e0) {}
+
+    /* Some COMO builds place the main header immediately outside the job-card
+       container. Check only nearby siblings/parent children; never scan the
+       whole document here. */
+    if (!headers.length) {
+      try {
+        var prev = container.previousElementSibling;
+        if (prev && prev.matches && prev.matches('div.row.job-card-header')) headers.push(prev);
+      } catch(e1) {}
+      try {
+        var par = container.parentElement;
+        if (par) {
+          Array.from(par.children || []).forEach(function(ch){
+            if (ch && ch.matches && ch.matches('div.row.job-card-header') && headers.indexOf(ch) < 0) headers.push(ch);
+          });
+        }
+      } catch(e2) {}
+    }
+
+    headers.forEach(function(row){
+      if (isInExcludedSection(row)) return;
+      injectRowTimer(row);
+    });
+
+    try {
+      container.querySelectorAll('job-card').forEach(function(card){
+        if (isInExcludedSection(card)) return;
+        var row = card.querySelector('div.row');
+        if (row) injectRowTimer(row);
+      });
+    } catch(e3) {}
+
+    /* Update the text immediately after reinjection rather than waiting for
+       the next one-second clock tick. */
+    try { tickTimers(); } catch(e4) {}
+  }
+
+  function injectAllTimers() {
+    document.querySelectorAll('div.row.job-card-header, job-card').forEach(function(el) {
+      if (isInExcludedSection(el)) {
+        el.querySelectorAll('.etf-col-cell').forEach(function(col) { col.remove(); });
+      }
+    });
+    document.querySelectorAll('div.row.job-card-header').forEach(function(row) {
+      if (isInExcludedSection(row)) return;
+      injectRowTimer(row);
+    });
+    document.querySelectorAll('job-card').forEach(function (card) {
+      if (isInExcludedSection(card)) return;
+      var row = card.querySelector('div.row');
+      if (row) injectRowTimer(row);
+    });
+  }
+
+  function tickTimers() {
+    if (document.hidden || !isDashboardView()) return;
+    document.querySelectorAll('.etf-timeleft[data-target]').forEach(function (el) {
+      var targetMs = parseInt(el.dataset.target, 10);
+      if (!targetMs) return;
+      var result = fmtTimeLeft(targetMs);
+      var nextClass = 'etf-timeleft ' + result.cls;
+      if (el.textContent !== result.text) el.textContent = result.text;
+      if (el.className !== nextClass) el.className = nextClass;
+    });
+  }
+
+  var _timerMutationHosts = new Set();
+  var _timerMutationPending = false;
+
+  function queueTimerHost(node) {
+    if (!node || node.nodeType !== 1) return;
+
+    var host = null;
+    try {
+      if (node.matches && node.matches('job-card, div.row.job-card-header')) host = node;
+      else if (node.closest) host = node.closest('job-card, div.row.job-card-header');
+    } catch(e) {}
+    if (host) _timerMutationHosts.add(host);
+
+    try {
+      node.querySelectorAll('job-card, div.row.job-card-header').forEach(function(h){
+        _timerMutationHosts.add(h);
+      });
+    } catch(e2) {}
+  }
+
+  function refreshTimerHost(host) {
+    if (!host || !host.isConnected) return;
+
+    if (isInExcludedSection(host)) {
+      try { host.querySelectorAll('.etf-col-cell').forEach(function(col){ col.remove(); }); } catch(e) {}
+      return;
+    }
+
+    var row = null;
+    if (host.matches && host.matches('div.row.job-card-header')) row = host;
+    else {
+      try { row = host.querySelector('div.row'); } catch(e2) {}
+    }
+    if (row) injectRowTimer(row);
+  }
+
+  function flushTimerMutationHosts() {
+    _timerMutationPending = false;
+    if (!isDashboardView()) { _timerMutationHosts.clear(); return; }
+
+    var hosts = Array.from(_timerMutationHosts);
+    _timerMutationHosts.clear();
+    for (var i = 0; i < hosts.length; i++) refreshTimerHost(hosts[i]);
+  }
+
+  var timerWatcher = new MutationObserver(function(mutations) {
+    if (!isDashboardView()) return;
+
+    var foundRelevant = false;
+    for (var i = 0; i < mutations.length; i++) {
+      /* Do not react to our own Time Left/stat/table DOM writes. */
+      if (cbtMutationIsOnlyOwnUi(mutations[i])) continue;
+
+      foundRelevant = true;
+
+      queueTimerHost(mutations[i].target);
+      var added = mutations[i].addedNodes || [];
+      for (var j = 0; j < added.length; j++) queueTimerHost(added[j]);
+    }
+
+    if (!foundRelevant || _timerMutationPending) return;
+    _timerMutationPending = true;
+    var raf = (typeof requestAnimationFrame === 'function')
+      ? requestAnimationFrame
+      : function(cb){ return setTimeout(cb, 16); };
+    raf(flushTimerMutationHosts);
+  });
+
+  var _timerObservedContainer = null;
+  var _timerSafetyCardCount = -1;
+  function ensureTimerWatcherAttachment(container) {
+    if (!isDashboardView()) {
+      try { timerWatcher.disconnect(); } catch(e0) {}
+      _timerObservedContainer = null;
+      return null;
+    }
+    container = container || getContainer();
+    if (!container || !container.isConnected) return null;
+    if (_timerObservedContainer === container) return container;
+    try {
+      timerWatcher.disconnect();
+      timerWatcher.observe(container, { childList: true, subtree: true });
+      _timerObservedContainer = container;
+      timerWatcher.__cbtStarted = true;
+    } catch(e1) {}
+    return container;
+  }
+
+  /* ══════════════════════════════════════════
+     PART 3 — BATCHERS + REMAINING + HOURLY RECOMMEND
+  ══════════════════════════════════════════ */
+
+  /* Recommendation design
+     ---------------------
+     The old recommendation divided remaining PACKAGES by live batcher speed.
+     That could recommend "1" even when many carts were due soon.
+
+     v23.9.87 deliberately does NOT use individual associate speed/rate.
+
+     It treats each open batching job/cart as one unit of work and asks:
+       "How many concurrent batchers are needed to clear these carts before
+        their deadlines / before the next :55 planning point?"
+
+     The recommendation is stable:
+       - :55 store time starts a new hourly planning cycle.
+       - During a cycle the number may INCREASE when rush/new urgent carts
+         arrive, but it never decreases.
+       - The recommendation cycle now turns over at :55, when the normal
+         hourly task wave begins. There is no extra wait until :57.
+       - At the next :55 the recommendation is recalculated from scratch.
+
+     CONSERVATIVE PLANNING ASSUMPTIONS:
+       - EVERY batcher is treated as slow/unpredictable for staffing.
+       - One cart consumes 20 planning-minutes of one batcher.
+         This is a fixed WORST-CASE planning unit, NOT a measured worker speed.
+       - A batcher is reusable: after finishing one cart, they can immediately
+         take another. Capacity is therefore worker-minutes across the hour,
+         not one permanently assigned batcher per cart.
+       - Keep 5 minutes of deadline safety.
+       - Reserve 12% extra cart capacity (1–4 carts) for mid-hour rush work.
+       - Normal task waves begin around :55, and staffing is recalculated at :55.
+       - Normal hourly waves run from 2:55 AM through the final 8:55 PM wave.
+       - From 9:00 PM until 2:55 AM, no NORMAL hourly wave/reserve is assumed;
+         only carts actually present are staffed. Unexpected real carts still count.
+       - Overdue carts are treated as needing attention within 8 minutes.
+  */
+
+  var CBT_REC_RELEASE_MINUTE       = 55;
+  var CBT_REC_RELEASE_FREEZE_START = 55;
+  var CBT_REC_FIRST_DROP_HOUR      = 2;   /* 2:55 AM */
+  var CBT_REC_LAST_DROP_HOUR       = 20;  /* 8:55 PM */
+  var CBT_REC_QUIET_START_HOUR     = 21;  /* 9:00 PM */
+  var CBT_REC_CART_MINUTES         = 20;
+  var CBT_REC_DEADLINE_BUFFER_MIN  = 5;
+  var CBT_REC_OVERDUE_WINDOW_MIN   = 8;
+  var CBT_REC_RUSH_RATIO           = 0.12;
+  var CBT_REC_RUSH_MIN             = 1;
+  var CBT_REC_RUSH_MAX             = 4;
+  var CBT_REC_MAX_BATCHERS         = 38;
+  var CBT_REC_STATE_PREFIX         = 'cbt_hourly_recommend_v4_release55_';
+
+  function cbtRecStoreKey() {
+    return String(STORE_ID || 'unknown').replace(/[.$#\[\]\/]/g, '_');
+  }
+
+  function cbtRecStateKey() {
+    return CBT_REC_STATE_PREFIX + cbtRecStoreKey();
+  }
+
+  function cbtRecLoadState() {
+    var key = cbtRecStateKey();
+    var raw = gmGet(key, null);
+    if (raw == null) {
+      try { raw = localStorage.getItem(key); } catch(e) {}
+    }
+    if (!raw) return null;
+    try {
+      var s = (typeof raw === 'string') ? JSON.parse(raw) : raw;
+      return s && typeof s === 'object' ? s : null;
+    } catch(e2) { return null; }
+  }
+
+  function cbtRecSaveState(state) {
+    if (!state) return;
+    var key = cbtRecStateKey();
+    var json = JSON.stringify(state);
+    gmSet(key, json);
+    try { localStorage.setItem(key, json); } catch(e) {}
+  }
+
+  function cbtRecStoreClock(nowMs) {
+    var now = new Date(nowMs || Date.now());
+    try {
+      var parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: getStoreTimezone(),
+        hour12: false,
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit'
+      }).formatToParts(now);
+
+      var o = { year:0, month:0, day:0, hour:0, minute:0, second:0 };
+      for (var i = 0; i < parts.length; i++) {
+        var p = parts[i];
+        if (p.type === 'year') o.year = parseInt(p.value,10)||0;
+        else if (p.type === 'month') o.month = parseInt(p.value,10)||0;
+        else if (p.type === 'day') o.day = parseInt(p.value,10)||0;
+        else if (p.type === 'hour') o.hour = parseInt(p.value,10)||0;
+        else if (p.type === 'minute') o.minute = parseInt(p.value,10)||0;
+        else if (p.type === 'second') o.second = parseInt(p.value,10)||0;
+      }
+      if (o.hour === 24) o.hour = 0;
+      return o;
+    } catch(e) {
+      return {
+        year: now.getFullYear(), month: now.getMonth()+1, day: now.getDate(),
+        hour: now.getHours(), minute: now.getMinutes(), second: now.getSeconds()
+      };
+    }
+  }
+
+  function cbtRecPad2(n) { return String(n).padStart(2, '0'); }
+
+  function cbtRecIsScheduledDropHour(hour) {
+    hour = Number(hour);
+    return hour >= CBT_REC_FIRST_DROP_HOUR && hour <= CBT_REC_LAST_DROP_HOUR;
+  }
+
+  function cbtRecIsQuietHours(clock) {
+    if (!clock) return false;
+    var h = Number(clock.hour) || 0;
+    var m = Number(clock.minute) || 0;
+
+    /* Quiet period starts at 9:00 PM after the final 8:55 PM wave, and lasts
+       until the next day's 2:55 AM wave begins loading. */
+    if (h >= CBT_REC_QUIET_START_HOUR || h < CBT_REC_FIRST_DROP_HOUR) return true;
+    if (h === CBT_REC_FIRST_DROP_HOUR && m < CBT_REC_RELEASE_FREEZE_START) return true;
+    return false;
+  }
+
+  function cbtRecCycleInfo(nowMs) {
+    var p = cbtRecStoreClock(nowMs);
+    var releaseSerial = Date.UTC(p.year, p.month - 1, p.day, p.hour, 0, 0);
+
+    /* Before :55, we are still inside the cycle that began at the PREVIOUS
+       hour's :55. */
+    if (p.minute < CBT_REC_RELEASE_MINUTE) releaseSerial -= 3600000;
+
+    var rd = new Date(releaseSerial);
+    var cycleKey =
+      rd.getUTCFullYear() + '-' +
+      cbtRecPad2(rd.getUTCMonth()+1) + '-' +
+      cbtRecPad2(rd.getUTCDate()) + 'T' +
+      cbtRecPad2(rd.getUTCHours()) + ':' +
+      cbtRecPad2(CBT_REC_RELEASE_MINUTE);
+
+    var minutesIntoCycle;
+    if (p.minute >= CBT_REC_RELEASE_MINUTE) {
+      minutesIntoCycle = (p.minute - CBT_REC_RELEASE_MINUTE) + p.second / 60;
+    } else {
+      minutesIntoCycle = (p.minute + (60 - CBT_REC_RELEASE_MINUTE)) + p.second / 60;
+    }
+
+    var toNextRelease = Math.max(0.25, 60 - minutesIntoCycle);
+    var scheduledDropHour = cbtRecIsScheduledDropHour(p.hour);
+    var quietHours = cbtRecIsQuietHours(p);
+
+    /* With the planning boundary now at :55, the old :55–:57 loading
+       window is intentionally empty. Quiet-hour logic still uses :55 as the
+       start of the first scheduled wave. */
+    var inReleaseWindow =
+      scheduledDropHour &&
+      p.minute >= CBT_REC_RELEASE_FREEZE_START &&
+      p.minute < CBT_REC_RELEASE_MINUTE;
+
+    return {
+      key: cycleKey,
+      hour: p.hour,
+      minute: p.minute,
+      minutesInto: minutesIntoCycle,
+      minutesToNextRelease: toNextRelease,
+      scheduledDropHour: scheduledDropHour,
+      quietHours: quietHours,
+      inReleaseWindow: inReleaseWindow
+    };
+  }
+
+  function cbtRecJobDeadlineMs(job) {
+    if (!job || typeof job !== 'object') return null;
+    var fields = [
+      'jobBatchTarget', 'batchTarget', 'batchTargetTime',
+      'targetTime', 'targetTimestamp', 'deadline'
+    ];
+    for (var i = 0; i < fields.length; i++) {
+      var ms = cbtNormalizeEpochMs(job[fields[i]]);
+      if (ms) return ms;
+    }
+    return null;
+  }
+
+  function cbtRecIsBatchingWork(job) {
+    if (!job || typeof job !== 'object') return false;
+
+    var state = String(job.operationState || job.state || '').toUpperCase();
+    var open =
+      state === 'IN_PROGRESS' ||
+      state === 'NONE' ||
+      state === 'BATCHING' ||
+      state === 'NOT_STARTED' ||
+      state === 'CREATED' ||
+      state === 'ASSIGNABLE' ||
+      state === 'UNASSIGNABLE';
+
+    if (!open) return false;
+
+    /* Do not staff the Batcher recommendation from Problem Solve / UNPACK
+       records when those labels are explicitly present in the summary. */
+    var typeText = [
+      job.destinationType, job.jobType, job.taskType,
+      job.operationType, job.workflowType
+    ].filter(Boolean).join(' ').toUpperCase();
+
+    if (typeText.indexOf('UNPACK') !== -1) return false;
+    if (typeText.indexOf('PROBLEM') !== -1 && typeText.indexOf('SOLVE') !== -1) return false;
+
+    return true;
+  }
+
+
+  function cbtRecMainTasksSnapshot() {
+    if (!isDashboardView()) return null;
+
+    var container = null;
+
+    /* Prefer the already-attached main Tasks container. */
+    if (_attached && _attached.isConnected) {
+      container = _attached;
+    } else {
+      try { container = getContainer(); } catch(e) {}
+    }
+
+    if (!container || !container.isConnected) return null;
+
+    var cards = [];
+    try {
+      cards = Array.prototype.slice.call(
+        container.querySelectorAll(':scope > job-card')
+      );
+    } catch(e2) {
+      cards = Array.prototype.slice.call(container.children || []).filter(function(el){
+        return el && el.tagName && el.tagName.toLowerCase() === 'job-card';
+      });
+    }
+
+    var refs = new Set();
+    var ids = new Set();
+
+    for (var i = 0; i < cards.length; i++) {
+      var card = cards[i];
+
+      /* Defensive exclusion: even if Amazon changes container nesting, never
+         treat these completed/non-batching sections as staffing work. */
+      try { if (isInExcludedSection(card)) continue; } catch(e3) {}
+
+      var a = null;
+      try { a = card.querySelector('a[href*="jobdetails"], a'); } catch(e4) {}
+      if (!a) continue;
+
+      var ref = String(a.textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+      if (ref) refs.add(ref);
+
+      var href = a.getAttribute('href') || '';
+      var m = href.match(/jobId=([^&#]+)/i);
+      if (m) {
+        try { ids.add(decodeURIComponent(m[1])); }
+        catch(e5) { ids.add(m[1]); }
+      }
+    }
+
+    return {
+      count: cards.filter(function(card){
+        try { return !isInExcludedSection(card); }
+        catch(e6) { return true; }
+      }).length,
+      refs: refs,
+      ids: ids
+    };
+  }
+
+  function cbtRecJobMatchesMainTasks(job, snapshot) {
+    if (!job || !snapshot) return false;
+
+    var jobId = job.jobId != null ? String(job.jobId) : '';
+    if (jobId && snapshot.ids.has(jobId)) return true;
+
+    var refFields = [
+      job.shortClientRef,
+      job.clientRef,
+      job.clientReference,
+      job.reference
+    ];
+
+    for (var i = 0; i < refFields.length; i++) {
+      if (refFields[i] == null) continue;
+      var ref = String(refFields[i]).replace(/\s+/g, ' ').trim().toLowerCase();
+      if (ref && snapshot.refs.has(ref)) return true;
+    }
+
+    return false;
+  }
+
+  function cbtRecRushReserve(openCount) {
+    if (!(openCount > 0)) return 0;
+    var r = Math.ceil(openCount * CBT_REC_RUSH_RATIO);
+    r = Math.max(CBT_REC_RUSH_MIN, r);
+    r = Math.min(CBT_REC_RUSH_MAX, r);
+    return r;
+  }
+
+  function cbtRecNeedForCount(count, availableMinutes) {
+    if (!(count > 0)) return 0;
+
+    var mins = Number(availableMinutes);
+    if (!isFinite(mins)) mins = CBT_REC_OVERDUE_WINDOW_MIN;
+
+    /* Once a deadline is missed, the safest task-count-only instruction is
+       effectively "one person per overdue cart" until the backlog is caught. */
+    if (mins <= 0) mins = CBT_REC_OVERDUE_WINDOW_MIN;
+
+    var effective = Math.max(1, mins - CBT_REC_DEADLINE_BUFFER_MIN);
+    var need = Math.ceil((count * CBT_REC_CART_MINUTES) / effective);
+
+    /* More batchers than carts cannot create more parallel cart work. */
+    if (need > count) need = count;
+    if (need < 1) need = 1;
+    return need;
+  }
+
+  function cbtRecCalculate(data, nowMs) {
+    nowMs = Number(nowMs) || Date.now();
+    var cycle = cbtRecCycleInfo(nowMs);
+
+    var jobs = Array.isArray(data)
+      ? data.filter(cbtRecIsBatchingWork)
+      : [];
+
+    /* MAIN TASKS IS AUTHORITATIVE FOR STAFFING.
+       Staged for Pickup is completed work and must never keep Recommended > 0.
+       The same is true for Problem Solve / Partially Batched.
+
+       If the dashboard visibly has zero normal Tasks, recommendation becomes
+       zero immediately even if activeJobSummary still contains a stale record. */
+    var mainTasks = cbtRecMainTasksSnapshot();
+
+    if (mainTasks) {
+      if (mainTasks.count === 0) {
+        jobs = [];
+      } else if (mainTasks.refs.size || mainTasks.ids.size) {
+        var matchedMainJobs = jobs.filter(function(job){
+          return cbtRecJobMatchesMainTasks(job, mainTasks);
+        });
+
+        /* Use exact DOM/API matches whenever we have them. During a very brief
+           Angular/API race where identifiers have not lined up yet, keep the
+           API jobs but cap them to the number of visible main Tasks below. */
+        if (matchedMainJobs.length) jobs = matchedMainJobs;
+      }
+
+      if (jobs.length > mainTasks.count) {
+        jobs = jobs.slice(0, mainTasks.count);
+      }
+    }
+
+    var openCount = jobs.length;
+    if (!openCount) {
+      return {
+        raw: 0, urgentRaw: 0, openCount: 0, rushReserve: 0,
+        overdue: 0, dueByNextRelease: 0, earliestMinutes: null,
+        cycle: cycle
+      };
+    }
+
+    var fallbackDeadline = nowMs + cycle.minutesToNextRelease * 60000;
+    var rows = [];
+    for (var i = 0; i < jobs.length; i++) {
+      var dl = cbtRecJobDeadlineMs(jobs[i]) || fallbackDeadline;
+      rows.push({ deadline: dl, job: jobs[i] });
+    }
+    rows.sort(function(a,b){ return a.deadline - b.deadline; });
+
+    var maxNeed = 0;
+    var urgentNeed = 0;
+    var overdue = 0;
+    var dueByNextRelease = 0;
+    var nextReleaseMs = nowMs + cycle.minutesToNextRelease * 60000;
+    /* Give the normal :55 → :00 handoff a tiny grace so top-of-hour targets
+       still belong to the planning cycle that began at :55. */
+    var urgentCutoff = nextReleaseMs + 3 * 60000;
+
+    for (var r = 0; r < rows.length; r++) {
+      var count = r + 1;
+      var minutes = (rows[r].deadline - nowMs) / 60000;
+      if (minutes <= 0) overdue++;
+
+      var need = cbtRecNeedForCount(count, minutes);
+      if (need > maxNeed) maxNeed = need;
+
+      if (rows[r].deadline <= urgentCutoff) {
+        dueByNextRelease = count;
+        if (need > urgentNeed) urgentNeed = need;
+      }
+    }
+
+    /* Rush reserve is used only while NORMAL hourly task waves are active.
+       The cycle now locks from the :55 release point; there is no :55–:57 wait.
+       From 9:00 PM until 2:55 AM, reserve is zero because no normal hourly wave
+       is expected; any unexpected cart that actually appears still enters jobs[]
+       immediately and can raise the recommendation from real workload. */
+    var allowRushReserve = !cycle.inReleaseWindow && !cycle.quietHours;
+    var rushReserve = allowRushReserve ? cbtRecRushReserve(openCount) : 0;
+    if (allowRushReserve) {
+      var plannedCount = openCount + rushReserve;
+      var horizonNeed = cbtRecNeedForCount(plannedCount, cycle.minutesToNextRelease);
+      if (horizonNeed > maxNeed) maxNeed = horizonNeed;
+    }
+
+    /* Final safety cap: never recommend more batchers than there are
+       currently open carts on the dashboard. */
+    var taskCap = Math.max(0, Math.min(CBT_REC_MAX_BATCHERS, openCount));
+    maxNeed = Math.max(1, Math.min(taskCap, maxNeed));
+    urgentNeed = Math.max(0, Math.min(taskCap, urgentNeed));
+
+    return {
+      raw: maxNeed,
+      urgentRaw: urgentNeed,
+      openCount: openCount,
+      rushReserve: rushReserve,
+      overdue: overdue,
+      dueByNextRelease: dueByNextRelease,
+      earliestMinutes: (rows[0].deadline - nowMs) / 60000,
+      cycle: cycle
+    };
+  }
+
+  function cbtRecLockedValue(calc) {
+    if (!calc || !calc.cycle) return 0;
+
+    var state = cbtRecLoadState();
+    var cycleKey = calc.cycle.key;
+    var taskCap = Math.max(0, Math.min(CBT_REC_MAX_BATCHERS, Number(calc.openCount) || 0));
+
+    /* Independent hard cap from the visible normal Tasks section. This clears
+       any previously locked recommendation the moment Tasks reaches 0. */
+    var mainTasks = cbtRecMainTasksSnapshot();
+    if (mainTasks) taskCap = Math.min(taskCap, Math.max(0, Number(mainTasks.count) || 0));
+
+    if (!state || state.cycleKey !== cycleKey) {
+      /* New :55 cycle: create a fresh baseline from the workload that exists
+         now. It can rise later, but it will not fall until the next :55. */
+      var firstLocked = Math.max(0, Math.min(taskCap, Number(calc.raw) || 0));
+      state = {
+        cycleKey: cycleKey,
+        locked: firstLocked,
+        baseline: firstLocked,
+        maxRaw: firstLocked,
+        startedAt: Date.now(),
+        updatedAt: Date.now()
+      };
+      cbtRecSaveState(state);
+      return state.locked;
+    }
+
+    /* If open task count falls, the locked recommendation must also fall so
+       it never exceeds the current task count visible on the dashboard. */
+    var currentLocked = Math.max(0, Math.min(taskCap, Number(state.locked) || 0));
+    if (currentLocked !== Number(state.locked)) {
+      state.locked = currentLocked;
+      state.updatedAt = Date.now();
+      cbtRecSaveState(state);
+    }
+
+    /* The old scheduled :55–:57 loading window is now empty; newly released next-hour
+       carts should not make the old hour jump. Overnight :55 timestamps are
+       not release windows and therefore do not trigger this rule. */
+    var candidate = calc.cycle.inReleaseWindow ? calc.urgentRaw : calc.raw;
+    candidate = Math.max(0, Math.min(taskCap, Number(candidate) || 0));
+
+    if (candidate > (Number(state.locked) || 0)) {
+      state.locked = candidate;
+      state.maxRaw = Math.max(Number(state.maxRaw)||0, candidate);
+      state.updatedAt = Date.now();
+      cbtRecSaveState(state);
+    }
+
+    return Math.max(0, Math.min(taskCap, Number(state.locked) || 0));
+  }
+
+  function cbtRecTooltip(calc, recommended) {
+    if (!calc) return '';
+    var parts = [];
+
+    parts.push('Locked hourly target: ' + recommended);
+    parts.push('slow-plan: 20m/cart · batchers reuse capacity after each cart');
+    parts.push(calc.openCount + ' open cart' + (calc.openCount === 1 ? '' : 's'));
+
+    if (calc.overdue > 0) {
+      parts.push(calc.overdue + ' overdue');
+    } else if (calc.earliestMinutes != null && isFinite(calc.earliestMinutes)) {
+      parts.push('earliest due in ' + Math.max(0, Math.round(calc.earliestMinutes)) + 'm');
+    }
+
+    if (calc.rushReserve > 0) parts.push('+' + calc.rushReserve + ' rush reserve');
+    if (calc.cycle && calc.cycle.quietHours) parts.push('overnight: no normal hourly drop expected');
+    parts.push('resets at next :55 store time');
+
+    return parts.join(' · ');
+  }
+
+  var _statsDomCache = {
+    inProgress: null,
+    remaining: null,
+    recommended: null,
+    deltaText: null,
+    deltaClass: null,
+    dotColor: null,
+    recTitle: null
+  };
+
+  function updateStats(inProgress, remaining, recommended, dotColor, recTitle) {
+    var elIP    = document.getElementById('cbt-stat-ip');
+    var elRem   = document.getElementById('cbt-stat-rem');
+    var elRec   = document.getElementById('cbt-stat-rec');
+    var elDot   = document.getElementById('cbt-stat-dot');
+    var elDelta = document.getElementById('cbt-stat-delta');
+
+    var recText = recommended != null ? String(recommended) : '—';
+
+    /* +N = need N more batchers; -N = N extra batchers. */
+    var actualNum = Number(inProgress);
+    var recNum = Number(recommended);
+    var deltaText = '';
+    var deltaClass = '';
+    var deltaTitle = '';
+
+    if (isFinite(actualNum) && isFinite(recNum) && recNum >= 0) {
+      var diff = recNum - actualNum;
+      if (diff > 0) {
+        deltaText = '+' + diff;
+        deltaClass = 'need-more';
+        deltaTitle = 'Need ' + diff + ' more batcher' + (diff === 1 ? '' : 's');
+      } else if (diff < 0) {
+        var extra = Math.abs(diff);
+        deltaText = '-' + extra;
+        deltaClass = 'extra';
+        deltaTitle = extra + ' extra batcher' + (extra === 1 ? '' : 's');
+      }
+    }
+
+    if (elIP && _statsDomCache.inProgress !== inProgress) {
+      elIP.textContent = inProgress;
+      _statsDomCache.inProgress = inProgress;
+    }
+    if (elRem && _statsDomCache.remaining !== remaining) {
+      elRem.textContent = remaining;
+      _statsDomCache.remaining = remaining;
+    }
+    if (elRec && _statsDomCache.recommended !== recText) {
+      elRec.textContent = recText;
+      _statsDomCache.recommended = recText;
+    }
+    if (elDelta &&
+        (_statsDomCache.deltaText !== deltaText || _statsDomCache.deltaClass !== deltaClass)) {
+      elDelta.textContent = deltaText;
+      elDelta.className = deltaClass;
+      elDelta.title = deltaTitle;
+      _statsDomCache.deltaText = deltaText;
+      _statsDomCache.deltaClass = deltaClass;
+    }
+    if (elRec && recTitle && _statsDomCache.recTitle !== recTitle) {
+      elRec.title = recTitle;
+      _statsDomCache.recTitle = recTitle;
+    }
+    if (elDot && dotColor && _statsDomCache.dotColor !== dotColor) {
+      elDot.style.background = dotColor;
+      elDot.style.boxShadow = '0 0 6px ' + dotColor;
+      _statsDomCache.dotColor = dotColor;
+    }
+
+    var old = document.getElementById('etf-ps-stats');
+    if (old) old.remove();
+  }
+
+  function removeFromHeader() {
+    /* Direct ID lookup avoids re-querying/serializing the page header every
+       stats refresh. This only removes the same legacy element as before. */
+    var old = document.getElementById('etf-stats');
+    if (old) old.remove();
+  }
+
+  var _statsFetchInFlight = false;
+  var _statsLastData = null;
+  var _statsFirstPaintVerified = false;
+  var _statsStartupAt = Date.now();
+  var _statsReadySig = '';
+  var _statsReadySince = 0;
+  var _statsReadyTimer = null;
+  var _statsFinalRefreshPending = false;
+  var _statsInitialFinalRequested = false;
+
+  function cbtStatsSnapshotSignature(main) {
+    if (!main) return 'none';
+    var refs = [];
+    var ids = [];
+    try { main.refs.forEach(function(v){ refs.push(String(v)); }); } catch(e0) {}
+    try { main.ids.forEach(function(v){ ids.push(String(v)); }); } catch(e1) {}
+    refs.sort();
+    ids.sort();
+    return String(main.count || 0) + '|' + refs.join(',') + '|' + ids.join(',');
+  }
+
+  /* First-reload accuracy gate. A browser/window load event is NOT proof that
+     Angular has finished inserting the task cards. We wait for the actual
+     Tasks snapshot to stop changing, and (when both sides have rows) for the
+     visible-card count to be reasonably aligned with activeJobSummary. This
+     prevents the transient Recommended=0 / wrong Remaining first paint. */
+  function cbtStatsFirstPaintReady(data) {
+    if (_statsFirstPaintVerified) return true;
+    if (!isDashboardView()) return false;
+
+    var main = null;
+    try { main = cbtRecMainTasksSnapshot(); } catch(e2) {}
+
+    var staffingJobs = Array.isArray(data)
+      ? data.filter(cbtRecIsBatchingWork)
+      : [];
+
+    /* If the backend already knows work exists, an empty/missing Tasks DOM is
+       definitely just an Angular reload race — never paint zero from it. */
+    if (!main) {
+      if (staffingJobs.length > 0) return false;
+      /* A genuinely empty store can have no job-card container at all. Allow
+         zero only after the document is complete and has had a short settle. */
+      return document.readyState === 'complete' && (Date.now() - _statsStartupAt) >= 350;
+    }
+    if (main.count === 0 && staffingJobs.length > 0) {
+      _statsReadySig = '';
+      _statsReadySince = 0;
+      return false;
+    }
+
+    var sig = cbtStatsSnapshotSignature(main);
+    var now = Date.now();
+    if (sig !== _statsReadySig) {
+      _statsReadySig = sig;
+      _statsReadySince = now;
+      return false;
+    }
+
+    /* Require a short quiet period. Angular normally fills the list in one or
+       two bursts, so this is fast, but it cannot expose an intermediate count. */
+    if ((now - _statsReadySince) < (main.count > 0 ? 140 : 220)) return false;
+
+    if (main.count > 0 && staffingJobs.length > 0) {
+      var maxCount = Math.max(main.count, staffingJobs.length);
+      var countGap = Math.abs(main.count - staffingJobs.length);
+      var allowedGap = Math.max(2, Math.ceil(maxCount * 0.15));
+
+      /* During a normal reload, visible Tasks and the summary endpoint converge
+         closely. If they are still far apart, wait a little longer instead of
+         painting a visibly wrong recommendation. Do not block forever if the
+         backend itself carries a stale extra row. */
+      if (countGap > allowedGap && (now - _statsReadySince) < 700) return false;
+    }
+
+    return true;
+  }
+
+  function cbtQueueFinalFirstStatsRefresh() {
+    if (_statsFirstPaintVerified || _statsInitialFinalRequested) return;
+    _statsInitialFinalRequested = true;
+    _statsFinalRefreshPending = true;
+    try { pollActiveTasks(); } catch(e3) {}
+
+    /* If a prefetch is still resolving, its completion handler launches this
+       request immediately. Otherwise start it now. */
+    if (!_statsFetchInFlight) {
+      _statsFinalRefreshPending = false;
+      fetchAndUpdate(true);
+    }
+  }
+
+  function cbtScheduleFirstStatsReveal() {
+    if (_statsFirstPaintVerified || _statsInitialFinalRequested || _statsReadyTimer) return;
+    _statsReadyTimer = setTimeout(function checkFirstStatsReady(){
+      _statsReadyTimer = null;
+      if (_statsFirstPaintVerified || _statsInitialFinalRequested) return;
+      if (!_statsLastData) {
+        /* A rare failed/aborted prefetch should not leave the first stats blank
+           until the normal interval. Retry immediately while the gate waits. */
+        if (!_statsFetchInFlight) { try { fetchAndUpdate(false); } catch(eRetry0) {} }
+        cbtScheduleFirstStatsReveal();
+        return;
+      }
+      if (!cbtStatsFirstPaintReady(_statsLastData)) {
+        cbtScheduleFirstStatsReveal();
+        return;
+      }
+
+      /* The prefetched response may already be a few hundred ms old. Once the
+         Tasks DOM is settled, request ONE brand-new snapshot and use THAT for
+         the first visible numbers. */
+      cbtQueueFinalFirstStatsRefresh();
+    }, 45);
+  }
+
+  function cbtApplyStatsData(data, forceFirstPaint) {
+    if (!Array.isArray(data)) data = [];
+    if (!forceFirstPaint && !_statsFirstPaintVerified) {
+      if (!cbtStatsFirstPaintReady(data)) {
+        cbtScheduleFirstStatsReveal();
+        return false;
+      }
+      /* Never paint the prefetched/ordinary response as the first visible
+         snapshot. Queue one request AFTER DOM readiness and paint only that. */
+      cbtQueueFinalFirstStatsRefresh();
+      return false;
+    }
+    if (forceFirstPaint) _statsFirstPaintVerified = true;
+
+    var staffingJobs = data.filter(cbtRecIsBatchingWork);
+    var inProgress = staffingJobs.filter(function (j) {
+      var st = String(j.operationState || j.state || '').toUpperCase();
+      return st === 'IN_PROGRESS' || st === 'BATCHING';
+    }).length;
+
+    /* Remaining stays package-based because that stat is useful as a
+       package backlog indicator. It is NOT used by Recommended anymore. */
+    var expected  = staffingJobs.reduce(function (sum, j) {
+      return sum + Math.max(0, Number(j.totalExpectedPackages) || 0);
+    }, 0);
+    var batched   = staffingJobs.reduce(function (sum, j) {
+      return sum + Math.max(0, Number(j.packagesBatched) || 0);
+    }, 0);
+    var collected = staffingJobs.reduce(function (sum, j) {
+      return sum + Math.max(0, Number(j.packagesCollected) || 0);
+    }, 0);
+    var remaining = Math.max(0, expected - (batched + collected));
+
+    /* Calculate Recommended at PAINT time, not request-completion time. That
+       lets the calculation see the Tasks DOM after Angular has finished its
+       first render and prevents the reload-time zero/nonzero correction. */
+    var calc = cbtRecCalculate(data, Date.now());
+    var recommended = cbtRecLockedValue(calc);
+
+    var dotColor = 'gray';
+    if (recommended > 0) {
+      if (inProgress >= recommended) {
+        dotColor = '#3fb950';
+      } else {
+        var deficit = recommended - inProgress;
+        var coverage = recommended > 0 ? inProgress / recommended : 1;
+        dotColor = (deficit >= 3 || coverage < 0.75) ? '#f85149' : '#e3b341';
+      }
+    }
+
+    updateStats(
+      inProgress,
+      remaining,
+      recommended,
+      dotColor,
+      cbtRecTooltip(calc, recommended)
+    );
+    removeFromHeader();
+    return true;
+  }
+
+  function cbtApplyPendingStats(forceFirstPaint) {
+    if (!_statsLastData) return false;
+    return cbtApplyStatsData(_statsLastData, !!forceFirstPaint);
+  }
+
+  function fetchAndUpdate(forceFirstPaint) {
+    forceFirstPaint = !!forceFirstPaint;
+    if (document.hidden) return;
+    if (_statsFetchInFlight) {
+      if (forceFirstPaint) _statsFinalRefreshPending = true;
+      return;
+    }
+    _statsFetchInFlight = true;
+    removeFromHeader();
+
+    /* Use the original fetch for script-owned stats requests so the passive
+       interceptor cannot parse/process this same payload a second time. */
+    _origFetch(COMO_BASE + '/api/store/' + STORE_ID + '/activeJobSummary?_cbt=' + Date.now(), {
+      cache: 'no-store',
+      credentials: 'include'
+    })
+      .then(function (r) {
+        if (!r || !r.ok) throw new Error('stats HTTP ' + (r ? r.status : 0));
+        return r.json();
+      })
+      .then(function (data) {
+        if (!Array.isArray(data)) data = [];
+        _statsLastData = data;
+        cbtApplyStatsData(data, forceFirstPaint);
+        if (!forceFirstPaint && !_statsFirstPaintVerified) cbtScheduleFirstStatsReveal();
+      })
+      .catch(function () {
+        if (forceFirstPaint && !_statsFirstPaintVerified) {
+          _statsInitialFinalRequested = false;
+          _statsFinalRefreshPending = false;
+          setTimeout(function(){ try { cbtScheduleFirstStatsReveal(); } catch(eRetry1) {} }, 90);
+        }
+      })
+      .then(function(){
+        _statsFetchInFlight = false;
+        /* If DOM readiness was reached while the prefetch was still finishing,
+           launch the one final fresh first-paint request immediately now. */
+        if (_statsFinalRefreshPending && !_statsFirstPaintVerified) {
+          _statsFinalRefreshPending = false;
+          fetchAndUpdate(true);
+        }
+      });
+  }
+
+  /* ══════════════════════════════════════════
+     PART 4 — BATCHER TIMER PANEL
+  ══════════════════════════════════════════ */
+  var POLL_MS = 2000, STATS_POLL_MS = 2000, TICK_MS = 1000;
+  var WARN_ELAPSED_MIN = 15, ALERT_ELAPSED_MIN = 25;
+  var WARN_RATE = 2.1, ALERT_RATE = 1.5;
+
+  /* Trusted-rate guardrail.
+     COMO packagesBatched is cumulative for the current job. A cumulative
+     package count must never be divided by a newer/reset BATCHING sub-operation
+     start. Rates above this ceiling are treated as invalid rather than shown
+     or stored as real performance. */
+  var CBT_MAX_VALID_RATE = 20;
+  /* Completed-history/Fastest data must be stricter than transient Live data.
+     Rates above 8 bags/min are treated as timing/counter mismatches and are
+     never written to Today, Weekly or Fastest. Live display keeps the broader
+     ceiling above so a transient API value does not break the live table. */
+  var CBT_MAX_TRUSTED_COMPLETED_RATE = 8;
+  var CBT_OBS_RATE_MIN_WINDOW_MS = 30000;
+  var _cbtObservedProgressByRef = Object.create(null);
+
+  /* LIVE ELAPSED / CLOCK STABILITY
+     --------------------------------
+     Live time is derived from the CURRENT BATCHING operation returned by the
+     authoritative active-jobs feed.  Passive page/API responses are still
+     useful for names/package counts, but they are not allowed to choose or
+     replace a live timer start.
+
+     Important protections:
+       - timestamps are normalized whether COMO sends seconds, milliseconds,
+         microseconds, or an ISO timestamp;
+       - when operationDetails contains more than one BATCHING operation,
+         cumulative packages use the EARLIEST credible BATCHING start for that
+         same job, preventing a newer sub-operation from resetting the timer;
+       - the first authoritative start is locked, but the API may correct that
+         lock BACKWARD if it later reveals an earlier credible start;
+       - a reused cart/shortClientRef is recognized as a NEW job by job id,
+         task id, created time, or a changed start after a missing-data gap;
+       - removed carts keep their lock only briefly, not for hours;
+       - when the response exposes an HTTP Date header, elapsed time runs from
+         a monotonic server-calibrated clock, so a bad/changing workstation
+         clock cannot make the timer jump or show the wrong duration. */
+  var _cbtBackendLastOk = 0;
+  var _cbtLiveStartByRef = Object.create(null);
+  var _cbtMissingPollsByRef = Object.create(null);
+  var CBT_MISSING_POLL_GRACE = 3;                 // ~6s at the 2s poll rate
+
+  /* Very narrow stale-Live reload fallback.
+     Only used when normal Tasks is visibly 0 but Live still shows cached
+     BATCHING names for 3 consecutive authoritative polls. */
+  var CBT_STALE_LIVE_RELOAD_POLLS = 3;            // ~6s at the 2s poll rate
+  var CBT_STALE_LIVE_RELOAD_COOLDOWN_MS = 15 * 60 * 1000;
+  var _cbtStaleLiveZeroTaskPolls = 0;
+  var CBT_START_RETAIN_AFTER_MISSING_MS = 30000;  // enough for a transient API gap
+  var CBT_START_CACHE_TTL_MS = 15 * 60 * 1000;
+  var CBT_MAX_LIVE_AGE_MS = 12 * 60 * 60 * 1000;
+
+  var _cbtClockAnchorServerMs = null;
+  var _cbtClockAnchorPerfMs = null;
+  var _cbtClockLastNowMs = 0;
+
+  function cbtPerfNow() {
+    try {
+      if (typeof performance !== 'undefined' && performance && typeof performance.now === 'function') {
+        return performance.now();
+      }
+    } catch(e) {}
+    return Date.now();
+  }
+
+  function cbtNowMs() {
+    var now;
+    if (_cbtClockAnchorServerMs != null && _cbtClockAnchorPerfMs != null) {
+      now = _cbtClockAnchorServerMs + (cbtPerfNow() - _cbtClockAnchorPerfMs);
+    } else {
+      now = Date.now();
+    }
+    if (!isFinite(now)) now = Date.now();
+    /* A clock used for an elapsed timer must never go backwards, even if the
+       device clock is corrected while the page is open. */
+    if (now < _cbtClockLastNowMs) now = _cbtClockLastNowMs;
+    else _cbtClockLastNowMs = now;
+    return now;
+  }
+
+  function cbtCalibrateServerClock(response, requestPerfMs) {
+    try {
+      if (!response || !response.headers || typeof response.headers.get !== 'function') return;
+      var raw = response.headers.get('date') || response.headers.get('Date');
+      if (!raw) return;
+      var serverMs = Date.parse(raw);
+      if (!isFinite(serverMs)) return;
+      var receivePerf = cbtPerfNow();
+      var halfRtt = Math.max(0, Math.min(2000, (receivePerf - requestPerfMs) / 2));
+      var candidateNow = serverMs + halfRtt;
+
+      if (_cbtClockAnchorServerMs == null || _cbtClockAnchorPerfMs == null) {
+        _cbtClockAnchorServerMs = candidateNow;
+        _cbtClockAnchorPerfMs = receivePerf;
+        _cbtClockLastNowMs = candidateNow;
+        return;
+      }
+
+      /* HTTP Date is normally whole-second precision. Do not re-anchor for
+         sub-second rounding noise. Only correct a material (>5s) drift, such
+         as the workstation clock being changed while the page is open. */
+      var anchoredNow = _cbtClockAnchorServerMs + (receivePerf - _cbtClockAnchorPerfMs);
+      if (Math.abs(candidateNow - anchoredNow) > 5000) {
+        _cbtClockAnchorServerMs = candidateNow;
+        _cbtClockAnchorPerfMs = receivePerf;
+        if (candidateNow > _cbtClockLastNowMs) _cbtClockLastNowMs = candidateNow;
+      }
+    } catch(e) {}
+  }
+
+  function cbtNormalizeEpochMs(value) {
+    if (value == null || value === '') return null;
+
+    if (typeof value === 'string' && !/^[-+]?\d+(?:\.\d+)?$/.test(value.trim())) {
+      var parsed = Date.parse(value);
+      return isFinite(parsed) && parsed > 0 ? parsed : null;
+    }
+
+    var n = Number(value);
+    if (!isFinite(n) || n <= 0) return null;
+
+    /* Current epoch values are roughly:
+         seconds      1.7e9
+         milliseconds 1.7e12
+         microseconds 1.7e15
+         nanoseconds  1.7e18 */
+    if (n >= 1e17) n = n / 1000000;
+    else if (n >= 1e14) n = n / 1000;
+    else if (n < 1e11) n = n * 1000;
+
+    return isFinite(n) && n > 0 ? n : null;
+  }
+
+  function cbtTaskGeneration(data) {
+    if (!data || typeof data !== 'object') return '';
+
+    /* Prefer stable job/task identities. A generic `id` is still deliberately
+       excluded because different COMO payload shapes can use it for unrelated
+       objects that happen to describe the same cart. */
+    var fields = ['jobId','jobID','taskId','taskID','jobUuid','jobUUID','taskUuid','taskUUID'];
+    for (var i = 0; i < fields.length; i++) {
+      var v = data[fields[i]];
+      if (v != null && String(v).trim()) return 'job:' + String(v).trim();
+    }
+
+    /* Creation time is a stable fallback identity, but is NEVER used as the
+       elapsed timer start. */
+    var createdFields = ['created','createdAt','creationTime','createdTime'];
+    for (var c = 0; c < createdFields.length; c++) {
+      var createdMs = cbtNormalizeEpochMs(data[createdFields[c]]);
+      if (createdMs) return 'created:' + Math.round(createdMs);
+    }
+
+    /* Last-resort identity only. Use the EARLIEST BATCHING start because the
+       package counter is cumulative across BATCHING sub-operations. */
+    var ops = Array.isArray(data.operationDetails) ? data.operationDetails : [];
+    var earliest = Infinity;
+    for (var j = 0; j < ops.length; j++) {
+      var op = ops[j];
+      if (!op || String(op.name || '').toUpperCase() !== 'BATCHING') continue;
+      var ms = cbtNormalizeEpochMs(op.start);
+      if (ms && ms < earliest) earliest = ms;
+    }
+    return isFinite(earliest) ? 'batch:' + Math.round(earliest) : '';
+  }
+
+  function cbtBatchingOpInfo(data, liveOnly) {
+    if (!data || typeof data !== 'object') return null;
+    var ops = Array.isArray(data.operationDetails) ? data.operationDetails : [];
+    var wholeState = String(data.state || '').toUpperCase();
+    var candidates = [];
+    var hasLiveEvidence = wholeState === 'BATCHING';
+
+    for (var i = 0; i < ops.length; i++) {
+      var op = ops[i];
+      if (!op || String(op.name || '').toUpperCase() !== 'BATCHING') continue;
+
+      var startMs = cbtNormalizeEpochMs(op.start);
+      if (!startMs) continue;
+
+      var endMs = cbtNormalizeEpochMs(op.end);
+      var opState = String(op.state || op.operationState || '').toUpperCase();
+      var explicitActive =
+        opState === 'IN_PROGRESS' ||
+        opState === 'STARTED' ||
+        opState === 'ACTIVE';
+      var explicitDone =
+        opState === 'COMPLETED' ||
+        opState === 'COMPLETE' ||
+        opState === 'FINISHED' ||
+        opState === 'DONE';
+
+      if (explicitActive) hasLiveEvidence = true;
+
+      var credible = true;
+      if (liveOnly && _cbtClockAnchorServerMs != null) {
+        var nowMs = cbtNowMs();
+        if (startMs > nowMs + 5 * 60 * 1000) credible = false;
+        if (startMs < nowMs - CBT_MAX_LIVE_AGE_MS) credible = false;
+      }
+
+      if (!credible) continue;
+      candidates.push({
+        op: op,
+        startMs: startMs,
+        endMs: endMs,
+        explicitActive: explicitActive,
+        explicitDone: explicitDone,
+        state: opState
+      });
+    }
+
+    if (!candidates.length) return null;
+    if (liveOnly && !hasLiveEvidence) return null;
+
+    /* packagesBatched is cumulative for the job. Therefore the matching time
+       interval must begin at the EARLIEST credible BATCHING start, not at a
+       later BATCHING sub-operation that may have appeared after packages were
+       already counted. */
+    var earliest = candidates[0];
+    var latestEnd = null;
+    for (var j = 0; j < candidates.length; j++) {
+      if (candidates[j].startMs < earliest.startMs) earliest = candidates[j];
+      if (candidates[j].endMs && (!latestEnd || candidates[j].endMs > latestEnd)) {
+        latestEnd = candidates[j].endMs;
+      }
+    }
+
+    return {
+      op: earliest.op,
+      startMs: earliest.startMs,
+      endMs: latestEnd,
+      live: !!liveOnly,
+      state: earliest.state
+    };
+  }
+
+  function cbtRawBatchingStartMs(data, liveOnly) {
+    var info = cbtBatchingOpInfo(data, !!liveOnly);
+    return info ? info.startMs : null;
+  }
+
+  function cbtIsLiveBatch(data) {
+    if (!data || typeof data !== 'object') return false;
+    if (String(data.state || '').toUpperCase() === 'BATCHING') return true;
+    var ops = Array.isArray(data.operationDetails) ? data.operationDetails : [];
+    for (var i = 0; i < ops.length; i++) {
+      var op = ops[i];
+      if (!op || String(op.name || '').toUpperCase() !== 'BATCHING') continue;
+      var st = String(op.state || op.operationState || '').toUpperCase();
+      if (st === 'IN_PROGRESS' || st === 'STARTED' || st === 'ACTIVE') return true;
+    }
+    return false;
+  }
+
+  function cbtObserveAuthoritativeLive(data) {
+    if (!cbtIsLiveBatch(data) || !data.shortClientRef) return null;
+    var ref = String(data.shortClientRef);
+    var info = cbtBatchingOpInfo(data, true);
+    if (!info || !info.startMs) return null;
+
+    var now = cbtNowMs();
+    var generation = cbtTaskGeneration(data);
+    var cur = _cbtLiveStartByRef[ref];
+    var replace = !cur;
+
+    if (cur) {
+      var oldGen = String(cur.generation || '');
+      var newGen = String(generation || '');
+      var bothBatchFallbacks =
+        oldGen.indexOf('batch:') === 0 &&
+        newGen.indexOf('batch:') === 0;
+
+      /* Strong/created identity change means a genuinely new job. For the
+         unstable last-resort batch:start identity, do not call it a new job
+         while the cart has remained continuously present; the API may simply
+         have revealed an earlier operation. */
+      if (generation && cur.generation && generation !== cur.generation) {
+        if (!(bothBatchFallbacks && !cur.missingSince)) replace = true;
+      }
+
+      /* A cart that disappeared and later returns with a different real start
+         is a new batch even if no strong identity was available. */
+      if (!replace && cur.missingSince && Math.abs(info.startMs - cur.ms) > 1000) {
+        replace = true;
+      }
+    }
+
+    if (replace) {
+      cur = _cbtLiveStartByRef[ref] = {
+        ms: info.startMs,
+        generation: generation,
+        lastSeen: now,
+        missingSince: 0,
+        source: 'api-earliest'
+      };
+      delete _cbtObservedProgressByRef[ref];
+    } else {
+      /* Critical v23.9.87 fix: for the SAME job, an authoritative API update
+         may correct the clock only BACKWARD. It can never shorten elapsed time
+         by introducing a newer BATCHING sub-operation. */
+      if (info.startMs < cur.ms - 1000) {
+        cur.ms = info.startMs;
+        cur.source = 'api-corrected-earlier';
+      }
+      if (!cur.generation && generation) cur.generation = generation;
+      else if (generation && String(cur.generation || '').indexOf('batch:') === 0 &&
+               String(generation).indexOf('batch:') === 0) {
+        cur.generation = generation;
+      }
+      cur.lastSeen = now;
+      cur.missingSince = 0;
+    }
+    return cur.ms;
+  }
+
+  function cbtStableLiveStartMs(data, isLive) {
+    if (!data || typeof data !== 'object') return null;
+    var ref = data.shortClientRef != null ? String(data.shortClientRef) : '';
+    var generation = cbtTaskGeneration(data);
+    var cur = ref ? _cbtLiveStartByRef[ref] : null;
+
+    if (cur) {
+      /* Missing identity on a partial response is NOT a reason to reject the
+         existing lock. If an actual new job generation is present, wait for
+         that new task's own BATCHING start instead of borrowing the old one. */
+      if (!generation || !cur.generation || generation === cur.generation) return cur.ms;
+    }
+
+    if (isLive) {
+      /* Important fallback: activeJobsWithSiteSummary does not always carry
+         operationDetails in every deployment/response. If another current COMO
+         response contains the real BATCHING operation, allow it to seed the
+         clock ONCE. We never use `created` for a live timer and never replace a
+         same-generation lock after it has been chosen. */
+      var info = cbtBatchingOpInfo(data, true);
+      if (info && info.startMs) {
+        if (!ref) return info.startMs;
+
+        var now = cbtNowMs();
+        var fresh = {
+          ms: info.startMs,
+          generation: generation,
+          lastSeen: now,
+          missingSince: 0,
+          source: 'observed-live'
+        };
+
+        /* Different generation = the cart has a new batch, so a new start is
+           correct. Otherwise only fill a missing lock; do not twitch between
+           multiple timestamps. */
+        if (!cur || (generation && cur.generation && generation !== cur.generation)) {
+          _cbtLiveStartByRef[ref] = fresh;
+          return fresh.ms;
+        }
+
+        return cur.ms;
+      }
+
+      return null;
+    }
+
+    /* For a finished batch, use the latest BATCHING operation if the live lock
+       is unavailable, then fall back to created so history is not discarded. */
+    var opMs = cbtRawBatchingStartMs(data, false);
+    if (opMs) return opMs;
+    return cbtNormalizeEpochMs(data.created);
+  }
+
+  function cbtForgetLiveStart(ref) {
+    if (ref == null) return;
+    ref = String(ref);
+    try { delete _cbtLiveStartByRef[ref]; } catch(e) {}
+    try { delete _cbtMissingPollsByRef[ref]; } catch(e) {}
+    try { delete _cbtObservedProgressByRef[ref]; } catch(e) {}
+  }
+
+  function cbtMarkLiveMissing(ref) {
+    ref = String(ref);
+    var cur = _cbtLiveStartByRef[ref];
+    if (cur && !cur.missingSince) cur.missingSince = cbtNowMs();
+  }
+
+  function cbtPruneOldLiveStarts() {
+    var now = cbtNowMs();
+    Object.keys(_cbtLiveStartByRef).forEach(function(ref) {
+      var e = _cbtLiveStartByRef[ref];
+      var expiredMissing = e && e.missingSince && (now - e.missingSince > CBT_START_RETAIN_AFTER_MISSING_MS);
+      var expiredIdle = !e || !e.lastSeen || (now - e.lastSeen > CBT_START_CACHE_TTL_MS);
+      if (expiredMissing || expiredIdle) {
+        try { delete _cbtLiveStartByRef[ref]; } catch(err) {}
+        try { delete _cbtMissingPollsByRef[ref]; } catch(err2) {}
+        try { delete _cbtObservedProgressByRef[ref]; } catch(err3) {}
+      }
+    });
+  }
+
+  /* v23.9.89 accuracy generation. Old v2/local performance totals may already
+     contain cross-computer duplicates, so they are intentionally not imported.
+     Saved associate Names use their original key and are preserved. */
+  var STORAGE_KEY = 'cbt_history_v3', DATE_KEY = 'cbt_history_v3_date';
+  var WEEKLY_KEY = 'cbt_weekly_history_v3', WEEKLY_DAYS = 7;
+  var ALL_NAMES_KEY = 'cbt_all_names';
+  var DEVICE_ID_KEY  = 'cbt_device_id';
+
+  // Persistent device ID — generated once, lives in GM storage forever
+  function getDeviceId() {
+    var id = gmGet(DEVICE_ID_KEY, null);
+    if (!id) {
+      id = 'dev_' + Math.random().toString(36).slice(2, 10) + '_' + Date.now().toString(36);
+      gmSet(DEVICE_ID_KEY, id);
+    }
+    return id;
+  }
+  var MY_DEVICE_ID = null; // set in start()
+
+  // ── Firebase Realtime Database sync ──
+  // All three syncs (names, today, weekly) use your Firebase project.
+  // Names use PATCH — server-side merge means a push can never remove
+  // another computer's names at the database level.
+  // History and weekly use per-device PUT paths so each computer only
+  // touches its own slice; pulls read the full tree and sum other devices.
+  var FIREBASE_URL          = 'https://como-sync-default-rtdb.firebaseio.com';
+  var FIREBASE_NAMES_PATH   = '/como_names.json';
+  var FIREBASE_HISTORY_PATH = '/como_history_v3.json';
+  var FIREBASE_WEEKLY_PATH  = '/como_weekly_v3.json';
+  function syncEnabled()    { return true; }
+  function syncUrl()        { return FIREBASE_URL + FIREBASE_NAMES_PATH; }
+  function syncHistoryUrl() { return FIREBASE_URL + FIREBASE_HISTORY_PATH; }
+  function syncWeeklyUrl()  { return FIREBASE_URL + FIREBASE_WEEKLY_PATH; }
+  function syncHistoryDeviceUrl(devId) { return FIREBASE_URL + '/como_history_v3/devices/' + devId + '.json'; }
+  function syncHistoryMetaUrl(devId)   { return FIREBASE_URL + '/como_history_v3/meta/' + devId + '.json'; }
+  function syncWeeklyDeviceUrl(devId)  { return FIREBASE_URL + '/como_weekly_v3/devices/'  + devId + '.json'; }
+  function syncWeeklyMetaUrl(devId)    { return FIREBASE_URL + '/como_weekly_v3/meta/' + devId + '.json'; }
+
+  // ── Own vs Remote cache keys ──
+  // OWN = only this device's recorded batches (pushed to Pantry)
+  // REMOTE_CACHE = sum of all OTHER devices' slices (rebuilt on pull, never pushed)
+  var OWN_WEEKLY_KEY            = 'cbt_own_weekly_v3';
+  var WEEKLY_PERIOD_KEY         = 'cbt_weekly_period_start_v3';
+  var REMOTE_HISTORY_KEY        = 'cbt_remote_history_cache_v3';
+  var REMOTE_HISTORY_DATE_KEY   = 'cbt_remote_history_date_v3';
+  var REMOTE_WEEKLY_KEY         = 'cbt_remote_weekly_cache_v3';
+  var REMOTE_WEEKLY_PERIOD_KEY  = 'cbt_remote_weekly_period_start_v3';
+  var HISTORY_SYNC_SCHEMA_KEY   = 'cbt_history_sync_schema_v3';
+  var WEEKLY_SYNC_SCHEMA_KEY    = 'cbt_weekly_sync_schema_v3';
+
+  var taskCache = new Map();
+  var activeTab = 'live';
+
+  var _liveRenderPending = false;
+  function requestLiveRender() {
+    /* Do not rebuild a hidden/non-mounted Live table. Data still updates in
+       taskCache and renders immediately when Live becomes visible.
+
+       The Live table body is #cbt-tbody. v23.9.24 accidentally checked a
+       different/nonexistent ID, so taskCache filled but the first Live render
+       was skipped until the user switched tabs. */
+    if (activeTab !== 'live') return;
+    if (!document.getElementById('cbt-tbody')) return;
+    if (_liveRenderPending) return;
+
+    _liveRenderPending = true;
+    var raf = (typeof requestAnimationFrame === 'function')
+      ? requestAnimationFrame
+      : function(cb){ return setTimeout(cb, 16); };
+
+    raf(function(){
+      _liveRenderPending = false;
+      if (activeTab === 'live' && document.getElementById('cbt-tbody')) {
+        try { renderLive(); } catch(e) {}
+      }
+    });
+  }
+  var weeklySortKey = 'bestRate', weeklySortAsc = false, weeklySearchTerm = '';
+  var liveSortKey = 'rate', liveSortAsc = false, liveSearchTerm = '';
+  /* Set once the user actually clicks a Live column header. Until then the
+     list keeps its default behaviour of floating LOW batchers to the top. */
+  var liveSortUser = false;
+  var historySortKey = 'bestRate', historySortAsc = false, historySearchTerm = '';
+  var namesSearchTerm = '';
+  var hofSearchTerm = '';
+  /* One name-only search term is shared across every Batcher Timers tab.
+     Switching tabs keeps the same associate query instead of clearing it. */
+  var dashboardSearchTerm = '';
+  var _allNamesCache = null;
+
+  function todayStr() {
+    /* Today is the STORE'S calendar day, not the workstation's timezone.
+       This makes every computer roll Today at the same store midnight. */
+    try {
+      return new Date().toLocaleDateString('en-US', { timeZone: getStoreTimezone() });
+    } catch(e) {
+      return new Date().toLocaleDateString('en-US');
+    }
+  }
+
+  function cbtDateKeyParts(dateKey) {
+    var m = String(dateKey || '').match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if (!m) return null;
+    var mo = parseInt(m[1], 10), d = parseInt(m[2], 10), y = parseInt(m[3], 10);
+    if (!mo || !d || !y) return null;
+    return { y:y, m:mo, d:d };
+  }
+
+  function cbtDateKeyEpoch(dateKey) {
+    var p = cbtDateKeyParts(dateKey);
+    return p ? Date.UTC(p.y, p.m - 1, p.d) : NaN;
+  }
+
+  function cbtDateKeyFromEpoch(ms) {
+    var d = new Date(ms);
+    return (d.getUTCMonth() + 1) + '/' + d.getUTCDate() + '/' + d.getUTCFullYear();
+  }
+
+  function cbtWeekStartForDateKey(dateKey) {
+    var ms = cbtDateKeyEpoch(dateKey);
+    if (!isFinite(ms)) return null;
+    var dow = new Date(ms).getUTCDay(); /* Sunday = 0 */
+    return cbtDateKeyFromEpoch(ms - dow * 86400000);
+  }
+
+  function currentWeekStartStr() {
+    return cbtWeekStartForDateKey(todayStr()) || todayStr();
+  }
+
+  function cbtIsDateInCurrentWeek(dateKey) {
+    var day = cbtDateKeyEpoch(dateKey);
+    var start = cbtDateKeyEpoch(currentWeekStartStr());
+    if (!isFinite(day) || !isFinite(start)) return false;
+    return day >= start && day < start + 7 * 86400000;
+  }
+
+  function fmt(s) {
+    if (s == null || isNaN(s) || s < 0) return '--:--';
+    return String(Math.floor(s / 60)).padStart(2,'0') + ':' + String(Math.floor(s % 60)).padStart(2,'0');
+  }
+  function fmtHours(s) {
+    if (!s) return '0h';
+    var h = s / 3600;
+    return h >= 1 ? h.toFixed(1) + 'h' : Math.round(s / 60) + 'm';
+  }
+
+  // loadWeekly / saveWeekly — OWN batches only. Never stores remote data.
+  // Weekly is a true calendar week: Sunday 12:00 AM through Saturday 11:59 PM.
+  function loadWeekly() {
+    var currentWeek = currentWeekStartStr();
+    var storedPeriod = null;
+    try { storedPeriod = gmGet(WEEKLY_PERIOD_KEY, null); } catch(e0) {}
+    if (!storedPeriod) {
+      try { storedPeriod = localStorage.getItem(WEEKLY_PERIOD_KEY); } catch(e1) {}
+    }
+
+    var gmWeek = {}, lsWeek = {}, result = {};
+    try {
+      var gm = gmGet(OWN_WEEKLY_KEY, null) || gmGet(WEEKLY_KEY, null);
+      if (gm) gmWeek = sanitizeWeekly((typeof gm === 'string') ? JSON.parse(gm) : gm);
+    } catch(e2) {}
+    try {
+      lsWeek = sanitizeWeekly(JSON.parse(localStorage.getItem(OWN_WEEKLY_KEY) || localStorage.getItem(WEEKLY_KEY) || '{}'));
+    } catch(e3) {}
+
+    /* GM + localStorage are replicas. Keep the more complete row for each
+       date/associate so a stale copy cannot hide a newer run. */
+    var dayKeys = Object.create(null);
+    Object.keys(gmWeek).forEach(function(k){ dayKeys[k] = true; });
+    Object.keys(lsWeek).forEach(function(k){ dayKeys[k] = true; });
+    Object.keys(dayKeys).forEach(function(dk){
+      result[dk] = {};
+      var assocKeys = Object.create(null);
+      Object.keys(gmWeek[dk] || {}).forEach(function(k){ assocKeys[k] = true; });
+      Object.keys(lsWeek[dk] || {}).forEach(function(k){ assocKeys[k] = true; });
+      Object.keys(assocKeys).forEach(function(k){ result[dk][k] = cbtPreferReplica((gmWeek[dk]||{})[k], (lsWeek[dk]||{})[k]); });
+      if (!Object.keys(result[dk]).length) delete result[dk];
+    });
+
+    /* First run after upgrading: keep only dates that belong to THIS week. */
+    result = sanitizeWeekly(result || {});
+
+    if (storedPeriod !== currentWeek) {
+      gmSet(WEEKLY_PERIOD_KEY, currentWeek);
+      try { localStorage.setItem(WEEKLY_PERIOD_KEY, currentWeek); } catch(e4) {}
+    }
+
+    return result;
+  }
+
+  function saveWeekly(w, skipPush, periodKey) {
+    _dispWeekCache = null;
+    var currentWeek = periodKey || currentWeekStartStr();
+    var clean = sanitizeWeekly(w || {});
+    var json = JSON.stringify(clean);
+    gmSet(OWN_WEEKLY_KEY, json);
+    gmSet(WEEKLY_PERIOD_KEY, currentWeek);
+    try {
+      localStorage.setItem(OWN_WEEKLY_KEY, json);
+      localStorage.setItem(WEEKLY_PERIOD_KEY, currentWeek);
+    } catch(e) {}
+    if (!skipPush) {
+      setTimeout(function(){ if (typeof syncWeeklyPush === 'function') syncWeeklyPush(); }, 0);
+    }
+  }
+
+  // Remote weekly cache — other devices' data summed on pull, NEVER pushed.
+  function loadRemoteWeekly() {
+    var currentWeek = currentWeekStartStr();
+    var period = null;
+    try { period = gmGet(REMOTE_WEEKLY_PERIOD_KEY, null); } catch(e0) {}
+    if (!period) {
+      try { period = localStorage.getItem(REMOTE_WEEKLY_PERIOD_KEY); } catch(e1) {}
+    }
+    if (period !== currentWeek) return {};
+
+    try {
+      var gm = gmGet(REMOTE_WEEKLY_KEY, null);
+      if (gm) return sanitizeWeekly((typeof gm === 'string') ? JSON.parse(gm) : gm);
+    } catch(e2) {}
+    try { return sanitizeWeekly(JSON.parse(localStorage.getItem(REMOTE_WEEKLY_KEY) || '{}')); }
+    catch(e3) { return {}; }
+  }
+
+  function saveRemoteWeekly(w, periodKey) {
+    _dispWeekCache = null;
+    var currentWeek = periodKey || currentWeekStartStr();
+    var clean = sanitizeWeekly(w || {});
+    var json = JSON.stringify(clean);
+    gmSet(REMOTE_WEEKLY_KEY, json);
+    gmSet(REMOTE_WEEKLY_PERIOD_KEY, currentWeek);
+    try {
+      localStorage.setItem(REMOTE_WEEKLY_KEY, json);
+      localStorage.setItem(REMOTE_WEEKLY_PERIOD_KEY, currentWeek);
+    } catch(e) {}
+    // Never push — this is display-only aggregated data
+  }
+
+  // Display caches — avoid re-parsing JSON from storage on every keystroke/render.
+  // Short TTL keeps date-rollover working; saves invalidate immediately.
+  var _dispWeekCache = null, _dispWeekTime = 0;
+  var _dispHistCache = null, _dispHistTime = 0;
+
+  function cbtMergeLatestFields(target, source) {
+    if (!target || !source) return;
+    var sourceRate = Number(source.lastRate);
+    if (!(sourceRate > 0) || !isFinite(sourceRate)) return;
+
+    var targetRate = Number(target.lastRate);
+    var sourceAt = Number(source.lastAt) || 0;
+    var targetAt = Number(target.lastAt) || 0;
+
+    if (!(targetRate > 0) || sourceAt > targetAt || (sourceAt === targetAt && sourceAt === 0)) {
+      target.lastRate = sourceRate;
+      target.lastAt = sourceAt;
+    }
+  }
+
+  function cbtMergeBestFields(target, source) {
+    if (!target || !source) return;
+
+    /* v23.9.87+ stores bestRate explicitly. For older cached rows, use the
+       strongest recoverable value (bestRate -> lastRate -> avgRate). */
+    var candidate = Math.max(
+      Number(source.bestRate) || 0,
+      Number(source.lastRate) || 0,
+      Number(source.avgRate) || 0
+    );
+
+    if (!(candidate > 0) || !isFinite(candidate)) return;
+    if (!(Number(target.bestRate) > 0) || candidate > Number(target.bestRate)) {
+      target.bestRate = candidate;
+    }
+  }
+
+  // Merge own + remote for display only.
+  // The current day's Today report is overlaid as today's Weekly slice so a
+  // batcher appears in Weekly immediately — not one day later at rollover.
+  function getDisplayWeekly() {
+    var _now = Date.now();
+    if (_dispWeekCache && (_now - _dispWeekTime) < 1500) return _dispWeekCache;
+    var own    = sanitizeWeekly(loadWeekly());
+    var remote = sanitizeWeekly(loadRemoteWeekly());
+    var out = {};
+
+    function addSlice(slice) {
+      for (var dk in slice) {
+        if (!cbtIsDateInCurrentWeek(dk)) continue;
+        if (!out[dk]) out[dk] = {};
+        for (var a in slice[dk]) {
+          var r = slice[dk][a];
+          if (!out[dk][a]) {
+            out[dk][a] = { assoc: r.assoc || a, totalPkgs: r.totalPkgs||0, totalSec: r.totalSec||0, runs: r.runs||0,
+              totalMissing: r.totalMissing||0, totalExpected: r.totalExpected||0,
+              bestRate: null, lastRate: null, lastAt: 0 };
+            cbtMergeBestFields(out[dk][a], r);
+            cbtMergeLatestFields(out[dk][a], r);
+          } else {
+            out[dk][a].totalPkgs    += r.totalPkgs    || 0;
+            out[dk][a].totalSec     += r.totalSec     || 0;
+            out[dk][a].runs         += r.runs         || 0;
+            out[dk][a].totalMissing += r.totalMissing || 0;
+            out[dk][a].totalExpected+= r.totalExpected|| 0;
+            cbtMergeBestFields(out[dk][a], r);
+            cbtMergeLatestFields(out[dk][a], r);
+          }
+        }
+      }
+    }
+
+    addSlice(own);
+    addSlice(remote);
+
+    /* Today's source of truth is Today itself. Replace any stale/legacy
+       current-day weekly slice instead of adding it and double-counting. */
+    var td = todayStr();
+    delete out[td];
+
+    var today = sanitizeHistory(getDisplayHistory());
+    var todayKeys = Object.keys(today);
+    if (todayKeys.length) {
+      out[td] = {};
+      for (var i = 0; i < todayKeys.length; i++) {
+        var assoc = todayKeys[i], r2 = today[assoc];
+        out[td][assoc] = {
+          assoc: r2.assoc || assoc,
+          totalPkgs: r2.totalPkgs||0,
+          totalSec: r2.totalSec||0,
+          runs: r2.runs||0,
+          totalMissing: r2.totalMissing||0,
+          totalExpected: r2.totalExpected||0,
+          bestRate: Math.max(Number(r2.bestRate)||0, Number(r2.lastRate)||0, Number(r2.avgRate)||0) || null,
+          lastRate: Number(r2.lastRate) > 0 ? Number(r2.lastRate) : null,
+          lastAt: Number(r2.lastAt) || 0
+        };
+      }
+    }
+
+    _dispWeekCache = out; _dispWeekTime = _now;
+    return out;
+  }
+
+  function gmGet(key, def) {
+    try { if (typeof GM_getValue === 'function') { var v = GM_getValue(key); return (v===undefined||v===null) ? def : v; } } catch(e) {}
+    return def;
+  }
+  function gmSet(key, val) {
+    try { if (typeof GM_setValue === 'function') { GM_setValue(key, val); return true; } } catch(e) {}
+    return false;
+  }
+
+  // ── Text size (zoom) for the main Batcher Timer panel ──
+  /* ══════════════════════════════════════
+     UI SCALE
+
+     One scale for everything this script draws — board, popups, dropdowns
+     and anything added later — so nothing is left behind at a fixed size.
+     Applied with CSS zoom on each surface's root, which scales layout as
+     well as text, so rows, columns, padding and icons all grow together
+     and stay aligned instead of overlapping.
+
+     It only ever touches elements this script created. The dashboard
+     itself is never zoomed, and the browser's own zoom is untouched.
+     Deliberately a NEW storage key, so everyone starts at a clean 100%.
+  ══════════════════════════════════════ */
+  var HEADER_FIXED_SCALE = 1.3;      /* header bar: constant, never scaled */
+  var STATS_FIXED_SCALE  = 1.3;      /* Batchers / Recommended / Remaining: constant 130% */
+  var MISSING_QR_FIXED_SCALE = 1.3;  /* Missing Package QR results: constant 130% */
+  var UI_SCALE_KEY  = 'cbt_ui_scale';
+  var UI_SCALE_MIN  = 0.7, UI_SCALE_MAX = 2.0, UI_SCALE_STEP = 0.1, UI_SCALE_DEFAULT = 1;
+  var _uiScale = UI_SCALE_DEFAULT;
+
+  function clampUiScale(v) {
+    v = parseFloat(v);
+    if (!v || isNaN(v)) v = UI_SCALE_DEFAULT;
+    return Math.min(UI_SCALE_MAX, Math.max(UI_SCALE_MIN, Math.round(v * 100) / 100));
+  }
+  function loadUiScale() {
+    var raw = gmGet(UI_SCALE_KEY, null);
+    if (raw == null) { try { raw = localStorage.getItem(UI_SCALE_KEY); } catch(e) {} }
+    if (raw == null) return UI_SCALE_DEFAULT;          /* first run: 100% */
+    return clampUiScale(raw);
+  }
+  function saveUiScale(v) {
+    gmSet(UI_SCALE_KEY, String(v));
+    try { localStorage.setItem(UI_SCALE_KEY, String(v)); } catch(e) {}
+  }
+
+  /* Every root this script owns. Popups are scaled on their inner card, not
+     their full-screen backdrop, so the backdrop still covers the viewport
+     exactly and the card stays centred at any size. */
+  var _uiScaleLoaded = false;
+  function applyUiScale() {
+    /* Read the saved size the first time anything is drawn, so a panel that
+       mounts before startup finishes still comes up at the chosen size
+       instead of snapping back to 100%. */
+    if (!_uiScaleLoaded) {
+      _uiScaleLoaded = true;
+      try { _uiScale = loadUiScale(); } catch(e) {}
+    }
+    var z = _uiScale;
+    var panel = document.getElementById('cbt-panel');
+    if (panel) {
+      /* The header bar is pinned at 130% and deliberately ignores A- / A+,
+         so it stays a constant anchor while the content below resizes. */
+      var hdr = panel.querySelector('#cbt-header');
+      if (hdr) hdr.style.zoom = HEADER_FIXED_SCALE;
+
+      /* v23.9.87: pin the three-number stats row at the same 130% as the
+         header. A- / A+ must never resize Batchers, Recommended This Hour,
+         or Remaining. */
+      var stats = panel.querySelector('#cbt-stats-bar');
+      if (stats) stats.style.zoom = STATS_FIXED_SCALE;
+
+      /* Only the tabs/search/table area below the fixed stats row follows
+         the A- / A+ scale controls. */
+      ['#cbt-tabs', '#cbt-unified-search', '#cbt-body', '#cbt-drag-bottom'].forEach(function(sel){
+        var el = panel.querySelector(sel);
+        if (el) el.style.zoom = z;
+      });
+    }
+    var tp = document.getElementById('cbt-tp');
+    if (tp) { tp.style.zoom = z; }
+
+    /* The QR popup is intentionally left out: it keeps its own fixed size
+       and its plain white styling in both day and night mode. */
+    var afa = document.getElementById('cbt-afa-card');
+    if (afa) {
+      /* Only the Missing Package QR result view is pinned at 130%.
+         A- / A+ can continue resizing the normal Cart Actions menu, but they
+         can never resize the generated Missing/Cart QR codes. */
+      var afaScale = afa.classList.contains('cbt-afa-missing-qr-card')
+        ? MISSING_QR_FIXED_SCALE
+        : z;
+
+      afa.style.zoom = afaScale;
+      afa.style.maxHeight = Math.round((window.innerHeight * 0.82) / afaScale) + 'px';
+      afa.style.maxWidth  = Math.round((window.innerWidth  * 0.92) / afaScale) + 'px';
+    }
+    var drop = document.getElementById('cbt-ac-drop');
+    if (drop) {
+      drop.style.zoom = z;
+      try { acPlace(); } catch(e) {}   /* re-anchor: zoom changes its metrics */
+    }
+    var label = document.getElementById('cbt-scale-reset');
+    if (label) label.textContent = Math.round(z * 100) + '%';
+  }
+
+  /* Which theme is active right now. The board carries the truth once it
+     exists; before that fall back to the stored preference. */
+  function isDarkMode() {
+    var p = document.getElementById('cbt-panel');
+    if (p) return p.classList.contains('dark');
+    try {
+      var v = localStorage.getItem('cbt_dark');
+      return v !== 'false' && v !== '0';
+    } catch(e) { return true; }
+  }
+
+  /* Popups live on <body>, outside the board, so they cannot inherit its
+     .dark class — they get their own marker instead. */
+  function applyPopupTheme() {
+    var dark = isDarkMode();
+    ['cbt-afa-overlay', 'cbt-ac-drop'].forEach(function(id){
+      var el = document.getElementById(id);
+      if (el) el.classList.toggle('cbt-dark', dark);
+    });
+  }
+
+  function setUiScale(v, skipSave) {
+    _uiScale = clampUiScale(v);
+    if (!skipSave) saveUiScale(_uiScale);
+    applyUiScale();
+  }
+  function stepUiScale(dir) { setUiScale(_uiScale + dir * UI_SCALE_STEP); }
+  function resetUiScale()   { setUiScale(UI_SCALE_DEFAULT); }
+
+  // ── Text size (zoom) for the Associate Search (task detail) panel ──
+  var TP_FONT_SCALE_KEY = 'cbt_tp_font_scale';
+  function loadTpFontScale() {
+    var raw = gmGet(TP_FONT_SCALE_KEY, null);
+    if (raw == null) { try { raw = localStorage.getItem(TP_FONT_SCALE_KEY); } catch(e) {} }
+    var v = parseFloat(raw);
+    if (!v || isNaN(v)) v = 1;
+    return Math.min(2.0, Math.max(0.7, v));
+  }
+  function saveTpFontScale(v) {
+    gmSet(TP_FONT_SCALE_KEY, String(v));
+    try { localStorage.setItem(TP_FONT_SCALE_KEY, String(v)); } catch(e) {}
+  }
+  function applyTpFontScale(tp, scale) {
+    if (!tp) return;
+    var body = tp.querySelector('#cbt-tp-body');
+    if (body) body.style.zoom = scale;
+  }
+
+  /* ══════════════════════════════════════
+     BUILT-IN NAME ROSTER
+
+     Baked into the script so a brand new install shows the full
+     names list immediately, without waiting on a Pantry pull (and
+     even if Pantry is down). Merged additively in loadAllNames:
+     it only ever ADDS names, never removes captured ones. Also
+     feeds the union push, so installing this script anywhere
+     re-seeds the shared basket automatically.
+  ══════════════════════════════════════ */
+  var SEED_NAMES = [
+    'aamarinp','abahmam','abbececi','abcam','abdldiop','abdouhdi','abdrayae','aboiguiw',
+    'abrekenn','absoumao','adamjkev','adarpinc','aeltayea','afriksad','ajeffang','ajfofana',
+    'alapasov','alayalst','alcisseo','alcmayor','aliceaed','alisonko','alphasoh','alpoliak',
+    'alwnicho','alybalbe','amadoufb','amambald','amifmbow','aminpsan','amyreyei','andhjaim',
+    'andijime','andricba','andruang','angecjos','angegerr','angelvif','angicohe','anrosalg',
+    'anthrort','antwileo','antzeigl','anzaisma','aouantho','arafaabo','aramadia','aranerwi',
+    'arlingma','arnolzie','ashbcruz','ashchhab','aspcompa','auberete','axevgali','baabdouy',
+    'bagagnaz','baldemaq','bamamads','bamelony','barsoulj','basilsid','basnsyll','baspndao',
+    'batomadi','bbarioua','bcissali','bdavtiff','bdawperr','bdialmam','bedhamed','bellocr',
+    'benelomo','bengoce','benjxall','binsains','blasanay','bmadial','boikovik','bolivchr',
+    'boubamba','boydgsad','boytanix','brandguk','briandih','bsamanca','bueqferm','burgwjay',
+    'bushrbus','bvalleaa','cadamirt','camarmu','camuouma','candesem','cantesek','caquialv',
+    'cardbjar','carllaca','carmfall','carrdiey','catmayor','cdiaousm','cespjohn','chaaceve',
+    'chaplumm','charjff','chavjala','cheilcor','cheinkeb','cheisecd','chungsik','chxwashi',
+    'chynnshu','cisibraa','cissuman','cixromer','cjolatee','clarzave','clauraym','clemenew',
+    'clemityl','coasekou','coefiu','cofabias','conairol','condeib','conyyzza','cooppetc',
+    'craipsta','cruanthr','cruengol','cuencjus','daantoia','dadoucou','dafodema','daireval',
+    'dalomotn','daniupag','danniven','danuniql','danvallu','daquemur','davkrod','davoplea',
+    'delbnash','dembasnd','denmit','dffries','dgmarie','dgodfrda','diadamad','diagnepa',
+    'diahouss','dialamal','dialdaol','diallamq','diallokc','dialmaa','dialsism','dianmamo',
+    'diaruism','dicaurm','diejocel','diithier','dinilvia','diokhaai','diomalto','diopras',
+    'disouleg','divhario','djfbarry','djimrbas','dnadgill','dnivasq','dobsoshu','dozieni',
+    'dracheim','dramgatt','dsofgino','dsukhcsi','dumamad','dvibrahi','eanrahma','ebrahbar',
+    'ebrdeand','ecafriyi','edaodafa','ehhichez','ejwte','elaloada','elguerie','elhacezy',
+    'elijmate','elmokhtr','eperlonj','erneqtor','espilorn','estjiord','evanjenr','evelagye',
+    'famizama','faninima','fatalidu','fatimtoc','fatsanka','fbrissac','fcissmar','fcryvarg',
+    'fezmerce','fgatlich','figuojef','fistoure','fmavanes','fmbirane','fortugre','freddzun',
+    'galeangu','ganthoc','garcicaj','garcidmy','garyeria','gaskimch','gbalelha','gbeezoro',
+    'gcomlanw','gcoredga','gdaiacal','genterre','gerrlale','gerushaw','ghoshhri','gilfoter',
+    'gmakhou','gomeande','gomjoelh','gonzasle','goodmf','gosankan','grewmaha','grgojam',
+    'gsteveje','guaringu','guendabd','guerxamy','guthjalm','guzanahi','haleemib','hannacob',
+    'hatoumam','hcandici','helejon','henwsuar','heqxavie','herfalex','herrjonp','hhuekenn',
+    'hibradia','hilliawj','hjoshuth','hkasal','hmamabar','holtdarn','hoytashl','hshawsmi',
+    'hylyedim','hymjeavo','ibkamaga','ibrahdim','ibrahly','ibrahsyw','ibrahydr','ibrahyuf',
+    'ibrsibdi','igargeov','iigordo','ijeudbea','iliacomp','imejerik','imjawara','imohtrao',
+    'inrosann','iousanga','irvramio','isgconde','isialexs','isolkath','istaflor','jadcruzl',
+    'jadrorti','jahbagol','jahkgres','jaitehmr','jamadeor','jambentw','jamelhic','jamzeron',
+    'jasmoliu','javomccr','jaydelae','jaysatte','jcojorda','jddieppa','jeanjamd','jefhargr',
+    'jehronhi','jelssycu','jenkantj','jeramirf','jersenlo','jezduran','jireespi','jjaquian',
+    'jjoshun','jmicadol','joekamar','johlramo','johnbrim','jonattpe','josearab','joseekpo',
+    'josupenc','juqxl','juscintr','justyjhe','juvalwda','kabaidre','kabmamay','kadiabag',
+    'kadizbah','kaneybab','kaseebiw','kbaibrah','kdanvers','kecortew','kefimkab','keiraabo',
+    'kellevyo','kemodouk','kensohen','kevicobo','kforjudi','khariop','kizilugu','knelskay',
+    'krubf','ksebarom','kvictpen','lajacksa','lakjarea','lanctour','landioma','lansanca',
+    'lantonit','laujdors','lazelled','lderobin','lebracks','lecheikh','leivdomi','lenmartj',
+    'lesakati','levyaman','lismarro','litxmigu','lmadiall','lmajoh','lmedoune','lopmfran',
+    'lpsm','lrosemal','lsiemitc','lthiedia','lucinago','luelizau','luihesca','luisdagu',
+    'maantl','mabdelkz','mackmtra','madecast','mahamafp','mahpmoh','mamabab','mamabhau',
+    'mamaksac','mambahi','mambaldn','marferny','marrgess','martikke','martimop','martnnlu',
+    'martrabe','marudial','matalavg','mayxstev','mbeaubru','mbenguaq','mendujua','mendvicc',
+    'merceaav','mesorana','meverth','michakpi','micheolo','micnathr','milvelez','minjesie',
+    'mitjavan','mkaderab','mkevinri','mkkamag','mkmaimou','mlennalm','mmahsoum','mmentobu',
+    'modysarr','mohabonk','mohamhor','mohhorma','molagran','montaldj','montjosl','moorleec',
+    'morgewai','morrijup','morydiaw','motbab','mtejadda','muhaadno','mullingk','muscheqm',
+    'mustahap','mveleant','naaskitc','naclearm','naquasr','natanthz','natvargv','nayabsan',
+    'nazcruz','nelsisaa','netolent','nfjustin','nfrancie','ngibtale','nishabel','nisvkama',
+    'njordawa','nkburgos','nkeid','nlonceni','nmousmoh','nolpjeme','nsecisse','nuhubila',
+    'nundaisb','occeafre','ogaldeja','ogunkasz','ojamjade','olanaugu','olayatoh','omamaroa',
+    'oraynaro','osarkaba','ouldmall','oumcherh','oumocomp','owilaniy','owusdkof','ozamoraa',
+    'pablflox','pahmkabe','patrwdow','pceesarj','pearsoit','pemakond','penaroby','perejill',
+    'persamil','perzpred','petteaur','pexjayde','pindatra','pmamfall','powequen','prakhyag',
+    'prasiddg','pringmah','prjenish','qchamord','qcmayfie','qfeif','qgajohn','qostimot',
+    'quameela','qugarciy','quilcarg','rabayube','rafrosab','raineyci','ralfpauw','ramorash',
+    'ramstout','raymjonw','raymukta','rbfrandy','rdukomar','redominq','ridrisdi','rmamabal',
+    'rmarlalm','robelijg','rodoetha','rodrzyes','rokurtis','romaryll','romasea','rooinnoc',
+    'roscahli','rosjar','roventuq','royontho','rthokell','rudegou','rujoshux','ryohsant',
+    'sackmamq','saidobay','sajnashg','salcpasc','samarmo','sambemag','sanolmou','sanyefru',
+    'sappmalb','saseedia','savaneut','sawnain','sbrkaysh','scamaraa','scolliju','sdiallom',
+    'sekofcam','sekouaxk','serralal','seymodqx','seynabgu','shadiebe','shamzabd','sharqalh',
+    'shawnqch','shervini','sidibadd','sidqibra','silvelud','sirng','smihchr','smittril',
+    'snfelici','soabdol','solinemm','solinoan','sotbilal','sozjohan','sramanw','stachone',
+    'stesancn','stevmper','stnabreu','sybakart','syllmas','syzuriel','talondah','tamarmsm',
+    'tamidmaj','tanguiju','taveaman','tazbtanz','tbowdent','tdialabo','tedariel','terelmun',
+    'terrcgre','thcolliu','thiernes','thifdial','thsalter','thwamata','timotjco','tjohanze',
+    'tkemoham','tmadial','topsebas','torcstac','toriilia','torluisv','touxmoha','traosaid',
+    'tribthov','tsalybar','tsanchor','tvdiallo','tyasmi','ualtoure','ucalixte','uchambil',
+    'uheamill','ulauretu','urearlyj','urenabee','ureroben','urgrisel','usaymahf','valdzand',
+    'valnjes','varjesup','vcamajol','velezisn','verasjer','vicaira','viciisan','victoepe',
+    'vincspai','vmamadb','vshanire','wabdiall','waldlyri','whlondyn','wilennsa','wiljosx',
+    'willyalm','wilsalyk','wirashaj','wirpierr','wmamadd','wmamsidi','woodtame','woohblai',
+    'wrigdiav','wsoashle','xalherna','xavieari','xcepanth','xdfrance','xfahadmu','xharlake',
+    'xjaviere','yadieari','yanezsai','ybangour','ycasluis','yedelaro','yinetmor','ylopdavi',
+    'youlahma','yousiahv','yzeidial','zbarrabd','zdialmam','zeloabig','zjeralyn','zjesluis',
+    'zmahmodi'
+  ];
+
+  function loadAllNames() {
+    if (_allNamesCache) return _allNamesCache;
+    try {
+      var raw = gmGet(ALL_NAMES_KEY, null);
+      if (raw) { _allNamesCache = (typeof raw === 'string') ? JSON.parse(raw) : raw; }
+    } catch(e) { _allNamesCache = null; }
+    if (!_allNamesCache || typeof _allNamesCache !== 'object') _allNamesCache = {};
+    try {
+      var legacy = JSON.parse(localStorage.getItem(ALL_NAMES_KEY) || '{}');
+      var merged = false;
+      for (var lk in legacy) { if (!_allNamesCache[lk]) { _allNamesCache[lk] = legacy[lk]; merged = true; } }
+      if (merged) gmSet(ALL_NAMES_KEY, JSON.stringify(_allNamesCache));
+    } catch(e) {}
+    // Fold in the built-in roster. Additive only: a name already stored
+    // keeps its captured spelling, and nothing is ever removed.
+    var seeded = false;
+    for (var si = 0; si < SEED_NAMES.length; si++) {
+      var sname = SEED_NAMES[si];
+      var skey = sname.toLowerCase();
+      if (!_allNamesCache[skey]) { _allNamesCache[skey] = sname; seeded = true; }
+    }
+    if (seeded) {
+      var sjson = JSON.stringify(_allNamesCache);
+      gmSet(ALL_NAMES_KEY, sjson);
+      try { localStorage.setItem(ALL_NAMES_KEY, sjson); } catch(e) {}
+    }
+    return _allNamesCache;
+  }
+  var _namesSaveTimer = null;
+  function persistAllNames() {
+    if (_namesSaveTimer) return;
+    _namesSaveTimer = setTimeout(function(){
+      _namesSaveTimer = null;
+      var json = JSON.stringify(_allNamesCache||{});
+      gmSet(ALL_NAMES_KEY, json);
+      try { localStorage.setItem(ALL_NAMES_KEY, json); } catch(e) {}
+    }, 100);
+  }
+
+  // ── Names sync readiness gate ──
+  // A push may not fire until the FIRST pull has completed (the Pantry
+  // server answered), so a fresh install with an empty local list can
+  // never clobber the shared basket. Pushes requested before that moment
+  // are queued and flushed right after the first pull finishes.
+  var _namesPulled = false;
+  var _namesPushQueued = false;
+  var _namesFirstPullRetry = null; // 5s retry loop until the first pull succeeds
+
+  // Additive merge: absorb remote names into the local list. Never removes.
+  function mergeRemoteNamesIntoLocal(remote) {
+    var all = loadAllNames();
+    var added = false;
+    for (var k in remote) {
+      if (!all[k] && typeof remote[k] === 'string') { all[k] = remote[k]; added = true; }
+    }
+    if (added) { persistAllNames(); if (activeTab === 'names') renderNames(); }
+    return added;
+  }
+
+  // True when the local list holds names the basket does not — i.e. the
+  // basket is behind (first-ever install, or basket data loss) and a
+  // re-seeding push is needed to bring it back to the full union.
+  function localNamesMissingFromRemote(remote) {
+    var all = loadAllNames();
+    for (var k in all) { if (!remote[k]) return true; }
+    return false;
+  }
+
+  function syncPull(cb) {
+    if (!syncEnabled()) { if (cb) cb(false); return; }
+    try {
+      GM_xmlhttpRequest({
+        method: 'GET', url: syncUrl(), headers: { 'Content-Type': 'application/json' },
+        onload: function(res){
+          var added = false, localExtra = false;
+          try {
+            var remote = {};
+            if (res.status >= 200 && res.status < 300 && res.responseText && res.responseText !== 'null') {
+              remote = JSON.parse(res.responseText) || {};
+            }
+            // Firebase stores names flat: { "key": "Name", ... }
+            added = mergeRemoteNamesIntoLocal(remote);
+            localExtra = localNamesMissingFromRemote(remote);
+          } catch(e) {}
+          _namesPulled = true;
+          if (_namesPushQueued || localExtra) {
+            _namesPushQueued = false;
+            syncPush();
+          }
+          if (cb) cb(added);
+        },
+        onerror: function(){
+          if (!_namesPulled && !_namesFirstPullRetry) {
+            _namesFirstPullRetry = setTimeout(function(){ _namesFirstPullRetry = null; syncPull(); }, 5000);
+          }
+          if (cb) cb(false);
+        }
+      });
+    } catch(e) {
+      if (!_namesPulled && !_namesFirstPullRetry) {
+        _namesFirstPullRetry = setTimeout(function(){ _namesFirstPullRetry = null; syncPull(); }, 5000);
+      }
+      if (cb) cb(false);
+    }
+  }
+  var _syncPushTimer = null;
+  function syncPush() {
+    if (!syncEnabled()) return;
+    if (!_namesPulled) { _namesPushQueued = true; return; }
+    if (_syncPushTimer) return;
+    _syncPushTimer = setTimeout(function(){
+      _syncPushTimer = null;
+      try {
+        var all = loadAllNames();
+        // Firebase PATCH merges at the top level server-side — existing keys
+        // are never removed. A push from any computer can only ADD names,
+        // never shrink or overwrite the shared list. No read-before-write needed.
+        GM_xmlhttpRequest({
+          method: 'PATCH', url: syncUrl(),
+          headers: { 'Content-Type': 'application/json' },
+          data: JSON.stringify(all),
+          onload: function(){},
+          onerror: function(){ _namesPushQueued = true; }
+        });
+      } catch(e) {}
+    }, 2500);
+  }
+
+  // ── History sync (push/pull) ──
+  // Same readiness pattern as the names sync: pushes wait for the first
+  // pull, failed pushes requeue instead of blind-posting, and the first
+  // pull retries every 5s until Pantry answers. A blind POST on a failed
+  // read used to replace the shared basket with ONLY this device's slice,
+  // erasing every other device's data — that is what made each computer's
+  // dashboard drift apart.
+  var _histPulled = false;
+  var _histPushQueued = false;
+  var _histFirstPullRetry = null;
+  var _weeklyPulled = false;
+  var _weeklyPushQueued = false;
+  var _weeklyFirstPullRetry = null;
+  var _syncHistoryPushTimer = null;
+  function syncHistoryPush() {
+    if (!syncEnabled()) return;
+    if (!_histPulled) { _histPushQueued = true; return; }
+    if (_syncHistoryPushTimer) return;
+    _syncHistoryPushTimer = setTimeout(function(){
+      _syncHistoryPushTimer = null;
+      try {
+        var devId = MY_DEVICE_ID || getDeviceId();
+        var mySlice = sanitizeHistory(loadHistory());
+        // PUT to this device's own path — Firebase only updates this one
+        // node, leaving every other device's slice completely untouched.
+        GM_xmlhttpRequest({
+          method: 'PUT', url: syncHistoryDeviceUrl(devId),
+          headers: { 'Content-Type': 'application/json' },
+          data: JSON.stringify(mySlice),
+          onload: function(){
+            /* Date metadata is a sibling node so old script versions can keep
+               reading the flat device history without seeing fake associates. */
+            try {
+              GM_xmlhttpRequest({
+                method: 'PUT', url: syncHistoryMetaUrl(devId),
+                headers: { 'Content-Type': 'application/json' },
+                data: JSON.stringify({ date: todayStr(), updatedAt: Date.now(), schema: 2 }),
+                onload: function(){ gmSet(HISTORY_SYNC_SCHEMA_KEY, '2'); },
+                onerror: function(){ _histPushQueued = true; }
+              });
+            } catch(e2) { _histPushQueued = true; }
+          },
+          onerror: function(){ _histPushQueued = true; }
+        });
+      } catch(e) {}
+    }, 2500);
+  }
+  var _histPullInFlight = false;
+  var _lastHistoryPullAt = 0;
+
+  function syncHistoryPull(cb) {
+    if (!syncEnabled()) { if (cb) cb(false); return; }
+    if (_histPullInFlight) { if (cb) cb(false); return; }
+    _histPullInFlight = true;
+
+    try {
+      GM_xmlhttpRequest({
+        method: 'GET', url: syncHistoryUrl(), headers: { 'Content-Type': 'application/json' },
+        onload: function(res){
+          _histPullInFlight = false;
+          _lastHistoryPullAt = Date.now();
+
+          var changed = false;
+          _histPulled = true;
+          if (_histPushQueued) { _histPushQueued = false; syncHistoryPush(); }
+
+          try {
+            var remoteCache = {};
+            var currentDay = todayStr();
+
+            if (res.status >= 200 && res.status < 300 && res.responseText && res.responseText !== 'null') {
+              var basket = JSON.parse(res.responseText);
+              if (basket && typeof basket === 'object') {
+                var devId = MY_DEVICE_ID || getDeviceId();
+                var devices = (basket.devices && typeof basket.devices === 'object') ? basket.devices : {};
+                var meta = (basket.meta && typeof basket.meta === 'object') ? basket.meta : {};
+                var anyModernMeta = Object.keys(meta).length > 0;
+
+                for (var d in devices) {
+                  if (d === devId) continue;
+
+                  var md = meta[d];
+                  var deviceDate = md && typeof md === 'object' ? md.date : null;
+
+                  /* Modern slices are accepted ONLY for today's store date.
+                     This is the key guarantee that yesterday cannot reappear
+                     after midnight because another PC was asleep/offline. */
+                  if (deviceDate && deviceDate !== currentDay) continue;
+
+                  /* Legacy v23.9.31-and-older device nodes have no date
+                     metadata. Keep them only while the Firebase basket has no
+                     modern metadata at all, so an all-old installation still
+                     migrates once. As soon as v23.9.87 devices are present,
+                     undated stale nodes are not allowed into Today. */
+                  if (!deviceDate && anyModernMeta) continue;
+
+                  var slice = sanitizeHistory(devices[d] || {});
+                  for (var a in slice) {
+                    var r = slice[a];
+                    if (!remoteCache[a]) {
+                      remoteCache[a] = { assoc: r.assoc||a, totalPkgs: r.totalPkgs||0,
+                        totalSec: r.totalSec||0, runs: r.runs||0,
+                        totalMissing: r.totalMissing||0, totalExpected: r.totalExpected||0,
+                        bestRate: null, lastRate: null, lastAt: 0 };
+                      cbtMergeBestFields(remoteCache[a], r);
+                      cbtMergeLatestFields(remoteCache[a], r);
+                    } else {
+                      remoteCache[a].totalPkgs     += r.totalPkgs     || 0;
+                      remoteCache[a].totalSec      += r.totalSec      || 0;
+                      remoteCache[a].runs          += r.runs          || 0;
+                      remoteCache[a].totalMissing  += r.totalMissing  || 0;
+                      remoteCache[a].totalExpected += r.totalExpected || 0;
+                      cbtMergeBestFields(remoteCache[a], r);
+                      cbtMergeLatestFields(remoteCache[a], r);
+                    }
+                  }
+                }
+              }
+            }
+
+            for (var a2 in remoteCache) {
+              remoteCache[a2].avgRate = remoteCache[a2].totalSec > 0
+                ? remoteCache[a2].totalPkgs / (remoteCache[a2].totalSec / 60) : 0;
+            }
+
+            var oldRemote = loadRemoteHistory();
+            var oldJson = JSON.stringify(sanitizeHistory(oldRemote || {}));
+            var newJson = JSON.stringify(sanitizeHistory(remoteCache || {}));
+
+            if (oldJson !== newJson || gmGet(REMOTE_HISTORY_DATE_KEY, null) !== currentDay) {
+              saveRemoteHistory(remoteCache, currentDay);
+              changed = true;
+
+              if (document.getElementById('cbt-hist-tbody')) {
+                setTimeout(function(){ try { renderHistory(); } catch(e) {} }, 0);
+              }
+            }
+          } catch(e) {}
+
+          if (cb) cb(changed);
+        },
+        onerror: function(){
+          _histPullInFlight = false;
+          if (!_histPulled && !_histFirstPullRetry) {
+            _histFirstPullRetry = setTimeout(function(){ _histFirstPullRetry = null; syncHistoryPull(); }, 5000);
+          }
+          if (cb) cb(false);
+        }
+      });
+    } catch(e) {
+      _histPullInFlight = false;
+      if (!_histPulled && !_histFirstPullRetry) {
+        _histFirstPullRetry = setTimeout(function(){ _histFirstPullRetry = null; syncHistoryPull(); }, 5000);
+      }
+      if (cb) cb(false);
+    }
+  }
+
+  // ── Weekly sync (push/pull) ──
+  var _syncWeeklyPushTimer = null;
+  function syncWeeklyPush() {
+    if (!syncEnabled()) return;
+    if (!_weeklyPulled) { _weeklyPushQueued = true; return; }
+    if (_syncWeeklyPushTimer) return;
+    _syncWeeklyPushTimer = setTimeout(function(){
+      _syncWeeklyPushTimer = null;
+      try {
+        var devId = MY_DEVICE_ID || getDeviceId();
+        var mySlice = sanitizeWeekly(loadWeekly());
+        // PUT to this device's own weekly path — only updates this device's slice
+        GM_xmlhttpRequest({
+          method: 'PUT', url: syncWeeklyDeviceUrl(devId),
+          headers: { 'Content-Type': 'application/json' },
+          data: JSON.stringify(mySlice),
+          onload: function(){
+            try {
+              GM_xmlhttpRequest({
+                method: 'PUT', url: syncWeeklyMetaUrl(devId),
+                headers: { 'Content-Type': 'application/json' },
+                data: JSON.stringify({
+                  weekStart: currentWeekStartStr(),
+                  updatedAt: Date.now(),
+                  schema: 2
+                }),
+                onload: function(){ gmSet(WEEKLY_SYNC_SCHEMA_KEY, '2'); },
+                onerror: function(){ _weeklyPushQueued = true; }
+              });
+            } catch(e2) { _weeklyPushQueued = true; }
+          },
+          onerror: function(){ _weeklyPushQueued = true; }
+        });
+      } catch(e) {}
+    }, 2500);
+  }
+  var _weeklyPullInFlight = false;
+  var _lastWeeklyPullAt = 0;
+
+  function cbtAddWeeklySlice(target, slice) {
+    slice = sanitizeWeekly(slice || {});
+    for (var dk in slice) {
+      if (!cbtIsDateInCurrentWeek(dk)) continue;
+      if (!target[dk]) target[dk] = {};
+      for (var a in slice[dk]) {
+        var r = slice[dk][a];
+        if (!target[dk][a]) {
+          target[dk][a] = {
+            assoc: r.assoc || a,
+            totalPkgs: r.totalPkgs||0,
+            totalSec: r.totalSec||0,
+            runs: r.runs||0,
+            totalMissing: r.totalMissing||0,
+            totalExpected: r.totalExpected||0,
+            bestRate: null,
+            lastRate: null,
+            lastAt: 0
+          };
+          cbtMergeBestFields(target[dk][a], r);
+          cbtMergeLatestFields(target[dk][a], r);
+        } else {
+          target[dk][a].totalPkgs     += r.totalPkgs     || 0;
+          target[dk][a].totalSec      += r.totalSec      || 0;
+          target[dk][a].runs          += r.runs          || 0;
+          target[dk][a].totalMissing  += r.totalMissing  || 0;
+          target[dk][a].totalExpected += r.totalExpected || 0;
+          cbtMergeBestFields(target[dk][a], r);
+          cbtMergeLatestFields(target[dk][a], r);
+        }
+      }
+    }
+  }
+
+  function cbtLooksLikeWeeklyRoot(obj) {
+    if (!obj || typeof obj !== 'object') return false;
+    var keys = Object.keys(obj);
+    for (var i = 0; i < keys.length; i++) {
+      var k = keys[i];
+      /* Existing weekly keys are locale dates such as 8/12/2026. */
+      if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(k) && obj[k] && typeof obj[k] === 'object') {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  function syncWeeklyPull(cb) {
+    if (!syncEnabled()) { if (cb) cb(false); return; }
+    if (_weeklyPullInFlight) { if (cb) cb(false); return; }
+    _weeklyPullInFlight = true;
+
+    try {
+      GM_xmlhttpRequest({
+        method: 'GET', url: syncWeeklyUrl(), headers: { 'Content-Type': 'application/json' },
+        onload: function(res){
+          _weeklyPullInFlight = false;
+          _lastWeeklyPullAt = Date.now();
+
+          var changed = false;
+          _weeklyPulled = true;
+          if (_weeklyPushQueued) { _weeklyPushQueued = false; syncWeeklyPush(); }
+
+          try {
+            var remoteCache = {};
+
+            if (res.status >= 200 && res.status < 300 && res.responseText && res.responseText !== 'null') {
+              var basket = JSON.parse(res.responseText);
+              if (basket && typeof basket === 'object') {
+                var devId = MY_DEVICE_ID || getDeviceId();
+                var currentWeek = currentWeekStartStr();
+                var devices = (basket.devices && typeof basket.devices === 'object') ? basket.devices : {};
+                var meta = (basket.meta && typeof basket.meta === 'object') ? basket.meta : {};
+                var anyModernMeta = Object.keys(meta).length > 0;
+                var deviceKeys = Object.keys(devices);
+                var usedDeviceData = false;
+
+                for (var i = 0; i < deviceKeys.length; i++) {
+                  var d = deviceKeys[i];
+                  if (d === devId) continue;
+
+                  var md = meta[d];
+                  var deviceWeek = md && typeof md === 'object' ? md.weekStart : null;
+
+                  /* New-week guarantee: a sleeping/offline computer that still
+                     has LAST week's slice cannot repopulate the new Weekly tab. */
+                  if (deviceWeek && deviceWeek !== currentWeek) continue;
+
+                  /* Once modern metadata exists, undated legacy device slices
+                     are not allowed to leak an unknown/old period into Weekly. */
+                  if (!deviceWeek && anyModernMeta) continue;
+
+                  var node = devices[d];
+
+                  /* Be tolerant if a future/experimental build wrapped weekly
+                     data in {data:{...}}. Current versions remain flat. */
+                  var slice = (node && node.data && cbtLooksLikeWeeklyRoot(node.data))
+                    ? node.data
+                    : node;
+
+                  if (cbtLooksLikeWeeklyRoot(slice)) {
+                    cbtAddWeeklySlice(remoteCache, slice);
+                    usedDeviceData = true;
+                  }
+                }
+
+                /* One-time legacy migration only while the Firebase weekly tree
+                   contains no modern week metadata at all. sanitizeWeekly()
+                   still limits that legacy map to this Sunday-Saturday week. */
+                if (!usedDeviceData && !anyModernMeta && cbtLooksLikeWeeklyRoot(basket)) {
+                  cbtAddWeeklySlice(remoteCache, basket);
+                } else if (!usedDeviceData && !anyModernMeta && basket.shared && cbtLooksLikeWeeklyRoot(basket.shared)) {
+                  cbtAddWeeklySlice(remoteCache, basket.shared);
+                } else if (!usedDeviceData && !anyModernMeta && basket.data && cbtLooksLikeWeeklyRoot(basket.data)) {
+                  cbtAddWeeklySlice(remoteCache, basket.data);
+                }
+              }
+            }
+
+            pruneWeeklyOlderThan(WEEKLY_DAYS);
+
+            var currentWeek2 = currentWeekStartStr();
+            var oldPeriod = null;
+            try { oldPeriod = gmGet(REMOTE_WEEKLY_PERIOD_KEY, null); } catch(e0) {}
+            if (!oldPeriod) {
+              try { oldPeriod = localStorage.getItem(REMOTE_WEEKLY_PERIOD_KEY); } catch(e1) {}
+            }
+
+            var oldJson = JSON.stringify(sanitizeWeekly(loadRemoteWeekly() || {}));
+            var newJson = JSON.stringify(sanitizeWeekly(remoteCache || {}));
+
+            if (oldJson !== newJson || oldPeriod !== currentWeek2) {
+              saveRemoteWeekly(remoteCache, currentWeek2);
+              changed = true;
+
+              if (document.getElementById('cbt-weekly-tbody')) {
+                setTimeout(function(){ try { renderWeekly(); } catch(e) {} }, 0);
+              }
+            }
+          } catch(e) {}
+
+          if (cb) cb(changed);
+        },
+        onerror: function(){
+          _weeklyPullInFlight = false;
+          if (!_weeklyPulled && !_weeklyFirstPullRetry) {
+            _weeklyFirstPullRetry = setTimeout(function(){ _weeklyFirstPullRetry = null; syncWeeklyPull(); }, 5000);
+          }
+          if (cb) cb(false);
+        }
+      });
+    } catch(e) {
+      _weeklyPullInFlight = false;
+      if (!_weeklyPulled && !_weeklyFirstPullRetry) {
+        _weeklyFirstPullRetry = setTimeout(function(){ _weeklyFirstPullRetry = null; syncWeeklyPull(); }, 5000);
+      }
+      if (cb) cb(false);
+    }
+  }
+
+  function captureName(item) {
+    if (!item || typeof item !== 'object') return false;
+    var name = item.associateId || item.associate || item.driverAssignment;
+    if (!name || typeof name !== 'string') return false;
+    name = name.trim();
+    if (!name || name.length > 60) return false;
+    var key = name.toLowerCase();
+    var all = loadAllNames();
+    if (!all[key]) {
+      all[key] = name;
+      persistAllNames();
+      syncPush();
+      return true;
+    }
+    return false;
+  }
+  function _deepCaptureInner(obj, depth) {
+    if (obj == null || depth > 6) return false;
+    var added = false;
+    if (Array.isArray(obj)) {
+      for (var i = 0; i < obj.length && i < 5000; i++) {
+        if (_deepCaptureInner(obj[i], depth + 1)) added = true;
+      }
+    } else if (typeof obj === 'object') {
+      if (captureName(obj)) added = true;
+      for (var k in obj) {
+        var v = obj[k];
+        if (v && typeof v === 'object') {
+          if (_deepCaptureInner(v, depth + 1)) added = true;
+        }
+      }
+    }
+    return added;
+  }
+  function deepCaptureNames(obj, depth) {
+    var added = _deepCaptureInner(obj, depth || 0);
+    if (added && activeTab === 'names') renderNames();
+    return added;
+  }
+
+  var _namesStorageScanRunning = false;
+  function scanLocalStorageForNames() {
+    /* A synchronous parse of every localStorage JSON blob causes a noticeable
+       reload/Names-tab hitch on large COMO sessions. Snapshot the keys once and
+       process only a few per idle turn. Capture still reaches the same stored
+       associate fields, but never monopolizes one browser frame. */
+    if (_namesStorageScanRunning) return false;
+    _namesStorageScanRunning = true;
+
+    var keys = [];
+    try {
+      for (var ki = 0; ki < localStorage.length; ki++) {
+        var kk = localStorage.key(ki);
+        if (kk) keys.push(kk);
+      }
+    } catch(e0) {}
+
+    var idx = 0;
+    var added = false;
+    function step() {
+      var processed = 0;
+      while (idx < keys.length && processed < 3) {
+        var key = keys[idx++];
+        processed++;
+        var val;
+        try { val = localStorage.getItem(key); } catch(e1) { continue; }
+        if (!val || val.length < 2) continue;
+        var ch = val.charAt(0);
+        if (ch !== '{' && ch !== '[') continue;
+
+        /* Extremely large app caches are not a useful source of associate
+           names and parsing them can freeze a reload. Live/API capture and the
+           built-in roster remain authoritative for names. */
+        if (val.length > 750000) continue;
+
+        try {
+          var parsed = JSON.parse(val);
+          if (_deepCaptureInner(parsed, 0)) added = true;
+        } catch(e2) {}
+      }
+
+      if (idx < keys.length) {
+        cbtIdle(step, 900);
+        return;
+      }
+
+      _namesStorageScanRunning = false;
+      if (added && activeTab === 'names') {
+        try { renderNames(); } catch(e3) {}
+      }
+      if (added) syncPush();
+    }
+
+    cbtIdle(step, 900);
+    return false;
+  }
+
+  function addNameToAll(all, n) {
+    if (!n || typeof n !== 'string') return false;
+    n = n.trim();
+    if (!n || n.length > 60) return false;
+    var k = n.toLowerCase();
+    if (!all[k]) { all[k] = n; return true; }
+    return false;
+  }
+  function syncNamesFromAllTabs() {
+    var all = loadAllNames();
+    var added = false;
+    taskCache.forEach(function(d){
+      if (addNameToAll(all, d.associateId||d.associate||d.driverAssignment)) added = true;
+    });
+    try {
+      var hist = loadHistory();
+      Object.keys(hist).forEach(function(a){ if (addNameToAll(all, (hist[a]&&hist[a].assoc)||a)) added = true; });
+    } catch(e) {}
+    try {
+      var weekly = loadWeekly();
+      Object.keys(weekly).forEach(function(dk){
+        Object.keys(weekly[dk]).forEach(function(a){ if (addNameToAll(all, (weekly[dk][a]&&weekly[dk][a].assoc)||a)) added = true; });
+      });
+    } catch(e) {}
+    if (added) {
+      persistAllNames();
+      syncPush();
+    }
+    return added;
+  }
+
+  function pruneWeeklyOlderThan(days) {
+    /* `days` is retained in the signature for compatibility with older calls.
+       Weekly is now a calendar report, so only this Sunday-Saturday period is
+       valid regardless of a rolling 7-day count. */
+    var currentWeek = currentWeekStartStr();
+
+    var w = loadWeekly();
+    var changed = false;
+    for (var dk of Object.keys(w)) {
+      if (!cbtIsDateInCurrentWeek(dk)) { delete w[dk]; changed = true; }
+    }
+    if (changed) saveWeekly(w, true, currentWeek);
+
+    var rc = loadRemoteWeekly();
+    var rcChanged = false;
+    for (var dk2 of Object.keys(rc)) {
+      if (!cbtIsDateInCurrentWeek(dk2)) { delete rc[dk2]; rcChanged = true; }
+    }
+    if (rcChanged) saveRemoteWeekly(rc, currentWeek);
+  }
+
+  function cbtReadSavedDayReplica() {
+    var current = todayStr(), gmDay = null, lsDay = null;
+    try { gmDay = gmGet(DATE_KEY, null); } catch(e0) {}
+    try { lsDay = localStorage.getItem(DATE_KEY); } catch(e1) {}
+    /* If either replica already reached the current store day, never let the
+       stale replica trigger a second rollover/reset. */
+    if (gmDay === current || lsDay === current) return current;
+    var gmMs = cbtDateKeyEpoch(gmDay), lsMs = cbtDateKeyEpoch(lsDay);
+    if (isFinite(gmMs) && isFinite(lsMs)) return gmMs >= lsMs ? gmDay : lsDay;
+    if (isFinite(gmMs)) return gmDay;
+    if (isFinite(lsMs)) return lsDay;
+    return gmDay || lsDay || null;
+  }
+
+  function rollDailyIntoWeekly() {
+    try {
+      // Read date from GM storage first (survives localStorage clears)
+      var sd = cbtReadSavedDayReplica();
+      if (!sd) return;
+      // Read history from GM storage first, fall back to localStorage
+      var daily = {};
+      try { var gmH = gmGet(STORAGE_KEY, null); if (gmH) daily = (typeof gmH === 'string') ? JSON.parse(gmH) : gmH; } catch(e) {}
+      if (!Object.keys(daily).length) {
+        try { daily = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch(e) {}
+      }
+      if (!Object.keys(daily).length) return;
+      daily = sanitizeHistory(daily);
+      if (!Object.keys(daily).length) return;
+      var w = loadWeekly(); if (!w[sd]) w[sd] = {};
+      for (var a of Object.keys(daily)) {
+        var d2 = daily[a];
+        // Merge: take max totalPkgs so we never downgrade an existing entry
+        if (!w[sd][a] || (d2.totalPkgs||0) > (w[sd][a].totalPkgs||0)) {
+          w[sd][a] = { assoc: d2.assoc || a, totalPkgs: d2.totalPkgs, totalSec: d2.totalSec, runs: d2.runs,
+            avgRate: d2.avgRate, totalMissing: d2.totalMissing||0, totalExpected: d2.totalExpected||0,
+            bestRate: Math.max(Number(d2.bestRate)||0, Number(d2.lastRate)||0, Number(d2.avgRate)||0) || null,
+            lastRate: Number(d2.lastRate) > 0 ? Number(d2.lastRate) : null,
+            lastAt: Number(d2.lastAt) || 0 };
+        }
+      }
+      saveWeekly(w);
+    } catch(e) {}
+  }
+
+  /* v23.9.88 DATA INTEGRITY
+     Associate login is the identity. Normalize whitespace/casing once so the
+     same person cannot split into two Today/Weekly rows. Numeric fields are
+     normalized before any addition so legacy string values cannot concatenate. */
+  function cbtNormalizeAssociate(value) {
+    if (typeof value !== 'string') return '';
+    var s = value.trim().replace(/\s+/g, ' ');
+    if (!s || s.length > 80) return '';
+    return s;
+  }
+  function cbtAssociateKey(value) {
+    var s = cbtNormalizeAssociate(value);
+    return s ? s.toLowerCase() : '';
+  }
+  function cbtNonNegativeNumber(value, max) {
+    var n = Number(value);
+    if (!isFinite(n) || n < 0) return 0;
+    if (max != null && n > max) return max;
+    return n;
+  }
+  function cbtNonNegativeInt(value, max) {
+    return Math.round(cbtNonNegativeNumber(value, max));
+  }
+  function cbtSameAggregate(a, b) {
+    if (!a || !b) return false;
+    return Number(a.totalPkgs||0) === Number(b.totalPkgs||0) &&
+      Number(a.totalSec||0) === Number(b.totalSec||0) &&
+      Number(a.runs||0) === Number(b.runs||0) &&
+      Number(a.totalMissing||0) === Number(b.totalMissing||0) &&
+      Number(a.totalExpected||0) === Number(b.totalExpected||0) &&
+      Number(a.lastAt||0) === Number(b.lastAt||0);
+  }
+  function cbtMergeSanitizedAggregate(target, source) {
+    if (!target) return Object.assign({}, source);
+    if (!source || cbtSameAggregate(target, source)) {
+      if (source) { cbtMergeBestFields(target, source); cbtMergeLatestFields(target, source); }
+      return target;
+    }
+    target.totalPkgs += source.totalPkgs;
+    target.totalSec += source.totalSec;
+    target.runs += source.runs;
+    target.totalMissing += source.totalMissing;
+    target.totalExpected += source.totalExpected;
+    cbtMergeBestFields(target, source);
+    cbtMergeLatestFields(target, source);
+    target.avgRate = target.totalSec > 0 ? target.totalPkgs / (target.totalSec / 60) : 0;
+    return target;
+  }
+  function cbtPreferReplica(a, b) {
+    if (!a) return b; if (!b) return a;
+    var aa = [Number(a.runs)||0, Number(a.totalPkgs)||0, Number(a.lastAt)||0, Number(a.totalSec)||0];
+    var bb = [Number(b.runs)||0, Number(b.totalPkgs)||0, Number(b.lastAt)||0, Number(b.totalSec)||0];
+    for (var i=0; i<aa.length; i++) { if (aa[i] !== bb[i]) return aa[i] > bb[i] ? a : b; }
+    return a;
+  }
+
+  function sanitizeHistory(h) {
+    var clean = {};
+    for (var a in (h || {})) {
+      var e = h[a];
+      if (!e || typeof e !== 'object') continue;
+      var assoc = cbtNormalizeAssociate(e.assoc || a);
+      var key = cbtAssociateKey(assoc);
+      if (!key) continue;
+
+      var pkgs = cbtNonNegativeInt(e.totalPkgs, 50000);
+      var runs = cbtNonNegativeInt(e.runs, 300);
+      var sec  = cbtNonNegativeNumber(e.totalSec, 7 * 24 * 3600);
+      if (Number(e.totalPkgs) > 50000 || Number(e.runs) > 300) continue;
+      /* Today/Weekly are performance reports, not a roster. A person with no
+         completed batch data belongs only in Names, never as a 0/0 row. */
+      if (runs <= 0 || pkgs <= 0 || sec <= 0) continue;
+      if (pkgs / (sec / 60) > CBT_MAX_TRUSTED_COMPLETED_RATE) continue;
+
+      var expected = cbtNonNegativeInt(e.totalExpected, 100000);
+      var missing = cbtNonNegativeInt(e.totalMissing, 100000);
+      if (expected > 0 && missing > expected) missing = expected;
+      if (!expected) missing = 0;
+
+      var bestRate = Number(e.bestRate);
+      if (!(bestRate > 0) || !isFinite(bestRate) || bestRate > CBT_MAX_TRUSTED_COMPLETED_RATE) bestRate = null;
+      var lastRate = Number(e.lastRate);
+      var lastAt = cbtNonNegativeNumber(e.lastAt);
+      if (!(lastRate > 0) || !isFinite(lastRate) || lastRate > CBT_MAX_TRUSTED_COMPLETED_RATE) { lastRate = null; lastAt = 0; }
+
+      var c = Object.assign({}, e, {
+        assoc: assoc, totalPkgs: pkgs, totalSec: sec, runs: runs,
+        avgRate: sec > 0 ? pkgs / (sec / 60) : 0,
+        bestRate: bestRate, lastRate: lastRate, lastAt: lastAt,
+        totalMissing: missing, totalExpected: expected
+      });
+      clean[key] = cbtMergeSanitizedAggregate(clean[key], c);
+    }
+    return clean;
+  }
+
+  var _todayBoundaryTimer = null;
+  var _lastStoreDay = null;
+
+  function cbtStoreClockParts() {
+    try {
+      var tz = getStoreTimezone();
+      var parts = new Intl.DateTimeFormat('en-US', {
+        timeZone: tz,
+        hour12: false,
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      }).formatToParts(new Date());
+
+      var out = { hour: 0, minute: 0, second: 0 };
+      for (var i = 0; i < parts.length; i++) {
+        if (parts[i].type === 'hour') out.hour = parseInt(parts[i].value, 10) || 0;
+        else if (parts[i].type === 'minute') out.minute = parseInt(parts[i].value, 10) || 0;
+        else if (parts[i].type === 'second') out.second = parseInt(parts[i].value, 10) || 0;
+      }
+      if (out.hour === 24) out.hour = 0;
+      return out;
+    } catch(e) {
+      var d = new Date();
+      return { hour: d.getHours(), minute: d.getMinutes(), second: d.getSeconds() };
+    }
+  }
+
+  function cbtResetTodayForNewDay() {
+    var currentDay = todayStr();
+    var currentWeek = currentWeekStartStr();
+    var savedDay = null;
+    try { savedDay = cbtReadSavedDayReplica(); } catch(e0) {}
+
+    if (savedDay === currentDay) {
+      _lastStoreDay = currentDay;
+
+      /* Upgrade/migration safety: even without a day change, force local
+         Weekly storage to the current Sunday period. */
+      try { pruneWeeklyOlderThan(WEEKLY_DAYS); } catch(e1) {}
+      return false;
+    }
+
+    var savedWeek = savedDay ? cbtWeekStartForDateKey(savedDay) : null;
+    var crossedWeek = !!(savedDay && savedWeek && savedWeek !== currentWeek);
+
+    if (savedDay && !crossedWeek) {
+      /* Monday-Saturday midnight: yesterday belongs to the SAME current week,
+         so preserve its Today report before clearing Today. */
+      try { rollDailyIntoWeekly(); } catch(e2) {}
+    }
+
+    if (crossedWeek) {
+      /* Sunday 12:00 AM (or returning after missing the Sunday boundary):
+         start a completely new Weekly report. Saturday/old-week data is no
+         longer part of the current report and must not survive locally. */
+      saveWeekly({}, true, currentWeek);
+      saveRemoteWeekly({}, currentWeek);
+      _dispWeekCache = null;
+
+      try {
+        if (_weeklyPulled) syncWeeklyPush();
+        else _weeklyPushQueued = true;
+      } catch(e3) {}
+    } else {
+      try { pruneWeeklyOlderThan(WEEKLY_DAYS); } catch(e4) {}
+    }
+
+    /* Every store midnight starts a completely empty Today report. */
+    try { localStorage.removeItem(STORAGE_KEY); } catch(e5) {}
+    gmSet(STORAGE_KEY, '{}');
+
+    try {
+      localStorage.setItem(DATE_KEY, currentDay);
+      localStorage.removeItem(REMOTE_HISTORY_KEY);
+      localStorage.setItem(REMOTE_HISTORY_DATE_KEY, currentDay);
+    } catch(e6) {}
+    gmSet(DATE_KEY, currentDay);
+    saveRemoteHistory({}, currentDay);
+
+    _dispHistCache = null;
+    _dispWeekCache = null;
+    _lastStoreDay = currentDay;
+
+    /* Publish an empty current-day slice immediately. */
+    try { if (_histPulled) syncHistoryPush(); else _histPushQueued = true; } catch(e7) {}
+    try { syncWeeklyPush(); } catch(e8) {}
+
+    if (document.getElementById('cbt-hist-tbody')) {
+      try { renderHistory(); } catch(e9) {}
+    }
+    if (document.getElementById('cbt-weekly-tbody')) {
+      try { renderWeekly(); } catch(e10) {}
+    }
+
+    /* Pull current period data after clearing. Date/week metadata filters out
+       stale data from computers still holding yesterday/last week's slices. */
+    try { syncHistoryPull(); } catch(e11) {}
+    try { syncWeeklyPull(); } catch(e12) {}
+    return true;
+  }
+
+  function cbtScheduleTodayBoundary() {
+    if (_todayBoundaryTimer) {
+      try { clearTimeout(_todayBoundaryTimer); } catch(e0) {}
+      _todayBoundaryTimer = null;
+    }
+
+    /* Wake near store midnight. Cap a single sleep at 6h so DST/timezone
+       changes cannot leave the reset timer off by an hour. Four very cheap
+       wakeups per day are far lighter than a permanent polling loop. */
+    var p = cbtStoreClockParts();
+    var seconds = (24 * 3600) - (p.hour * 3600 + p.minute * 60 + p.second);
+    if (seconds <= 0) seconds = 1;
+    var delay = Math.min(seconds * 1000 + 1200, 6 * 3600 * 1000);
+
+    _todayBoundaryTimer = setTimeout(function() {
+      _todayBoundaryTimer = null;
+      try { cbtResetTodayForNewDay(); } catch(e1) {}
+      cbtScheduleTodayBoundary();
+    }, delay);
+  }
+
+  function cbtStartTodayBoundaryClock() {
+    _lastStoreDay = todayStr();
+    try { cbtResetTodayForNewDay(); } catch(e0) {}
+    cbtScheduleTodayBoundary();
+
+    /* If the browser slept through midnight, reset immediately when the tab
+       becomes visible/focused again. */
+    document.addEventListener('visibilitychange', function() {
+      if (document.hidden) return;
+      try { cbtResetTodayForNewDay(); } catch(e1) {}
+      cbtScheduleTodayBoundary();
+    });
+    window.addEventListener('focus', function() {
+      try { cbtResetTodayForNewDay(); } catch(e2) {}
+      cbtScheduleTodayBoundary();
+    });
+  }
+
+  function loadHistory() {
+    try {
+      if (cbtResetTodayForNewDay()) return {};
+      /* GM + localStorage are replicas of THIS device, not independent data.
+         Normalize each copy, then keep the more complete record per associate
+         instead of summing them or blindly preferring whichever was read first. */
+      var gmHist = {}, lsHist = {}, result = {};
+      try {
+        var gm = gmGet(STORAGE_KEY, null);
+        if (gm) gmHist = sanitizeHistory((typeof gm === 'string') ? JSON.parse(gm) : gm);
+      } catch(e0) {}
+      try { lsHist = sanitizeHistory(JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}')); } catch(e1) {}
+      var keys = Object.create(null);
+      Object.keys(gmHist).forEach(function(k){ keys[k] = true; });
+      Object.keys(lsHist).forEach(function(k){ keys[k] = true; });
+      Object.keys(keys).forEach(function(k){ result[k] = cbtPreferReplica(gmHist[k], lsHist[k]); });
+      return sanitizeHistory(result);
+    } catch(e) { return {}; }
+  }
+
+  function saveHistory(h, skipPush) {
+    // saveHistory only ever saves THIS device's own recorded batches
+    _dispHistCache = null;
+    _dispWeekCache = null; /* Weekly includes Today live */
+    h = sanitizeHistory(h || {});
+    var json = JSON.stringify(h);
+    localStorage.setItem(STORAGE_KEY, json); localStorage.setItem(DATE_KEY, todayStr());
+    gmSet(STORAGE_KEY, json); gmSet(DATE_KEY, todayStr());
+    if (!skipPush) { setTimeout(function(){ if (typeof syncHistoryPush === 'function') syncHistoryPush(); }, 0); }
+  }
+  // Remote history cache — other devices' data summed on pull, NEVER pushed
+  function loadRemoteHistory() {
+    /* A remote Today cache from yesterday must NEVER bleed into a new day. */
+    var cacheDate = null;
+    try { cacheDate = gmGet(REMOTE_HISTORY_DATE_KEY, null); } catch(e0) {}
+    if (!cacheDate) {
+      try { cacheDate = localStorage.getItem(REMOTE_HISTORY_DATE_KEY); } catch(e1) {}
+    }
+    if (cacheDate !== todayStr()) return {};
+
+    try { var gm = gmGet(REMOTE_HISTORY_KEY, null); if (gm) return (typeof gm === 'string') ? JSON.parse(gm) : gm; } catch(e2) {}
+    try { return JSON.parse(localStorage.getItem(REMOTE_HISTORY_KEY) || '{}'); } catch(e3) { return {}; }
+  }
+  function saveRemoteHistory(h, dateKey) {
+    _dispHistCache = null;
+    _dispWeekCache = null; /* Weekly includes Today live */
+    var json = JSON.stringify(h || {});
+    var dk = dateKey || todayStr();
+    gmSet(REMOTE_HISTORY_KEY, json);
+    gmSet(REMOTE_HISTORY_DATE_KEY, dk);
+    try {
+      localStorage.setItem(REMOTE_HISTORY_KEY, json);
+      localStorage.setItem(REMOTE_HISTORY_DATE_KEY, dk);
+    } catch(e) {}
+    // Never push — display-only
+  }
+  // Merge own + remote for display only
+  function getDisplayHistory() {
+    var _now = Date.now();
+    if (_dispHistCache && (_now - _dispHistTime) < 1500) return _dispHistCache;
+    var own    = sanitizeHistory(loadHistory());
+    var remote = sanitizeHistory(loadRemoteHistory());
+    var out = {};
+    function addSlice(slice) {
+      for (var a in slice) {
+        var r = slice[a];
+        if (!out[a]) {
+          out[a] = { assoc: r.assoc||a, totalPkgs: r.totalPkgs||0, totalSec: r.totalSec||0,
+            runs: r.runs||0, totalMissing: r.totalMissing||0, totalExpected: r.totalExpected||0,
+            bestRate: null, lastRate: null, lastAt: 0 };
+          cbtMergeBestFields(out[a], r);
+          cbtMergeLatestFields(out[a], r);
+        } else {
+          out[a].totalPkgs    += r.totalPkgs    || 0;
+          out[a].totalSec     += r.totalSec     || 0;
+          out[a].runs         += r.runs         || 0;
+          out[a].totalMissing += r.totalMissing || 0;
+          out[a].totalExpected+= r.totalExpected|| 0;
+          cbtMergeBestFields(out[a], r);
+          cbtMergeLatestFields(out[a], r);
+        }
+      }
+    }
+    addSlice(own);
+    addSlice(remote);
+    // Recompute avgRate
+    for (var a2 in out) {
+      out[a2].avgRate = out[a2].totalSec > 0 ? out[a2].totalPkgs / (out[a2].totalSec / 60) : 0;
+    }
+    _dispHistCache = out; _dispHistTime = _now;
+    return out;
+  }
+
+  /* ══════════════════════════════════════
+     HALL OF FAME
+
+     Top 30 all-time peak rates. Two kinds of data, stored differently for
+     good reason:
+
+       peaks  -> ONE shared record per associate at /como_hof_v3/peaks/{login}.
+                 A device only writes when its value is strictly higher than
+                 what the server currently holds, so a saved best can only
+                 ever ratchet upward — a stale device can never lower it.
+
+       totals -> per-device slices at /como_hof_v3/totals/devices/{deviceId},
+                 summed for display. Same architecture as Today and Weekly:
+                 each machine owns its own slice, so nobody overwrites or
+                 double-counts anyone else's history.
+
+     Firebase is the source of truth so every computer and browser shows the
+     same records; GM storage is only a cache for instant paint and for
+     riding out a brief outage. Rank is never stored — it is derived from
+     the peak values at render time, so someone else beating a record moves
+     positions without touching anyone's saved number.
+  ══════════════════════════════════════ */
+  var HOF_MIN_PKGS = 20;      /* a record needs a real batch behind it */
+  var HOF_MIN_SEC  = 300;       /* 5 min: short batches are too spike-prone for a Peak */
+  var HOF_MAX_RATE = CBT_MAX_TRUSTED_COMPLETED_RATE;
+  var HOF_TOP      = 30;
+
+  /* v23.9.89 TRUSTED FASTEST RESET
+     --------------------------------
+     v2 can contain duplicate totals and legacy timing spikes. Those historical
+     records cannot be safely repaired after aggregation, so Fastest starts a
+     clean v3 generation. Old data is left untouched but is no longer read. */
+  var HOF_SCHEMA          = 3;
+  var HOF_FIREBASE_ROOT   = '/como_hof_v3';
+  var HOF_PEAKS_KEY       = 'cbt_hof_v3_peaks';
+  var HOF_LATEST_KEY      = 'cbt_hof_v3_latest';
+  var HOF_OWN_KEY         = 'cbt_hof_v3_own_totals';
+  var HOF_REMOTE_KEY      = 'cbt_hof_v3_remote_totals';
+
+  function hofUrl(path)      { return FIREBASE_URL + path + '.json'; }
+  function hofRootPath(path) {
+    path = String(path || '');
+    if (path && path.charAt(0) !== '/') path = '/' + path;
+    return HOF_FIREBASE_ROOT + path;
+  }
+  function hofKey(assoc) {
+    /* Firebase keys may not contain . $ # [ ] / */
+    return String(assoc || '').trim().toLowerCase().replace(/[.$#\[\]\/]/g, '_');
+  }
+
+  function hofLoadJson(key) {
+    try { var gm = gmGet(key, null); if (gm) return (typeof gm === 'string') ? JSON.parse(gm) : gm; } catch(e) {}
+    try { return JSON.parse(localStorage.getItem(key) || '{}'); } catch(e) { return {}; }
+  }
+  function hofSaveJson(key, obj) {
+    var json = JSON.stringify(obj || {});
+    gmSet(key, json);
+    try { localStorage.setItem(key, json); } catch(e) {}
+  }
+  function hofLoadPeaks()        { return hofLoadJson(HOF_PEAKS_KEY) || {}; }
+  function hofSavePeaks(p)       { hofSaveJson(HOF_PEAKS_KEY, p); }
+  function hofLoadLatest()       { return hofLoadJson(HOF_LATEST_KEY) || {}; }
+  function hofSaveLatest(p)      { hofSaveJson(HOF_LATEST_KEY, p); }
+  function hofLoadOwnTotals()    { return hofLoadJson(HOF_OWN_KEY) || {}; }
+  function hofSaveOwnTotals(t)   { hofSaveJson(HOF_OWN_KEY, t); }
+  function hofLoadRemoteTotals() { return hofLoadJson(HOF_REMOTE_KEY) || {}; }
+  function hofSaveRemoteTotals(t){ hofSaveJson(HOF_REMOTE_KEY, t); }
+
+  /* Latest is different from Peak: it ALWAYS follows the newest completed
+     batch, even if that rate is lower than the associate's personal best. */
+  function hofMergeLatest(key, rec) {
+    if (!key || !rec) return false;
+    var rate = Number(rec.rate), at = Number(rec.at) || 0;
+    if (Number(rec.schema) !== HOF_SCHEMA) return false;
+    if (!(Number(rec.pkgs) > 0) || Number(rec.elapsedSec) < 30) return false;
+    if (!(rate > 0) || !isFinite(rate) || rate > HOF_MAX_RATE) return false;
+
+    var latest = hofLoadLatest();
+    var cur = latest[key];
+    var curAt = cur ? (Number(cur.at) || 0) : -1;
+
+    if (cur && curAt > at) return false;
+    if (cur && curAt === at && Number(cur.rate) === rate && (cur.assoc || '') === (rec.assoc || '')) return false;
+
+    latest[key] = {
+      assoc: rec.assoc || (cur && cur.assoc) || key,
+      rate: rate,
+      at: at,
+      pkgs: Number(rec.pkgs) || 0,
+      elapsedSec: Number(rec.elapsedSec) || 0,
+      schema: Number(rec.schema) || HOF_SCHEMA,
+      calc: rec.calc || 'packagesBatched/fullBatchingSpan'
+    };
+    hofSaveLatest(latest);
+    return true;
+  }
+
+  function hofPushLatest(key, assoc, rate, ts, pkgs, elapsedSec) {
+    rate = Number(rate);
+    ts = Number(ts) || Date.now();
+    pkgs = Number(pkgs) || 0;
+    elapsedSec = Number(elapsedSec) || 0;
+    if (!key || !(rate > 0) || !isFinite(rate) || rate > HOF_MAX_RATE) return;
+    if (!(elapsedSec >= 30) || !(pkgs > 0)) return;
+
+    var rec = {
+      assoc: assoc || key,
+      rate: rate,
+      at: ts,
+      pkgs: pkgs,
+      elapsedSec: elapsedSec,
+      schema: HOF_SCHEMA,
+      calc: 'packagesBatched/fullBatchingSpan'
+    };
+    hofMergeLatest(key, rec);
+
+    if (!syncEnabled()) {
+      if (activeTab === 'hof') renderHallOfFame();
+      return;
+    }
+
+    /* Read-before-write prevents an older/slower computer from overwriting a
+       newer latest rate that another computer already published. */
+    try {
+      GM_xmlhttpRequest({
+        method: 'GET', url: hofUrl(hofRootPath('/latest/' + key)),
+        headers: { 'Content-Type': 'application/json' },
+        onload: function(res) {
+          var remote = null;
+          try {
+            if (res.status >= 200 && res.status < 300 && res.responseText && res.responseText !== 'null') {
+              remote = JSON.parse(res.responseText);
+            }
+          } catch(e) {}
+
+          if (remote && (Number(remote.at) || 0) > ts) {
+            hofMergeLatest(key, remote);
+            if (activeTab === 'hof') renderHallOfFame();
+            return;
+          }
+
+          GM_xmlhttpRequest({
+            method: 'PUT', url: hofUrl(hofRootPath('/latest/' + key)),
+            headers: { 'Content-Type': 'application/json' },
+            data: JSON.stringify(rec),
+            onload: function() {
+              hofMergeLatest(key, rec);
+              if (activeTab === 'hof') renderHallOfFame();
+            },
+            onerror: function() {
+              if (activeTab === 'hof') renderHallOfFame();
+            }
+          });
+        },
+        onerror: function() {
+          if (activeTab === 'hof') renderHallOfFame();
+        }
+      });
+    } catch(e) {}
+  }
+
+  /* Local cache only ever moves a peak upward. */
+  function hofMergePeak(key, rec) {
+    if (!key || !rec || typeof rec.rate !== 'number' || !(rec.rate > 0)) return false;
+    if (Number(rec.schema) !== HOF_SCHEMA) return false;
+    if (Number(rec.rate) > HOF_MAX_RATE) return false;
+    if (Number(rec.pkgs) < HOF_MIN_PKGS || Number(rec.elapsedSec) < HOF_MIN_SEC) return false;
+    var peaks = hofLoadPeaks();
+    var cur = peaks[key];
+    if (cur && typeof cur.rate === 'number' && cur.rate >= rec.rate) return false;
+    peaks[key] = {
+      assoc: rec.assoc || (cur && cur.assoc) || key,
+      rate: rec.rate,
+      at: rec.at || null,
+      pkgs: Number(rec.pkgs) || 0,
+      elapsedSec: Number(rec.elapsedSec) || 0,
+      schema: Number(rec.schema) || HOF_SCHEMA,
+      calc: rec.calc || 'packagesBatched/fullBatchingSpan'
+    };
+    hofSavePeaks(peaks);
+    return true;
+  }
+
+  /* Read the server value, then write ONLY if ours is strictly higher. */
+  function hofPushPeak(key, assoc, rate, ts, pkgs, elapsedSec) {
+    rate = Number(rate);
+    pkgs = Number(pkgs) || 0;
+    elapsedSec = Number(elapsedSec) || 0;
+    if (!(rate > 0) || !isFinite(rate) || rate > HOF_MAX_RATE) return;
+    if (pkgs < HOF_MIN_PKGS || elapsedSec < HOF_MIN_SEC) return;
+    if (!syncEnabled()) return;
+    try {
+      GM_xmlhttpRequest({
+        method: 'GET', url: hofUrl(hofRootPath('/peaks/' + key)),
+        headers: { 'Content-Type': 'application/json' },
+        onload: function(res){
+          var remote = null;
+          try {
+            if (res.status >= 200 && res.status < 300 && res.responseText && res.responseText !== 'null') {
+              remote = JSON.parse(res.responseText);
+            }
+          } catch(e) {}
+          if (remote && typeof remote.rate === 'number' && remote.rate >= rate) {
+            hofMergePeak(key, remote);      /* server already holds a better one */
+            if (activeTab === 'hof') renderHallOfFame();
+            return;
+          }
+          var rec = {
+            assoc: assoc,
+            rate: rate,
+            at: ts,
+            pkgs: pkgs,
+            elapsedSec: elapsedSec,
+            schema: HOF_SCHEMA,
+            calc: 'packagesBatched/fullBatchingSpan'
+          };
+          GM_xmlhttpRequest({
+            method: 'PUT', url: hofUrl(hofRootPath('/peaks/' + key)),
+            headers: { 'Content-Type': 'application/json' },
+            data: JSON.stringify(rec),
+            onload: function(){
+              hofMergePeak(key, rec);
+              if (activeTab === 'hof') renderHallOfFame();
+            },
+            onerror: function(){ hofMergePeak(key, rec); }   /* keep it locally, retry next record */
+          });
+        },
+        onerror: function(){
+          hofMergePeak(key, {
+            assoc: assoc, rate: rate, at: ts,
+            pkgs: pkgs, elapsedSec: elapsedSec,
+            schema: HOF_SCHEMA,
+            calc: 'packagesBatched/fullBatchingSpan'
+          });
+        }
+      });
+    } catch(e) {}
+  }
+
+  var _hofTotalsTimer = null;
+  function hofPushTotals() {
+    if (!syncEnabled()) return;
+    if (_hofTotalsTimer) return;
+    _hofTotalsTimer = setTimeout(function(){
+      _hofTotalsTimer = null;
+      try {
+        var devId = MY_DEVICE_ID || getDeviceId();
+        GM_xmlhttpRequest({
+          method: 'PUT', url: hofUrl(hofRootPath('/totals/devices/' + devId)),
+          headers: { 'Content-Type': 'application/json' },
+          data: JSON.stringify(hofLoadOwnTotals()),
+          onload: function(){}, onerror: function(){}
+        });
+      } catch(e) {}
+    }, 2500);
+  }
+
+  var _hofPullInFlight = false;
+  function hofPull(cb) {
+    if (!syncEnabled()) { if (cb) cb(); return; }
+    if (_hofPullInFlight) { if (cb) cb(); return; }
+    _hofPullInFlight = true;
+    try {
+      GM_xmlhttpRequest({
+        method: 'GET', url: hofUrl(HOF_FIREBASE_ROOT),
+        headers: { 'Content-Type': 'application/json' },
+        onload: function(res){
+          try {
+            if (res.status >= 200 && res.status < 300 && res.responseText && res.responseText !== 'null') {
+              var data = JSON.parse(res.responseText) || {};
+              var changed = false;
+              var peaks = data.peaks || {};
+              for (var k in peaks) { if (hofMergePeak(k, peaks[k])) changed = true; }
+
+              var latest = data.latest || {};
+              for (var lk in latest) { if (hofMergeLatest(lk, latest[lk])) changed = true; }
+
+              /* remote totals = every device except this one */
+              var devId = MY_DEVICE_ID || getDeviceId();
+              var devices = (data.totals && data.totals.devices) || {};
+              var remote = {};
+              for (var d in devices) {
+                if (d === devId) continue;
+                var slice = devices[d] || {};
+                for (var a in slice) {
+                  var r = slice[a] || {};
+                  if (!remote[a]) remote[a] = { assoc: r.assoc || a, runs: 0, pkgs: 0 };
+                  remote[a].runs += (Number(r.runs) || 0);
+                  remote[a].pkgs += (Number(r.pkgs) || 0);
+                  if (r.assoc) remote[a].assoc = r.assoc;
+                }
+              }
+              hofSaveRemoteTotals(remote);
+              if (activeTab === 'hof') renderHallOfFame();
+            }
+          } catch(e) {}
+          _hofPullInFlight = false;
+          if (cb) cb();
+        },
+        onerror: function(){ _hofPullInFlight = false; if (cb) cb(); }
+      });
+    } catch(e) { _hofPullInFlight = false; if (cb) cb(); }
+  }
+
+  /* Called for every completed batch. Totals always advance; the peak only
+     moves when the batch is substantial enough to be a real record. */
+  function hofRecordBatch(assoc, pkgs, elapsedSec, rate) {
+    if (!assoc) return;
+    var key = hofKey(assoc);
+    if (!key) return;
+
+    var own = hofLoadOwnTotals();
+    if (!own[key]) own[key] = { assoc: assoc, runs: 0, pkgs: 0 };
+    own[key].assoc = assoc;
+    own[key].runs = (Number(own[key].runs) || 0) + 1;
+    own[key].pkgs = (Number(own[key].pkgs) || 0) + (Number(pkgs) || 0);
+    hofSaveOwnTotals(own);
+    hofPushTotals();
+
+    /* Latest records EVERY valid completed rate, regardless of whether it is
+       higher/lower than Peak or whether the batch meets Fastest thresholds. */
+    var latestTs = Date.now();
+    if (Number(rate) > 0 && isFinite(Number(rate)) && Number(rate) <= HOF_MAX_RATE) {
+      hofPushLatest(key, assoc, Number(rate), latestTs, pkgs, elapsedSec);
+    }
+
+    if ((pkgs || 0) < HOF_MIN_PKGS) return;          /* too few packages for Peak only */
+    if ((elapsedSec || 0) < HOF_MIN_SEC) return;     /* too short */
+    if (!(rate > 0) || rate > HOF_MAX_RATE) return;  /* missing or impossible */
+    var peaks = hofLoadPeaks();
+    var cur = peaks[key];
+    if (cur && typeof cur.rate === 'number' && cur.rate >= rate) return;  /* never decreases */
+    hofPushPeak(key, assoc, rate, Date.now(), pkgs, elapsedSec);
+    if (activeTab === 'hof') renderHallOfFame();
+  }
+
+  function hofWhen(ts) {
+    if (!ts) return '\u2014';
+    try {
+      var d = new Date(ts);
+      if (isNaN(d.getTime())) return '\u2014';
+      /* short date only, e.g. 08/06/26 */
+      return d.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: '2-digit' });
+    } catch(e) { return '\u2014'; }
+  }
+
+  function renderHallOfFame() {
+    var tbody = document.getElementById('cbt-hof-tbody');
+    if (!tbody) return;
+    var emptyEl = document.getElementById('cbt-hof-empty');
+    var noteEl  = document.getElementById('cbt-hof-note');
+
+    var peaks   = hofLoadPeaks();
+    var latest  = hofLoadLatest();
+    var own     = hofLoadOwnTotals();
+    var remote  = hofLoadRemoteTotals();
+
+    /* Fastest is no longer Peak-only. Keep Peak as the ranking metric, while
+       also admitting associates who have a Latest rate but have not yet met
+       the Peak qualification threshold. Those rows remain unranked (—). */
+    var allKeys = Object.create(null);
+    for (var pk in peaks) allKeys[pk] = true;
+    for (var lk0 in latest) allKeys[lk0] = true;
+
+    var rows = [];
+    for (var k in allKeys) {
+      var p = peaks[k] || null;
+      var l = latest[k] || null;
+      var o = own[k] || {}, r = remote[k] || {};
+      var peakRate =
+        p && Number(p.schema) === HOF_SCHEMA &&
+        Number(p.rate) > 0 && Number(p.rate) <= HOF_MAX_RATE &&
+        Number(p.pkgs) >= HOF_MIN_PKGS && Number(p.elapsedSec) >= HOF_MIN_SEC
+          ? Number(p.rate) : null;
+      var latestRate =
+        l && Number(l.schema) === HOF_SCHEMA &&
+        Number(l.rate) > 0 && Number(l.rate) <= HOF_MAX_RATE &&
+        Number(l.pkgs) > 0 && Number(l.elapsedSec) >= 30
+          ? Number(l.rate) : null;
+      if (!(peakRate > 0) && !(latestRate > 0)) continue;
+
+      rows.push({
+        key: k,
+        assoc: (p && p.assoc) || (l && l.assoc) || o.assoc || r.assoc || k,
+        rate: peakRate,
+        at: p && p.at ? p.at : null,
+        latestRate: latestRate,
+        latestAt: l && l.at ? l.at : null,
+        runs: (o.runs || 0) + (r.runs || 0),
+        pkgs: (o.pkgs || 0) + (r.pkgs || 0)
+      });
+    }
+
+    /* Peak rows stay first and keep the existing Fastest ranking. Latest-only
+       rows come afterward, newest completion first, and have rank "—". */
+    rows.sort(function(a, b){
+      var ap = Number(a.rate) > 0, bp = Number(b.rate) > 0;
+      if (ap && !bp) return -1;
+      if (!ap && bp) return 1;
+      if (ap && bp) {
+        if (b.rate !== a.rate) return b.rate - a.rate;
+        if (b.pkgs !== a.pkgs) return b.pkgs - a.pkgs;
+      } else {
+        var ad = Number(a.latestAt) || 0, bd = Number(b.latestAt) || 0;
+        if (bd !== ad) return bd - ad;
+      }
+      return a.assoc.toLowerCase().localeCompare(b.assoc.toLowerCase());
+    });
+    var total = rows.length;
+    /* Rank is stamped from the FULL ordering before any filtering, so a
+       searched associate keeps the position they actually hold on the board
+       rather than being renumbered 1, 2, 3 within the results. */
+    var peakRank = 0;
+    for (var ri = 0; ri < rows.length; ri++) {
+      rows[ri].rank = Number(rows[ri].rate) > 0 ? (++peakRank) : null;
+    }
+    var hofTerm = (hofSearchTerm || '').toLowerCase().trim();
+    if (hofTerm) {
+      /* Fastest search must work like Today / Weekly: a person can be found
+         even when they have never set a qualifying Fastest peak. Real Fastest
+         ranks are stamped above from the complete peak board and are NEVER
+         recomputed after filtering. Search-only people stay unranked (—). */
+      var seenKey = Object.create(null), extraByKey = Object.create(null);
+      for (var rk2 = 0; rk2 < rows.length; rk2++) seenKey[rows[rk2].key] = true;
+
+      function addSearchOnly(key, assoc, runs, pkgs, priority) {
+        key = key || hofKey(assoc || '');
+        if (!key || seenKey[key]) return;
+        var cur = extraByKey[key];
+        if (!cur) {
+          var lr = latest[key] || null;
+          cur = extraByKey[key] = {
+            key:key, assoc:assoc||key, rate:null, at:null, rank:null,
+            latestRate:lr && Number(lr.schema)===HOF_SCHEMA &&
+              Number(lr.rate)>0 && Number(lr.rate)<=HOF_MAX_RATE &&
+              Number(lr.pkgs)>0 && Number(lr.elapsedSec)>=30 ? Number(lr.rate) : null,
+            latestAt:lr && lr.at ? lr.at : null,
+            runs:0, pkgs:0, _priority:-1
+          };
+        }
+        if (assoc) cur.assoc = assoc;
+        /* Prefer Hall-of-Fame totals, then Weekly, then Today, then a saved
+           name with no numeric history. This avoids double-counting the same
+           person's data across the different history stores. */
+        if (priority > cur._priority) {
+          cur._priority = priority;
+          cur.runs = Number(runs) || 0;
+          cur.pkgs = Number(pkgs) || 0;
+        }
+      }
+
+      /* Native Fastest totals (best source when present). */
+      var totalKeys = Object.create(null), kk;
+      for (kk in own) totalKeys[kk] = true;
+      for (kk in remote) totalKeys[kk] = true;
+      for (kk in totalKeys) {
+        var oo = own[kk] || {}, rr = remote[kk] || {};
+        addSearchOnly(kk, oo.assoc || rr.assoc || kk,
+          (oo.runs || 0) + (rr.runs || 0),
+          (oo.pkgs || 0) + (rr.pkgs || 0), 3);
+      }
+
+      /* Weekly history catches associates who existed before Fastest totals
+         began recording, or who have not met the peak threshold yet. */
+      var weeklySearchData = sanitizeWeekly(getDisplayWeekly()), weeklyAgg = Object.create(null);
+      for (var wday in weeklySearchData) {
+        for (var wa in weeklySearchData[wday]) {
+          var wd = weeklySearchData[wday][wa] || {};
+          var wk = hofKey(wa);
+          if (!wk) continue;
+          if (!weeklyAgg[wk]) weeklyAgg[wk] = { assoc:wa, runs:0, pkgs:0 };
+          weeklyAgg[wk].runs += Number(wd.runs) || 0;
+          weeklyAgg[wk].pkgs += Number(wd.totalPkgs) || 0;
+        }
+      }
+      for (kk in weeklyAgg) addSearchOnly(kk, weeklyAgg[kk].assoc, weeklyAgg[kk].runs, weeklyAgg[kk].pkgs, 2);
+
+      /* Today's history is another fallback for a brand-new associate. */
+      var todaySearchData = getDisplayHistory();
+      for (kk in todaySearchData) {
+        var td = todaySearchData[kk] || {};
+        addSearchOnly(hofKey(td.assoc || kk), td.assoc || kk, td.runs, td.totalPkgs, 1);
+      }
+
+      /* Finally make every permanently saved name searchable, even with no
+         batch data yet. */
+      var savedSearchNames = loadAllNames();
+      for (kk in savedSearchNames) {
+        var sn = savedSearchNames[kk];
+        addSearchOnly(hofKey(sn), sn, 0, 0, 0);
+      }
+
+      var extra = Object.keys(extraByKey).map(function(kx){ return extraByKey[kx]; });
+      rows = rows.concat(extra).filter(function(x){
+        return (x.assoc || '').toLowerCase().indexOf(hofTerm) !== -1;
+      });
+      rows = prioritizeNameMatches(rows, hofTerm, function(x){ return x.assoc; });
+    }
+    rows = rows.slice(0, HOF_TOP);
+
+    if (!rows.length) {
+      setHTML(tbody, '');
+      if (emptyEl) {
+        emptyEl.style.display = 'block';
+        emptyEl.textContent = hofTerm
+          ? ('No records match "' + hofSearchTerm + '"')
+          : 'No records yet.';
+      }
+      if (noteEl) noteEl.textContent = '';
+      requestUnifiedSearchCount();
+      return;
+    }
+    if (emptyEl) emptyEl.style.display = 'none';
+
+    var html = '';
+    for (var i = 0; i < rows.length; i++) {
+      var e = rows[i];
+      var rk = (typeof e.rank === 'number') ? e.rank : null;   /* null = no peak yet */
+      var rankTxt = rk ? rk : '\u2013';
+      var rankCls = rk === 1 ? 'gold' : rk === 2 ? 'silver' : rk === 3 ? 'bronze' : '';
+      var rowCls  = (rk && rk <= 3) ? (' class="cbt-hof-' + rk + '"') : '';
+      html += '<tr' + rowCls + '>' +
+        '<td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-assoc">' +
+          '<span class="cbt-rank ' + rankCls + '">' + rankTxt + '</span>' + e.assoc +
+          '</span></span></span></td>' +
+        '<td><span class="cbt-hist-meta">' + e.runs + '</span></td>' +
+        '<td><span class="cbt-hist-meta">' + e.pkgs + '</span></td>' +
+        '<td>' + (typeof e.rate === 'number'
+          ? ('<span class="cbt-hof-peak">' + e.rate.toFixed(1) + '</span>')
+          : '<span class="cbt-hist-meta">\u2014</span>') + '</td>' +
+        '<td>' + (Number(e.latestRate) > 0
+          ? ('<span class="cbt-hist-rate ' +
+              (Number(e.latestRate)>=WARN_RATE?'good':Number(e.latestRate)>=ALERT_RATE?'warn':'alert') +
+              '">' + Number(e.latestRate).toFixed(1) + '</span>')
+          : '<span class="cbt-hist-meta">\u2014</span>') + '</td>' +
+        '<td><span class="cbt-hof-when">' + hofWhen(e.at) + '</span></td>' +
+      '</tr>';
+    }
+    setHTML(tbody, html);
+    requestUnifiedSearchCount();
+  }
+
+  /* ══════════════════════════════════════
+     COPY TO CLIPBOARD + VISUAL CONFIRMATION
+  ══════════════════════════════════════ */
+  /* execCommand fallback — navigator.clipboard needs a secure context and
+     can reject, in which case the copy would silently do nothing. */
+  function legacyCopy(text) {
+    try {
+      var ta = document.createElement('textarea');
+      ta.value = text;
+      ta.setAttribute('readonly', '');
+      ta.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;';
+      document.body.appendChild(ta);
+      ta.select();
+      ta.setSelectionRange(0, ta.value.length);
+      var done = document.execCommand('copy');
+      document.body.removeChild(ta);
+      return done;
+    } catch(e) { return false; }
+  }
+
+  function copyWithFeedback(el, text, ev) {
+    if (!text) return;
+    function confirmed() {
+      /* Clear any previous inline confirmation first */
+      document.querySelectorAll('.cbt-copied-tag').forEach(function(t){ if (t.parentNode) t.parentNode.removeChild(t); });
+      document.querySelectorAll('.cbt-copied-name').forEach(function(n){ n.classList.remove('cbt-copied-name'); });
+      if (!el) return;
+      /* Highlight the copied name in green and show "Copied" beside it */
+      el.classList.add('cbt-copied-name');
+      var tag = document.createElement('span');
+      tag.className = 'cbt-copied-tag';
+      tag.textContent = 'Copied';
+      el.appendChild(tag);
+      clearTimeout(el._cbtCopyTimer);
+      el._cbtCopyTimer = setTimeout(function(){
+        el.classList.remove('cbt-copied-name');
+        if (tag.parentNode) tag.parentNode.removeChild(tag);
+      }, 1400);
+    }
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(confirmed, function(){
+          if (legacyCopy(text)) confirmed();
+        });
+      } else if (legacyCopy(text)) confirmed();
+    } catch(e) {
+      if (legacyCopy(text)) confirmed();
+    }
+  }
+
+  // Skip innerHTML assignment when markup is unchanged — avoids DOM thrash on
+  // the 2s poll cycle and preserves user text selection mid-read.
+  function setHTML(el, html) {
+    if (el && el._cbtLastHTML !== html) { el._cbtLastHTML = html; el.innerHTML = html; }
+  }
+
+  function cbtObservedProgressRate(data, nowMs) {
+    if (!data || data.shortClientRef == null) return null;
+
+    var ref = String(data.shortClientRef);
+    var generation = cbtTaskGeneration(data);
+    var pkgs = Number(data.packagesBatched);
+    if (!isFinite(pkgs) || pkgs < 0) return null;
+
+    nowMs = Number(nowMs) || cbtNowMs();
+    var cur = _cbtObservedProgressByRef[ref];
+
+    /* New job / first observation / counter reset: establish a baseline.
+       IMPORTANT: packages already present at this moment are NOT credited to
+       the future observation window. */
+    if (!cur || (generation && cur.generation && generation !== cur.generation) ||
+        pkgs < cur.lastPkgs) {
+      cur = _cbtObservedProgressByRef[ref] = {
+        generation: generation,
+        basePkgs: pkgs,
+        baseAt: nowMs,
+        lastPkgs: pkgs,
+        lastAt: nowMs
+      };
+      return null;
+    }
+
+    if (!cur.generation && generation) cur.generation = generation;
+
+    if (pkgs > cur.lastPkgs) {
+      cur.lastPkgs = pkgs;
+      cur.lastAt = nowMs;
+    }
+
+    var elapsedMs = nowMs - cur.baseAt;
+    var deltaPkgs = pkgs - cur.basePkgs;
+    if (elapsedMs < CBT_OBS_RATE_MIN_WINDOW_MS || deltaPkgs <= 0) return null;
+
+    var rate = deltaPkgs / (elapsedMs / 60000);
+    if (!(rate > 0) || !isFinite(rate) || rate > CBT_MAX_VALID_RATE) return null;
+    return rate;
+  }
+
+  function computeRow(data, forceFinished) {
+    var inProg = forceFinished ? false : cbtIsLiveBatch(data);
+    var info = cbtBatchingOpInfo(data, inProg);
+    if (!info && !inProg) info = cbtBatchingOpInfo(data, false);
+
+    var startMs = cbtStableLiveStartMs(data, inProg);
+    var endMs = info && info.endMs ? info.endMs : null;
+    var batchedN = Number(data.packagesBatched) || 0;
+    var nowMs = cbtNowMs();
+
+    /* Active batches always advance from the same monotonic/server-calibrated
+       clock. For a completed batch, the latest BATCHING end is used. */
+    var clockMs = (!inProg && endMs && startMs && endMs >= startMs) ? endMs : nowMs;
+    var elapsedSec = startMs ? Math.max(0, (clockMs - startMs) / 1000) : null;
+
+    var fullRate = (batchedN > 0 && elapsedSec > 30)
+      ? batchedN / (elapsedSec / 60)
+      : null;
+
+    var scanRate = null;
+    var rateSource = 'pending';
+
+    /* Trust the API full-span calculation only when it is physically plausible
+       under the dashboard's existing <=20 bags/min validity ceiling. */
+    if (fullRate != null && isFinite(fullRate) && fullRate > 0 &&
+        fullRate <= CBT_MAX_VALID_RATE) {
+      scanRate = fullRate;
+      rateSource = 'api-full-span';
+    } else if (inProg) {
+      /* If API timing is incomplete or mismatched, estimate from only the
+         package INCREASE actually observed while this page has been watching.
+         This prevents "35 existing packages / 30 seconds" fake spikes. */
+      var observedRate = cbtObservedProgressRate(data, nowMs);
+      if (observedRate != null) {
+        scanRate = observedRate;
+        rateSource = 'observed-delta';
+      } else if (fullRate != null && fullRate > CBT_MAX_VALID_RATE) {
+        rateSource = 'invalid-api-span';
+      }
+    } else if (fullRate != null && fullRate > CBT_MAX_VALID_RATE) {
+      rateSource = 'invalid-api-span';
+    }
+
+    return {
+      startMs: startMs,
+      elapsedSec: elapsedSec,
+      scanRate: scanRate,
+      fullRate: fullRate,
+      rateSource: rateSource,
+      inProgress: inProg
+    };
+  }
+
+  function ensureActiveAssociateInToday(data) {
+    if (!data || !cbtIsLiveBatch(data)) return false;
+    /* v23.9.89: Names are still captured immediately, but Today/Weekly only
+       receive an associate after a real completed batch is recorded. */
+    try { captureName(data); } catch(e) {}
+    return false;
+  }
+
+  /* One completed store batch is visible to every open COMO dashboard. Older
+     builds let every PC record the same completion into its own slice, then
+     summed those slices. Claiming the event once in Firebase fixes that source
+     of per-associate inflation without any background listener or polling. */
+  var CBT_COMPLETION_SEEN_KEY = 'cbt_completed_seen_v23989_' + String(STORE_ID || 'unknown');
+  var _cbtCompletionInFlight = Object.create(null);
+  function cbtCompletionHash(s) {
+    s = String(s || '');
+    var h = 2166136261;
+    for (var i=0; i<s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return ('00000000' + (h >>> 0).toString(16)).slice(-8);
+  }
+  function cbtCompletionEventId(data) {
+    var gen = cbtTaskGeneration(data);
+    var ref = data && data.shortClientRef != null ? String(data.shortClientRef) : '';
+    var start = cbtRawBatchingStartMs(data, false) || 0;
+    return gen || ('ref:' + ref + '|start:' + Math.round(start));
+  }
+  function cbtLoadCompletionSeen() {
+    try {
+      var raw = gmGet(CBT_COMPLETION_SEEN_KEY, null) || localStorage.getItem(CBT_COMPLETION_SEEN_KEY);
+      var obj = raw ? (typeof raw === 'string' ? JSON.parse(raw) : raw) : {};
+      return obj && typeof obj === 'object' ? obj : {};
+    } catch(e) { return {}; }
+  }
+  function cbtCompletionWasSeen(id) { var m = cbtLoadCompletionSeen(); return !!m[cbtCompletionHash(id)]; }
+  function cbtMarkCompletionSeen(id) {
+    try {
+      var m = cbtLoadCompletionSeen(), now = Date.now(), cutoff = now - 3*24*3600*1000;
+      Object.keys(m).forEach(function(k){ if (Number(m[k]) < cutoff) delete m[k]; });
+      m[cbtCompletionHash(id)] = now;
+      var json = JSON.stringify(m); gmSet(CBT_COMPLETION_SEEN_KEY, json); localStorage.setItem(CBT_COMPLETION_SEEN_KEY, json);
+    } catch(e) {}
+  }
+  function cbtClaimCompletion(id, cb) {
+    var hash = cbtCompletionHash(id);
+    if (_cbtCompletionInFlight[hash]) return;
+    _cbtCompletionInFlight[hash] = true;
+    if (!syncEnabled() || typeof GM_xmlhttpRequest !== 'function') {
+      delete _cbtCompletionInFlight[hash]; cb('won'); return;
+    }
+
+    var day = String(todayStr()).replace(/[.#$\[\]\/]/g, '_');
+    var url = FIREBASE_URL + '/como_history_v3/claims/' + day + '/' + hash + '.json';
+    var devId = MY_DEVICE_ID || getDeviceId();
+    try {
+      GM_xmlhttpRequest({
+        method:'GET', url:url, headers:{'X-Firebase-ETag':'true','Content-Type':'application/json'},
+        onload:function(res){
+          var existing = null;
+          try { if (res.responseText && res.responseText !== 'null') existing = JSON.parse(res.responseText); } catch(e0) {}
+          if (existing) {
+            delete _cbtCompletionInFlight[hash];
+            cb(existing.owner === devId && !cbtCompletionWasSeen(id) ? 'won' : 'lost');
+            return;
+          }
+          var etag = '';
+          try { var em = String(res.responseHeaders||'').match(/(?:^|\n)etag:\s*([^\r\n]+)/i); etag = em ? em[1].trim() : ''; } catch(e1) {}
+          /* Firebase ETag is what makes this a real cross-computer claim. Never
+             fall back to an unconditional PUT, because two PCs could both win. */
+          if (!etag) { delete _cbtCompletionInFlight[hash]; cb('retry'); return; }
+          GM_xmlhttpRequest({
+            method:'PUT', url:url,
+            headers:{'Content-Type':'application/json','If-Match':etag},
+            data:JSON.stringify({owner:devId, event:id, claimedAt:Date.now(), schema:2}),
+            onload:function(r2){
+              delete _cbtCompletionInFlight[hash];
+              if (r2.status >= 200 && r2.status < 300) cb('won');
+              else if (r2.status === 412) cb('lost');
+              else cb('retry');
+            },
+            onerror:function(){ delete _cbtCompletionInFlight[hash]; cb('retry'); }
+          });
+        },
+        onerror:function(){ delete _cbtCompletionInFlight[hash]; cb('retry'); }
+      });
+    } catch(e) { delete _cbtCompletionInFlight[hash]; cb('retry'); }
+  }
+
+  function cbtTrustedCompletedMetrics(data) {
+    if (!data || typeof data !== 'object') return null;
+    var info = cbtBatchingOpInfo(data, false);
+    /* Historical performance is recorded only when COMO gives an explicit
+       BATCHING start AND end. Falling back to page time/created time is useful
+       for Live display, but not accurate enough for a permanent score. */
+    if (!info || !info.startMs || !info.endMs || info.endMs <= info.startMs) return null;
+
+    var startMs = info.startMs;
+    var ref = data.shortClientRef != null ? String(data.shortClientRef) : '';
+    var gen = cbtTaskGeneration(data);
+    var lock = ref ? _cbtLiveStartByRef[ref] : null;
+    if (lock && lock.ms && (!gen || !lock.generation || gen === lock.generation)) {
+      startMs = Math.min(startMs, Number(lock.ms) || startMs);
+    }
+
+    var elapsedSec = (info.endMs - startMs) / 1000;
+    var pkgs = cbtNonNegativeInt(data.packagesBatched, 50000);
+    if (pkgs <= 0 || !isFinite(elapsedSec) || elapsedSec < 60 || elapsedSec > 24*3600) return null;
+    var rate = pkgs / (elapsedSec / 60);
+    if (!(rate > 0) || !isFinite(rate) || rate > CBT_MAX_TRUSTED_COMPLETED_RATE) return null;
+    return { pkgs:pkgs, elapsedSec:elapsedSec, rate:rate, startMs:startMs, endMs:info.endMs };
+  }
+
+  function recordCompletedBatch(data, elapsedSecIgnored) {
+    var assoc = cbtNormalizeAssociate(data && (data.associateId || data.associate || data.driverAssignment));
+    var assocKey = cbtAssociateKey(assoc);
+    if (!assocKey) return;
+
+    var metrics = cbtTrustedCompletedMetrics(data);
+    if (!metrics) return;
+    var pkgs = metrics.pkgs, elapsedSec = metrics.elapsedSec, rate = metrics.rate;
+
+    var eventId = cbtCompletionEventId(data);
+    if (!eventId || cbtCompletionWasSeen(eventId) || _cbtCompletionInFlight[cbtCompletionHash(eventId)]) return;
+
+    var expected = cbtNonNegativeInt(data.totalExpectedPackages, 100000);
+    var collected = cbtNonNegativeInt(data.packagesCollected != null ? data.packagesCollected : data.packagesBatched, 100000);
+    var missing = expected > collected ? expected-collected : 0;
+
+    function commitRecord() {
+      captureName({associateId:assoc});
+      var history = loadHistory();
+      if (history[assocKey]) {
+        var e2=history[assocKey], tp=cbtNonNegativeInt(e2.totalPkgs)+pkgs, ts=cbtNonNegativeNumber(e2.totalSec)+elapsedSec;
+        var priorBest = Math.max(Number(e2.bestRate)||0, Number(e2.lastRate)||0, Number(e2.avgRate)||0);
+        history[assocKey] = { assoc:assoc, totalPkgs:tp, totalSec:ts, runs:cbtNonNegativeInt(e2.runs)+1,
+          avgRate:ts>0?tp/(ts/60):0, bestRate:Math.max(priorBest, rate),
+          lastRate:rate, lastAt:Date.now(),
+          totalMissing:cbtNonNegativeInt(e2.totalMissing)+missing, totalExpected:cbtNonNegativeInt(e2.totalExpected)+expected };
+      } else {
+        history[assocKey] = { assoc:assoc, totalPkgs:pkgs, totalSec:elapsedSec, runs:1,
+          avgRate:rate, bestRate:rate, lastRate:rate, lastAt:Date.now(),
+          totalMissing:missing, totalExpected:expected };
+      }
+      saveHistory(history);
+      try { hofRecordBatch(assoc, pkgs, elapsedSec, rate); } catch(e) {}
+      if (activeTab==='history') renderHistory();
+      if (activeTab==='weekly') renderWeekly();
+    }
+
+    function tryClaim(attempt) {
+      cbtClaimCompletion(eventId, function(status){
+        if (status === 'retry') {
+          /* Event-only retry: no permanent polling loop. If Firebase is briefly
+             unavailable, retry a few times rather than double-count offline. */
+          if (attempt < 4) setTimeout(function(){ tryClaim(attempt + 1); }, 500 * (attempt + 1));
+          return;
+        }
+        cbtMarkCompletionSeen(eventId);
+        if (status !== 'won') return;
+        commitRecord();
+      });
+    }
+    tryClaim(0);
+  }
+
+  function ingestItem(item, authoritative) {
+    if (!item || typeof item !== 'object' || item.shortClientRef == null) return false;
+    var ref = String(item.shortClientRef);
+    var incoming = Object.assign({}, item, { shortClientRef: ref });
+    var existing = taskCache.get(ref);
+    var incomingGen = cbtTaskGeneration(incoming);
+    var existingGen = existing ? cbtTaskGeneration(existing) : '';
+
+    /* The same CART_x reference can be reused by a later job. If the job/task
+       identity changes, do not merge the new task with the old task's state. */
+    if (existing && incomingGen && existingGen && incomingGen !== existingGen) {
+      taskCache.delete(ref);
+      cbtForgetLiveStart(ref);
+      existing = null;
+    }
+
+    var incomingLive = cbtIsLiveBatch(incoming);
+    if (authoritative && incomingLive) cbtObserveAuthoritativeLive(incoming);
+
+    /* Never let an older/out-of-order response move package progress backward. */
+    if (existing) {
+      var oldB = Number(existing.packagesBatched) || 0, newB = Number(incoming.packagesBatched) || 0;
+      var oldC = Number(existing.packagesCollected) || 0, newC = Number(incoming.packagesCollected) || 0;
+      if (newB < oldB || newC < oldC) {
+        if (newB < oldB) incoming.packagesBatched = oldB;
+        if (newC < oldC) incoming.packagesCollected = oldC;
+      }
+    }
+
+    /* Completion is recognized from an explicit non-BATCHING state. A partial
+       response that merely omits operationDetails is not treated as finished. */
+    if (existing && cbtIsLiveBatch(existing) && incoming.state !== undefined &&
+        String(incoming.state).toUpperCase() !== 'BATCHING') {
+      var mergedDone = Object.assign({}, existing, incoming);
+      mergedDone.packagesBatched = Math.max(Number(existing.packagesBatched)||0, Number(incoming.packagesBatched)||0);
+      mergedDone.packagesCollected = Math.max(Number(existing.packagesCollected)||0, Number(incoming.packagesCollected)||0);
+      var finishedRow = computeRow(mergedDone, true);
+      recordCompletedBatch(mergedDone, finishedRow.elapsedSec);
+      taskCache.delete(ref);
+      cbtForgetLiveStart(ref);
+      return true;
+    }
+
+    /* Only actual BATCHING work belongs on the Live tab. Generic IN_PROGRESS
+       jobs from another operation are intentionally ignored. */
+    if (!incomingLive) return false;
+
+    var merged = existing ? Object.assign({}, existing, incoming) : incoming;
+    /* Some endpoints omit operationDetails on alternating responses. Preserve
+       the last operation details for display metadata; the timer itself still
+       comes only from the authoritative lock above. */
+    if (existing && (!Array.isArray(incoming.operationDetails) || !incoming.operationDetails.length) &&
+        Array.isArray(existing.operationDetails) && existing.operationDetails.length) {
+      merged.operationDetails = existing.operationDetails;
+    }
+    merged.packagesBatched = Math.max(Number(existing && existing.packagesBatched)||0, Number(incoming.packagesBatched)||0);
+    merged.packagesCollected = Math.max(Number(existing && existing.packagesCollected)||0, Number(incoming.packagesCollected)||0);
+    if (!merged.associateId && !merged.associate && merged.driverAssignment) merged.associate = merged.driverAssignment;
+
+    /* Today/Weekly name presence is event-driven from real BATCHING records.
+       No new observer or polling loop is added. */
+    try { ensureActiveAssociateInToday(merged); } catch(e) {}
+
+    taskCache.set(ref, merged);
+    return true;
+  }
+
+  function ingestData(d, authoritative) {
+    if (!d) return;
+    var changed = false;
+    deepCaptureNames(d, 0);
+    try { afaRecordJobs(d, 0); } catch(e) {}
+
+    function take(i) { if (ingestItem(i, !!authoritative)) changed = true; }
+
+    if (Array.isArray(d)) {
+      d.forEach(take);
+    } else if (d.shortClientRef != null) {
+      take(d);
+    } else {
+      /* Do not stop at the first populated array. Some dashboard responses
+         carry complementary records in summaries/tasks/results/items/jobs/data.
+         Ingesting all of them prevents partial records from winning by accident. */
+      ['summaries','tasks','results','items','jobs','data'].forEach(function(k) {
+        if (Array.isArray(d[k])) d[k].forEach(take);
+      });
+    }
+
+    if (changed && !authoritative) requestLiveRender();
+  }
+
+  var _origFetch = window.fetch;
+
+  /* v23.9.92 NO-LAG NETWORK FILTER
+     -------------------------------
+     Older builds cloned and reparsed EVERY JSON response made by COMO. On a
+     busy dashboard that means unrelated Utilization, package, navigation and
+     Angular service payloads were parsed twice and recursively walked for names.
+     Only inspect responses that can actually contain live/job data used by this
+     userscript. The script's own _origFetch calls still work exactly as before. */
+  function cbtNetworkUrl(input) {
+    try {
+      if (typeof input === 'string') return input;
+      if (input && typeof input.url === 'string') return input.url;
+    } catch(e) {}
+    return '';
+  }
+  function cbtShouldInspectNetworkUrl(url) {
+    url = String(url || '');
+    if (!url) return false;
+    return /activeJobsWithSiteSummary|activeJobSummary|\/api\/store\/[^/]+\/job\/|\/store\/[^/]+\/job\//i.test(url);
+  }
+  function cbtResponseTooLarge(resp) {
+    try {
+      var n = Number(resp && resp.headers && resp.headers.get('content-length'));
+      return isFinite(n) && n > 1500000;
+    } catch(e) { return false; }
+  }
+
+  window.fetch = async function() {
+    var requestUrl = cbtNetworkUrl(arguments[0]);
+    var resp;
+    try { resp = await _origFetch.apply(this, arguments); }
+    catch(e) { throw e; }
+
+    /* No duplicated JSON work for unrelated site requests. */
+    if (!cbtShouldInspectNetworkUrl(requestUrl)) return resp;
+
+    try {
+      if (!cbtResponseTooLarge(resp) && (resp.headers.get('content-type') || '').includes('json')) {
+        resp.clone().text().then(function(raw){
+          if (!raw || raw.length > 1500000) return;
+          cbtIdle(function(){
+            try { ingestData(JSON.parse(raw)); } catch(e2) {}
+          }, 900);
+        }).catch(function(){});
+      }
+    } catch(e3) {}
+    return resp;
+  };
+
+  var _xhrOpen = XMLHttpRequest.prototype.open, _xhrSend = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.open = function(m, url) {
+    this._cbtUrl = url;
+    return _xhrOpen.apply(this, arguments);
+  };
+  XMLHttpRequest.prototype.send = function() {
+    this.addEventListener('load', function(){
+      var xhr = this;
+      try {
+        if (!cbtShouldInspectNetworkUrl(xhr._cbtUrl)) return;
+        if (!(xhr.getResponseHeader('content-type') || '').includes('json')) return;
+
+        var payload;
+        try {
+          payload = xhr.responseType === 'json' ? xhr.response : xhr.responseText;
+        } catch(e0) { return; }
+        if (typeof payload === 'string' && payload.length > 1500000) return;
+
+        cbtIdle(function(){
+          try {
+            var d = (typeof payload === 'string') ? JSON.parse(payload) : payload;
+            if (d) ingestData(d);
+          } catch(e1) {}
+        }, 900);
+      } catch(e2) {}
+    });
+    return _xhrSend.apply(this, arguments);
+  };
+
+  function cbtLiveCachedCount() {
+    var count = 0;
+    taskCache.forEach(function(d){
+      if (cbtIsLiveBatch(d)) count++;
+    });
+    return count;
+  }
+
+  function cbtStaleLiveReloadKey() {
+    return 'cbt_stale_live_reload_' + String(STORE_ID || 'unknown');
+  }
+
+  function cbtMaybeReloadStaleLive() {
+    if (document.hidden || !isDashboardView()) {
+      _cbtStaleLiveZeroTaskPolls = 0;
+      return;
+    }
+
+    /* The normal Tasks section is authoritative here.
+       Staged for Pickup is completed and must NOT keep Live alive. */
+    var mainTasks = null;
+    try { mainTasks = cbtRecMainTasksSnapshot(); } catch(e) {}
+
+    if (!mainTasks || mainTasks.count !== 0 || cbtLiveCachedCount() === 0) {
+      _cbtStaleLiveZeroTaskPolls = 0;
+      return;
+    }
+
+    _cbtStaleLiveZeroTaskPolls++;
+    if (_cbtStaleLiveZeroTaskPolls < CBT_STALE_LIVE_RELOAD_POLLS) return;
+
+    _cbtStaleLiveZeroTaskPolls = 0;
+
+    /* Prevent reload loops if Amazon's backend itself is briefly stale. */
+    var now = Date.now();
+    var last = 0;
+    try { last = Number(sessionStorage.getItem(cbtStaleLiveReloadKey()) || 0); }
+    catch(e2) {}
+
+    if (last && (now - last) < CBT_STALE_LIVE_RELOAD_COOLDOWN_MS) {
+      /* We already reloaded recently. Clear the stale Live cache locally
+         instead of repeatedly reloading the dashboard. */
+      taskCache.forEach(function(d, key){
+        if (cbtIsLiveBatch(d)) {
+          taskCache.delete(key);
+          cbtForgetLiveStart(String(key));
+          try { delete _cbtMissingPollsByRef[String(key)]; } catch(e3) {}
+        }
+      });
+      requestLiveRender();
+      return;
+    }
+
+    try { sessionStorage.setItem(cbtStaleLiveReloadKey(), String(now)); }
+    catch(e4) {}
+
+    /* User-requested reload: only for confirmed stale Live names while
+       normal Tasks is 0. No generic panel/loading auto-reload is used. */
+    location.reload();
+  }
+
+  var _cbtPollInFlight = false;
+  async function pollActiveTasks() {
+    if (_cbtPollInFlight || document.hidden) return;
+    _cbtPollInFlight = true;
+    try {
+      var liveUrl = COMO_BASE + '/store/' + STORE_ID + '/activeJobsWithSiteSummary?_cbt=' + Date.now();
+      var requestPerf = cbtPerfNow();
+      var res = await _origFetch(liveUrl, {
+        credentials:'include', cache:'no-store', headers:{Accept:'application/json'}
+      });
+
+      if (res.ok) {
+        /* Use the server/proxy clock when available. This is specifically for
+           elapsed-time correctness; the visible backend-updated timestamp below
+           remains the user's local display time. */
+        cbtCalibrateServerClock(res, requestPerf);
+
+        var freshData = await res.json();
+
+        _cbtBackendLastOk = Date.now();
+        var activeRefs = new Set();
+        var items = Array.isArray(freshData) ? freshData.slice() : [];
+        ['summaries','tasks','results','items','jobs','data'].forEach(function(k) {
+          if (freshData && Array.isArray(freshData[k])) items = items.concat(freshData[k]);
+        });
+
+        /* Select one authoritative timing record per cart. If multiple payload
+           sections describe the same cart, prefer the record with the latest
+           current BATCHING start rather than whichever array happened to appear
+           first in the JSON. */
+        var bestByRef = Object.create(null);
+        items.forEach(function(d) {
+          if (!d || d.shortClientRef == null || !cbtIsLiveBatch(d)) return;
+          var ref = String(d.shortClientRef);
+          activeRefs.add(ref);
+          var info = cbtBatchingOpInfo(d, true);
+          var score = info && info.startMs ? info.startMs : -1;
+          var prev = bestByRef[ref];
+          if (!prev || score > prev.score) bestByRef[ref] = { data:d, score:score };
+        });
+
+        Object.keys(bestByRef).forEach(function(ref) {
+          cbtObserveAuthoritativeLive(bestByRef[ref].data);
+        });
+
+        activeRefs.forEach(function(ref) {
+          _cbtMissingPollsByRef[ref] = 0;
+          var locked = _cbtLiveStartByRef[ref];
+          if (locked) {
+            locked.lastSeen = cbtNowMs();
+            locked.missingSince = 0;
+          }
+        });
+
+        taskCache.forEach(function(val, key) {
+          key = String(key);
+          if (activeRefs.has(key)) {
+            _cbtMissingPollsByRef[key] = 0;
+            return;
+          }
+
+          cbtMarkLiveMissing(key);
+          var misses = (_cbtMissingPollsByRef[key] || 0) + 1;
+          _cbtMissingPollsByRef[key] = misses;
+          if (misses >= CBT_MISSING_POLL_GRACE) {
+            taskCache.delete(key);
+            delete _cbtMissingPollsByRef[key];
+          }
+        });
+
+        /* Ingest every complementary array, but suppress intermediate renders.
+           Re-apply the canonical timer observation afterward in case a stale
+           duplicate record for the same cart appeared in another payload array. */
+        ingestData(freshData, true);
+        Object.keys(bestByRef).forEach(function(ref) {
+          /* Make the canonical current-job record the final cache merge too.
+             This prevents a stale duplicate from another payload array from
+             being the last writer for the same cart. */
+          ingestItem(bestByRef[ref].data, true);
+          cbtObserveAuthoritativeLive(bestByRef[ref].data);
+        });
+
+        cbtPruneOldLiveStarts();
+
+        /* If Tasks is truly 0 but a stale Live name survived the authoritative
+           refresh, confirm it across several polls and then reload once. */
+        try { cbtMaybeReloadStaleLive(); } catch(eStaleLive) {}
+      }
+    } catch(e) {}
+    finally {
+      _cbtPollInFlight = false;
+      requestLiveRender();
+    }
+  }
+
+  function buildPanel() {
+    var panel2 = document.createElement('div');
+    panel2.id = 'cbt-panel';
+    panel2.innerHTML =
+      '<div id="cbt-header">' +
+        '<span id="cbt-title">Batcher Timers</span>' +
+        '<div id="cbt-controls">' +
+          '<span id="cbt-font-dec" title="Smaller (A−)">A−</span>' +
+          '<span id="cbt-scale-reset" title="Reset size to 100%">100%</span>' +
+          '<span id="cbt-font-inc" title="Larger (A+)">A+</span>' +
+          '<span id="cbt-theme-btn" title="Toggle Dark/Light">🌙</span>' +
+          '<span id="cbt-afa-btn" title="Open cart actions">' +
+            '<span class="cbt-afa-lbl">▶ Run</span>' +
+          '</span>' +
+          '<span id="cbt-collapse-btn" title="Collapse/Expand">▲</span>' +
+        '</div>' +
+      '</div>' +
+      '<div id="cbt-stats-bar">' +
+        '<div class="cbt-stat-card">' +
+          '<div class="cbt-stat-icon">\uD83E\uDDBA</div>' +
+          '<div class="cbt-stat-label">Batchers</div>' +
+          '<div class="cbt-stat-value"><span id="cbt-stat-ip">\u2014</span><span id="cbt-stat-delta"></span></div>' +
+        '</div>' +
+        '<div class="cbt-stat-card">' +
+          '<div class="cbt-stat-icon">\uD83D\uDCCA</div>' +
+          '<div class="cbt-stat-label">Recommended This Hour</div>' +
+          '<div class="cbt-stat-value"><span id="cbt-stat-rec">\u2014</span><span id="cbt-stat-dot"></span></div>' +
+        '</div>' +
+        '<div class="cbt-stat-card">' +
+          '<div class="cbt-stat-icon">\uD83D\uDCE6</div>' +
+          '<div class="cbt-stat-label">Remaining</div>' +
+          '<div class="cbt-stat-value" id="cbt-stat-rem">\u2014</div>' +
+        '</div>' +
+      '</div>' +
+      '<div id="cbt-tabs">' +
+        '<span class="cbt-tab active" data-tab="live">Live</span>' +
+        '<span class="cbt-tab" data-tab="history">Today</span>' +
+        '<span class="cbt-tab" data-tab="weekly">Weekly</span>' +
+        '<span class="cbt-tab" data-tab="hof" title="Top 30 fastest batchers of all time">Fastest</span>' +
+        '<span class="cbt-tab" data-tab="names">Names</span>' +
+      '</div>' +
+      '<div id="cbt-unified-search">' +
+        '<div id="cbt-unified-search-box">' +
+          '<input id="cbt-unified-search-input" type="text" autocomplete="off" spellcheck="false" placeholder="Find associate by name..."/>' +
+          '<span id="cbt-unified-search-count"></span>' +
+          '<button id="cbt-unified-search-clear" type="button" title="Clear search">✕</button>' +
+        '</div>' +
+      '</div>' +
+      '<div id="cbt-body">' +
+        '<div id="cbt-live-view">' +
+          '<table id="cbt-table" style="table-layout:fixed;width:100%;"><thead><tr>' +
+            '<th class="cbt-sortable-live" data-sort="assoc" style="width:40%;text-align:left;">Associate</th>' +
+            '<th class="cbt-sortable-live" data-sort="elapsed" style="width:30%;text-align:center;">Elapsed</th>' +
+            '<th class="cbt-sortable-live" data-sort="rate" style="width:30%;text-align:center;">Bags/min \u25BC</th>' +
+          '</tr></thead><tbody id="cbt-tbody"></tbody></table>' +
+          '<div id="cbt-empty">No active batching tasks</div>' +
+          '<div id="cbt-live-results"></div>' +
+        '</div>' +
+        '<div id="cbt-history-view" style="display:none">' +
+          '<div id="cbt-hist-summary"></div>' +
+          '<table id="cbt-hist-table"><thead><tr>' +
+            '<th class="cbt-sortable-hist" data-sort="assoc">Associate</th>' +
+            '<th class="cbt-sortable-hist" data-sort="runs">Batch</th>' +
+            '<th class="cbt-sortable-hist" data-sort="pkgs">Pkgs</th>' +
+            '<th class="cbt-sortable-hist" data-sort="bestRate">Best \u25BC</th>' +
+            '<th class="cbt-sortable-hist" data-sort="lastRate">Latest Avg</th>' +
+          '</tr></thead><tbody id="cbt-hist-tbody"></tbody></table>' +
+          '<div id="cbt-hist-empty">No history yet today</div>' +
+          '<div id="cbt-hist-cross"></div>' +
+        '</div>' +
+        '<div id="cbt-weekly-view" style="display:none">' +
+          '<div id="cbt-weekly-summary"></div>' +
+          '<table id="cbt-weekly-table"><thead><tr>' +
+            '<th class="cbt-sortable" data-sort="assoc">Associate</th>' +
+            '<th class="cbt-sortable" data-sort="runs">Batch</th>' +
+            '<th class="cbt-sortable" data-sort="pkgs">Pkgs</th>' +
+            '<th class="cbt-sortable" data-sort="bestRate">Best \u25BC</th>' +
+            '<th class="cbt-sortable" data-sort="lastRate">Last Avg</th>' +
+            '<th class="cbt-sortable" data-sort="hrs">Hrs</th>' +
+          '</tr></thead><tbody id="cbt-weekly-tbody"></tbody></table>' +
+          '<div id="cbt-weekly-empty">No weekly data yet</div>' +
+          '<div id="cbt-weekly-cross"></div>' +
+        '</div>' +
+        '<div id="cbt-names-view" style="display:none">' +
+          '<div id="cbt-names-count" style="text-align:center;font-size:12px;color:#5a7a96;padding:2px 0 4px;font-weight:600;"></div>' +
+          '<table id="cbt-names-table"><thead><tr>' +
+            '<th style="text-align:left;">Associate</th>' +
+          '</tr></thead><tbody id="cbt-names-tbody"></tbody></table>' +
+          '<div id="cbt-names-empty" style="display:none;text-align:center;color:#aaa;padding:9px 0;font-size:13px;font-style:italic;line-height:1.2;">No names saved yet</div>' +
+        '</div>' +
+        '<div id="cbt-hof-view" style="display:none">' +
+          '<table id="cbt-hof-table"><thead><tr>' +
+            '<th>#\u2003Name</th>' +
+            '<th>Batch</th>' +
+            '<th>Pkgs</th>' +
+            '<th>Peak</th>' +
+            '<th>Last Avg</th>' +
+            '<th>Date</th>' +
+          '</tr></thead><tbody id="cbt-hof-tbody"></tbody></table>' +
+          '<div id="cbt-hof-empty"></div>' +
+        '</div>' +
+      '</div>' +
+      '<div id="cbt-drag-bottom" title="Drag to resize"></div>';
+    return panel2;
+  }
+
+  var _panel2Ref = null;
+
+  /* ══════════════════════════════════════
+     PANEL MOUNTING + SELF-HEAL
+
+     The panel normally anchors to the <utilization> element. If that
+     never renders (layout change, slow load, Angular re-render) the
+     panel would silently never appear — so after a few failed tries
+     we fall back to other stable anchors rather than giving up.
+  ══════════════════════════════════════ */
+  var PANEL_HEALTH_MS = 5000;
+  var _mountFails = 0;
+  /* While Date.now() is under this, the panel is checked every 400ms instead
+     of every 2s. Set at startup and renewed on every route change, so
+     returning to the dashboard re-mounts the board straight away rather than
+     waiting for the next slow health tick. */
+  var _fastMountUntil = 0;
+
+  /* ── No automatic page reload ──
+     If Angular temporarily removes the dashboard mount anchor, recover the
+     panel in-place. Never call location.reload() from the userscript: a slow
+     dashboard should be allowed to finish loading instead of being restarted. */
+  /* ── Which site are we on? ──
+     The script runs on two different tools:
+       COMO Operations Dashboard  -> task sorting, Time Left, Batcher Timers
+                                     board, and Search Associate on cart pages
+       Outbound Dashboard / HWMS  -> Search Associate panel + QR only
+     Everything COMO-specific stays off the Outbound site, and the Batcher
+     Timers board never appears there. Saved names/history come from
+     Tampermonkey storage and Firebase, both of which work across domains. */
+  function isComoSite() {
+    return location.hostname.indexOf('como-operations-dashboard') !== -1;
+  }
+  function isOutboundSite() {
+    return location.hostname === 'na.store-management.f3.amazon.dev';
+  }
+  /* The Search Associate panel belongs on COMO cart pages and on every
+     Outbound Dashboard page. */
+  /* The floating Search Associate panel has been retired: the autocomplete
+     types straight into the site's own assignment fields, so there is no
+     longer anything to copy out of a side panel. The panel's code is left
+     intact — set this back to true to bring it back if it is ever needed. */
+  var SHOW_SEARCH_PANEL = false;
+
+  function shouldShowSearchPanel() {
+    if (!SHOW_SEARCH_PANEL) return false;
+    if (isOutboundSite()) return true;
+    return isTaskDetailPage();
+  }
+
+  /* A cart/task detail page. Only the Associate Search panel belongs here —
+     the Batcher Timers board is for the dashboard view.
+     Checked by URL as well as by DOM: on a fresh reload the script runs
+     before Angular has rendered div.job-details, and the URL is known
+     immediately, so the panel can mount right away. */
+  var TASK_DETAIL_RE = /\/(jobdetails|task)(\b|\/|\?|#|$)/i;
+  function isTaskDetailPage() {
+    if (document.querySelector('div.job-details')) return true;
+    return TASK_DETAIL_RE.test(location.pathname);
+  }
+
+  /* Routes the board must never appear on. This app does client-side routing,
+     so the script stays loaded when you click Packages / Orders / Labor /
+     Layout — without this check the board follows you onto those pages. */
+  var NON_DASHBOARD_RE = /\/(packages|orders|labor|layout|associates?)(\b|\/|\?|#|$)/i;
+
+  /* The ONLY page the board belongs on: /store/{id}/dash, the main COMO
+     Operations Dashboard. Allowlist instead of blocklist, so task pages,
+     cart and job-detail pages, the tasks/jobs lists, and anything new
+     the app adds are all excluded by default. */
+  var DASHBOARD_PATH_RE = /^\/store\/[^\/]+\/dash\/?$/i;
+
+  function isDashboardView() {
+    if (!isComoSite()) return false;        /* board is COMO-only */
+
+    /* The URL is authoritative. Angular can briefly leave a stale
+       div.job-details node in the DOM while rebuilding the dashboard.
+       Using that transient node here made the Batcher Timers panel detach,
+       then reappear a moment later. The exact /store/{id}/dash path is
+       already a strict allowlist, so stale task-detail DOM must not override it. */
+    if (!DASHBOARD_PATH_RE.test(location.pathname)) return false;
+    if (NON_DASHBOARD_RE.test(location.hash)) return false;
+    return true;
+  }
+
+  /* True when the board is showing somewhere it shouldn't be. */
+  function boardIsMisplaced() {
+    return !isDashboardView() && !!document.getElementById('cbt-panel');
+  }
+
+  /* Detach the Batcher Timers board but KEEP the cached node, so its state
+     and event listeners survive and it re-mounts instantly on the dashboard. */
+  function detachMainPanel() {
+    var p = document.getElementById('cbt-panel');
+    if (p) p.remove();
+  }
+
+  /* The board has exactly ONE valid home: immediately before the
+     <utilization> block in the dashboard's right-hand column.
+
+     Earlier versions guessed at fallback anchors (.ng-scope, main-content)
+     when <utilization> was missing — that is what caused the board to
+     appear on cart detail pages. If the real anchor isn't present we now
+     simply don't mount: better absent than in the wrong place. */
+  function findMountPoint() {
+    if (!isDashboardView()) return null;
+    var el = document.querySelector('utilization.dashboard-utilization') ||
+             document.querySelector('utilization');
+    if (el && el.parentNode) return { el: el, mode: 'before' };
+    return null;
+  }
+
+  function injectPanel() {
+    /* Only the dashboard view gets the board — not cart details,
+       not Packages / Orders / Labor / Layout. */
+    if (!isDashboardView()) { detachMainPanel(); return; }
+
+    var existing = document.getElementById('cbt-panel');
+    if (existing && existing.isConnected) return;
+
+    if (!_panel2Ref) {
+      _panel2Ref = buildPanel();
+      attachPanelEvents(_panel2Ref);
+    }
+
+    var mount = findMountPoint();
+    if (!mount) return;
+
+    _panel2Ref.style.position = '';
+    _panel2Ref.style.top = '';
+    _panel2Ref.style.right = '';
+    _panel2Ref.style.width = '';
+    _panel2Ref.style.zIndex = '';
+
+    try {
+      var savedH = localStorage.getItem('cbt_body_h');
+      var collapsed0 = localStorage.getItem('cbt_panel_collapsed') === '1';
+      var body0  = _panel2Ref.querySelector('#cbt-body');
+      var tabs0  = _panel2Ref.querySelector('#cbt-tabs');
+      var search0 = _panel2Ref.querySelector('#cbt-unified-search');
+      var drag0 = _panel2Ref.querySelector('#cbt-drag-bottom');
+      var collapse0 = _panel2Ref.querySelector('#cbt-collapse-btn');
+      if (savedH && body0) {
+        var h0 = parseFloat(savedH);
+        body0.style.height    = h0 + 'px';
+        body0.style.maxHeight = h0 + 'px';
+      }
+      if (collapsed0) {
+        if (body0) { body0.style.display = 'none'; body0.style.minHeight = '0'; }
+        if (tabs0) tabs0.style.display = 'none';
+        if (search0) search0.style.display = 'none';
+        if (drag0) drag0.style.display = 'none';
+        if (collapse0) collapse0.textContent = '▼';
+      } else {
+        if (body0) { body0.style.display = ''; if (!body0.style.minHeight || body0.style.minHeight === '0px') body0.style.minHeight = (parseFloat(savedH) || 350) + 'px'; }
+        if (tabs0) tabs0.style.display = '';
+        if (search0) search0.style.display = '';
+        if (drag0) drag0.style.display = '';
+        if (collapse0) collapse0.textContent = '▲';
+      }
+    } catch(ex) {}
+
+    mount.el.parentNode.insertBefore(_panel2Ref, mount.el);
+
+    _mountFails = 0;              /* mounted successfully */
+    try { applyUiScale(); } catch(ex) {}   /* restore the saved size */
+
+    /* The first backend stats request starts before the board mounts. If it
+       already finished, paint that verified snapshot immediately instead of
+       waiting for another network interval. */
+    try { cbtApplyPendingStats(false); } catch(exStats) {}
+
+    /* Only render the tab the user can actually see. Hidden tabs keep their
+       data in storage/cache and render normally the moment the user clicks
+       them. This removes a large burst of unnecessary DOM creation at startup. */
+    try { renderActiveSearchTab(); } catch(ex) { try { renderLive(); } catch(ex2) {} }
+
+    /* If the backend answered during the short mount window, make sure the
+       freshly mounted Live table receives that cached data immediately. */
+    if (activeTab === 'live' && taskCache.size) requestLiveRender();
+  }
+
+  /* Runs on an interval: if the panel is gone or was detached by an
+     Angular re-render, rebuild and re-mount it automatically. */
+  function panelHealthCheck() {
+    /* Anywhere but the dashboard view, the board stays hidden. */
+    if (!isDashboardView()) { detachMainPanel(); _mountFails = 0; return; }
+
+    var p = document.getElementById('cbt-panel');
+    if (p && p.isConnected) { _mountFails = 0; return; }
+
+    injectPanel();
+
+    if (!document.getElementById('cbt-panel')) {
+      /* Anchor not on screen yet (or not a dashboard view) — just wait.
+         Rebuilding the node wouldn't help and would lose panel state. */
+      if (_mountFails < 1000) _mountFails++;
+      /* Keep waiting/retrying in-place. Never reload the Amazon page. */
+    }
+  }
+
+  /* Same idea for the Associate Search panel on task detail pages. */
+  function taskPanelHealthCheck() {
+    var onTaskPage = shouldShowSearchPanel();
+    var tp = document.getElementById('cbt-tp');
+    if (onTaskPage) {
+      if (!tp || !tp.isConnected) { _tpRef = null; injectTaskPanel(); }
+    } else if (tp) {
+      tp.remove(); _tpRef = null;
+    }
+  }
+
+  function setDashboardSearchTerm(value) {
+    dashboardSearchTerm = value == null ? '' : String(value);
+    liveSearchTerm = dashboardSearchTerm;
+    historySearchTerm = dashboardSearchTerm;
+    weeklySearchTerm = dashboardSearchTerm;
+    namesSearchTerm = dashboardSearchTerm;
+    hofSearchTerm = dashboardSearchTerm;
+  }
+
+  /* Name-only search: exact match first, then prefix matches, then contains.
+     Rank badges are stamped before filtering and are never renumbered here. */
+  function prioritizeNameMatches(list, term, getName) {
+    term = (term || '').toLowerCase().trim();
+    if (!term || !Array.isArray(list) || list.length < 2) return list;
+    return list.map(function(item, idx){
+      var name = String(getName(item) || '').toLowerCase();
+      var score = name === term ? 0 : (name.indexOf(term) === 0 ? 1 : 2);
+      return { item:item, idx:idx, score:score };
+    }).sort(function(a,b){ return a.score - b.score || a.idx - b.idx; })
+      .map(function(x){ return x.item; });
+  }
+
+  var _unifiedCountTimer = null;
+  function requestUnifiedSearchCount() {
+    clearTimeout(_unifiedCountTimer);
+    _unifiedCountTimer = setTimeout(updateUnifiedSearchCount, 0);
+  }
+
+  function updateUnifiedSearchCount() {
+    var badge = document.getElementById('cbt-unified-search-count');
+    if (!badge) return;
+    var term = (dashboardSearchTerm || '').trim();
+    if (!term) { badge.textContent = ''; badge.style.display = 'none'; return; }
+    var ids = { live:'cbt-live-view', history:'cbt-history-view', weekly:'cbt-weekly-view', hof:'cbt-hof-view', names:'cbt-names-view' };
+    var view = document.getElementById(ids[activeTab] || 'cbt-live-view');
+    if (!view) { badge.textContent = ''; badge.style.display = 'none'; return; }
+    var seen = Object.create(null);
+    var nodes = view.querySelectorAll('.cbt-assoc, .cbt-search-row-name, .cbt-name-cell');
+    for (var i=0; i<nodes.length; i++) {
+      var clone = nodes[i].cloneNode(true);
+      var junk = clone.querySelectorAll('.cbt-rank, .cbt-slow-alert, .cbt-copied-tag');
+      for (var j=0; j<junk.length; j++) junk[j].remove();
+      var name = (clone.textContent || '').trim().toLowerCase();
+      if (name && name !== '—') seen[name] = true;
+    }
+    var count = Object.keys(seen).length;
+    badge.textContent = count + ' found';
+    badge.style.display = 'block';
+  }
+
+  function renderActiveSearchTab() {
+    if (activeTab === 'live') { renderLive(); renderLiveSearch(dashboardSearchTerm); }
+    else if (activeTab === 'history') renderHistory();
+    else if (activeTab === 'weekly') renderWeekly();
+    else if (activeTab === 'names') renderNames();
+    else if (activeTab === 'hof') renderHallOfFame();
+    requestUnifiedSearchCount();
+  }
+
+  function attachPanelEvents(panel2) {
+    var unifiedSearch = panel2.querySelector('#cbt-unified-search-input');
+    if (unifiedSearch) unifiedSearch.value = dashboardSearchTerm;
+    panel2.querySelectorAll('.cbt-tab').forEach(function(tab) {
+      tab.addEventListener('click', function() {
+        panel2.querySelectorAll('.cbt-tab').forEach(function(t){t.classList.remove('active');});
+        tab.classList.add('active');
+        activeTab = tab.dataset.tab;
+        /* Keep the same associate query while switching tabs. */
+        setDashboardSearchTerm(dashboardSearchTerm);
+        document.getElementById('cbt-live-view').style.display    = activeTab==='live'    ? '' : 'none';
+        document.getElementById('cbt-history-view').style.display = activeTab==='history' ? '' : 'none';
+        document.getElementById('cbt-weekly-view').style.display  = activeTab==='weekly'  ? '' : 'none';
+        document.getElementById('cbt-names-view').style.display   = activeTab==='names'   ? '' : 'none';
+        var hofView = document.getElementById('cbt-hof-view');
+        if (hofView) hofView.style.display = activeTab==='hof' ? '' : 'none';
+        if (activeTab==='hof') { try { hofPull(); } catch(e) {} }
+        renderActiveSearchTab();
+
+        /* A new computer should never sit on an empty Weekly/Today view while
+           waiting for the 10-second background sync. Render cache instantly,
+           then refresh shared Firebase data in the background. */
+        if (activeTab === 'weekly' && (Date.now() - _lastWeeklyPullAt > 2500)) {
+          try { syncWeeklyPull(); } catch(e2) {}
+        } else if (activeTab === 'history' && (Date.now() - _lastHistoryPullAt > 2500)) {
+          try { syncHistoryPull(); } catch(e3) {}
+        }
+      });
+    });
+
+    var afaBtn = panel2.querySelector('#cbt-afa-btn');
+    if (afaBtn) afaBtn.addEventListener('click', function(e){
+      e.stopPropagation();
+
+      /* Code-editor style Run / Stop control:
+         idle    -> ▶ Run opens the independent Cart Actions menu
+         running -> ⏹ Stop requests the current action to stop */
+      if (_afaRunning) {
+        _afaStop = true;
+        afaSetBtn('⏹ Stopping…', true);
+
+        var modalStop = document.querySelector('#cbt-afa-card [data-afa="stop"]');
+        if (modalStop) {
+          modalStop.textContent = '⏹ Stopping…';
+          modalStop.disabled = true;
+        }
+        return;
+      }
+
+      try { afaConfirm(); } catch(err) {}
+    });
+
+    /* v23.9.87: restore the original VERTICAL dashboard length.
+       Width stays exactly as before. The compact 240px default from older
+       versions is migrated back to 350px once. If someone manually made the
+       board taller than 350px, keep that larger custom height. */
+    try {
+      var restoreHeightKey = 'cbt_body_h_restore_v23944';
+      if (!localStorage.getItem(restoreHeightKey)) {
+        var savedBodyH = parseFloat(localStorage.getItem('cbt_body_h') || '350');
+        if (!isFinite(savedBodyH) || savedBodyH <= 350) {
+          localStorage.setItem('cbt_body_h', '350');
+        }
+        localStorage.setItem(restoreHeightKey, '1');
+      }
+    } catch(eRestore) {}
+
+    /* v23.9.87: persist the dashboard's collapsed/open state across reloads. */
+    var isCollapsed = false;
+    try { isCollapsed = localStorage.getItem('cbt_panel_collapsed') === '1'; } catch(eCollapsedLoad) {}
+    var collapseBtn = panel2.querySelector('#cbt-collapse-btn');
+
+    function applyMainCollapseState() {
+      var body = panel2.querySelector('#cbt-body');
+      var tabs = panel2.querySelector('#cbt-tabs');
+      var searchBar = panel2.querySelector('#cbt-unified-search');
+      var drag = panel2.querySelector('#cbt-drag-bottom');
+      var savedH = parseFloat(localStorage.getItem('cbt_body_h') || '350');
+      if (!isFinite(savedH) || savedH < 350) savedH = 350;
+
+      if (isCollapsed) {
+        if (body) { body.style.display = 'none'; body.style.minHeight = '0'; }
+        if (tabs) tabs.style.display = 'none';
+        if (searchBar) searchBar.style.display = 'none';
+        if (drag) drag.style.display = 'none';
+        if (collapseBtn) collapseBtn.textContent = '▼';
+      } else {
+        if (body) {
+          body.style.display = '';
+          body.style.height = savedH + 'px';
+          body.style.maxHeight = savedH + 'px';
+          body.style.minHeight = savedH + 'px';
+        }
+        if (tabs) tabs.style.display = '';
+        if (searchBar) searchBar.style.display = '';
+        if (drag) drag.style.display = '';
+        if (collapseBtn) collapseBtn.textContent = '▲';
+      }
+    }
+
+    applyMainCollapseState();
+
+    collapseBtn.addEventListener('click', function() {
+      var savedH = parseFloat(localStorage.getItem('cbt_body_h') || '350');
+
+      if (isCollapsed) {
+        isCollapsed = false;
+        try { localStorage.setItem('cbt_panel_collapsed', '0'); } catch(ex) {}
+        applyMainCollapseState();
+      } else if (savedH > 350) {
+        /* Preserve the existing first-click behavior for a manually enlarged
+           board: shrink it to the normal 350px height before fully collapsing. */
+        try { localStorage.setItem('cbt_body_h', '350'); } catch(ex) {}
+        applyMainCollapseState();
+      } else {
+        isCollapsed = true;
+        try { localStorage.setItem('cbt_panel_collapsed', '1'); } catch(ex) {}
+        applyMainCollapseState();
+      }
+    });
+
+    var isDark = localStorage.getItem('cbt_dark') !== 'false';
+    var themeBtn = panel2.querySelector('#cbt-theme-btn');
+    function applyTheme() {
+      if (isDark) { panel2.classList.add('dark'); themeBtn.textContent = '☀️'; }
+      else { panel2.classList.remove('dark'); themeBtn.textContent = '🌙'; }
+    }
+    applyTheme();
+    themeBtn.addEventListener('click', function() {
+      isDark = !isDark;
+      try { localStorage.setItem('cbt_dark', isDark); } catch(e) {}
+      applyTheme();
+      try { applyPopupTheme(); } catch(e) {}
+    });
+
+    applyUiScale();
+    var fontIncBtn  = panel2.querySelector('#cbt-font-inc');
+    var fontDecBtn  = panel2.querySelector('#cbt-font-dec');
+    var scaleResetB = panel2.querySelector('#cbt-scale-reset');
+    if (fontIncBtn)  fontIncBtn.addEventListener('click',  function(){ stepUiScale(1); });
+    if (fontDecBtn)  fontDecBtn.addEventListener('click',  function(){ stepUiScale(-1); });
+    if (scaleResetB) scaleResetB.addEventListener('click', function(){ resetUiScale(); });
+
+    var isDragging = false, dragStartY = 0, dragStartH = 350;
+    panel2.querySelector('#cbt-drag-bottom').addEventListener('mousedown', function(e) {
+      isDragging = true;
+      dragStartY = e.clientY;
+      var body = panel2.querySelector('#cbt-body');
+      dragStartH = body ? body.offsetHeight : 270;
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    document.addEventListener('mousemove', function(e) {
+      if (!isDragging) return;
+      var body = panel2.querySelector('#cbt-body');
+      var tabs = panel2.querySelector('#cbt-tabs');
+      if (!body) return;
+      var contentH = body.scrollHeight || 9999;
+      var newH = Math.min(contentH, Math.max(350, dragStartH + (e.clientY - dragStartY)));
+      body.style.height = newH + 'px';
+      body.style.maxHeight = newH + 'px';
+      body.style.minHeight = newH + 'px';
+      if (tabs) tabs.style.display = '';
+      var searchBar2 = panel2.querySelector('#cbt-unified-search');
+      if (searchBar2) searchBar2.style.display = '';
+      try { localStorage.setItem('cbt_body_h', newH); } catch(ex) {}
+    });
+    document.addEventListener('mouseup', function() { isDragging = false; });
+
+    try {
+      var savedH = localStorage.getItem('cbt_body_h');
+      if (savedH) {
+        var body = panel2.querySelector('#cbt-body');
+        var h = parseFloat(savedH);
+        if (body) { body.style.height = h + 'px'; body.style.maxHeight = h + 'px'; }
+      }
+      /* Height restoration must never override the persisted collapsed state. */
+      applyMainCollapseState();
+    } catch(ex) {}
+
+    document.addEventListener('click', function(e) {
+      var el = e.target.closest('.cbt-assoc');
+      if (!el || !panel2.contains(el)) return;
+      var oldTag = el.querySelector('.cbt-copied-tag');
+      if (oldTag) oldTag.remove();
+      var text = el.textContent.replace(/^\d+\s*/, '').replace(/[●•]/g, '').trim();
+      copyWithFeedback(el, text, e);
+    });
+
+    document.addEventListener('click', function(e) {
+      var el = e.target.closest('.cbt-search-row-name');
+      if (!el || !panel2.contains(el)) return;
+      var oldTag2 = el.querySelector('.cbt-copied-tag');
+      if (oldTag2) oldTag2.remove();
+      var text = el.textContent.trim();
+      copyWithFeedback(el, text, e);
+    });
+
+    document.addEventListener('click', function(e) {
+      if (e.target.id === 'cbt-unified-search-clear') {
+        var inp = document.getElementById('cbt-unified-search-input');
+        if (inp) inp.value = '';
+        setDashboardSearchTerm('');
+        renderActiveSearchTab();
+        if (inp) inp.focus();
+      }
+      var nameCell = e.target.closest('.cbt-name-cell');
+      if (nameCell) {
+        var oldTag3 = nameCell.querySelector('.cbt-copied-tag');
+        if (oldTag3) oldTag3.remove();
+        var nm = nameCell.textContent.trim();
+        copyWithFeedback(nameCell, nm, e);
+      }
+    });
+
+    document.addEventListener('input', function(e) {
+      if (e.target.id === 'cbt-unified-search-input') {
+        setDashboardSearchTerm(e.target.value);
+        renderActiveSearchTab();
+      }
+    });
+
+    document.addEventListener('click', function(e) {
+      var th = e.target.closest('.cbt-sortable');
+      if (th && document.getElementById('cbt-weekly-table') && document.getElementById('cbt-weekly-table').contains(th)) {
+        var key=th.dataset.sort;
+        if(weeklySortKey===key){weeklySortAsc=!weeklySortAsc;}else{weeklySortKey=key;weeklySortAsc=false;}
+        renderWeekly();
+      }
+      th = e.target.closest('.cbt-sortable-live');
+      if (th && document.getElementById('cbt-table') && document.getElementById('cbt-table').contains(th)) {
+        var key2=th.dataset.sort;
+        /* liveSortKey starts as 'rate', so without the liveSortUser flag the
+           very first Bags/min click fell into the "same key" branch and
+           sorted ascending instead of descending. */
+        if (liveSortUser && liveSortKey === key2) { liveSortAsc = !liveSortAsc; }
+        else { liveSortKey = key2; liveSortAsc = false; liveSortUser = true; }
+        renderLive();
+      }
+      th = e.target.closest('.cbt-sortable-hist');
+      if (th && document.getElementById('cbt-hist-table') && document.getElementById('cbt-hist-table').contains(th)) {
+        var key3=th.dataset.sort;
+        if(historySortKey===key3){historySortAsc=!historySortAsc;}else{historySortKey=key3;historySortAsc=false;}
+        renderHistory();
+      }
+    });
+  }
+
+  /* ── Live Search — searches across Today and Weekly ── */
+  function renderLiveSearch(term) {
+    var resultsEl = document.getElementById('cbt-live-results');
+    if (!resultsEl) return;
+    if (!term || term.trim() === '') { resultsEl.innerHTML = ''; requestUnifiedSearchCount(); return; }
+    term = term.toLowerCase().trim();
+    var html = '';
+    var shown = new Set();
+
+    var history = getDisplayHistory(), histEntries = Object.values(history).filter(function(e){ return e.assoc && e.assoc.toLowerCase().indexOf(term) !== -1; });
+    histEntries = prioritizeNameMatches(histEntries, term, function(e){ return e.assoc; });
+    if (histEntries.length > 0) {
+      html += '<div class="cbt-search-result-section">TODAY</div>';
+      histEntries.forEach(function(e) {
+        shown.add(e.assoc.toLowerCase());
+        var rateCls = e.avgRate >= WARN_RATE ? 'good' : e.avgRate >= ALERT_RATE ? 'warn' : 'alert';
+        html += '<div class="cbt-search-row"><span class="cbt-search-row-name">' + e.assoc + '</span>' +
+        '<span class="cbt-search-row-mid"><span style="display:inline-block;width:45px;text-align:right;">' + e.runs + '</span> runs | <span style="display:inline-block;width:50px;text-align:left;">' + e.totalPkgs + '</span> pkgs</span>' +
+        '<span class="cbt-search-row-rate"><span class="cbt-hist-rate ' + rateCls + '">' + e.avgRate.toFixed(1) + '</span></span></div>';
+      });
+    }
+
+    var weekly = sanitizeWeekly(getDisplayWeekly()), agg = {};
+    for (var dk of Object.keys(weekly)) {
+      for (var a of Object.keys(weekly[dk])) {
+        if (a.toLowerCase().indexOf(term) === -1) continue;
+        if (!agg[a]) agg[a] = { assoc:(weekly[dk][a].assoc||a), totalPkgs:0, totalSec:0, runs:0, daysSet:new Set() };
+        agg[a].totalPkgs += weekly[dk][a].totalPkgs;
+        agg[a].totalSec  += weekly[dk][a].totalSec;
+        agg[a].runs      += weekly[dk][a].runs;
+        agg[a].daysSet.add(dk);
+      }
+    }
+    var weeklyEntries = prioritizeNameMatches(Object.values(agg), term, function(e){ return e.assoc; });
+    if (weeklyEntries.length > 0) {
+      html += '<div class="cbt-search-result-section">WEEKLY</div>';
+      weeklyEntries.forEach(function(e) {
+        shown.add(e.assoc.toLowerCase());
+        var avgRate = e.totalSec > 0 ? e.totalPkgs / (e.totalSec / 60) : 0;
+        var rateCls = avgRate >= WARN_RATE ? 'good' : avgRate >= ALERT_RATE ? 'warn' : 'alert';
+        html += '<div class="cbt-search-row"><span class="cbt-search-row-name">' + e.assoc + '</span>' +
+        '<span class="cbt-search-row-mid"><span style="display:inline-block;width:45px;text-align:right;">' + e.daysSet.size + '</span> days | <span style="display:inline-block;width:50px;text-align:left;">' + e.totalPkgs + '</span> pkgs</span>' +
+        '<span class="cbt-search-row-rate"><span class="cbt-hist-rate ' + rateCls + '">' + avgRate.toFixed(1) + '</span></span></div>';
+      });
+    }
+
+    /* No-data saved names belong in Names, not performance results. */
+
+    if (html === '') html = '<div style="text-align:center;color:#aaa;padding:10px;font-style:italic;font-size:14px;">No results found for "' + term + '"</div>';
+    setHTML(resultsEl, html);
+    requestUnifiedSearchCount();
+  }
+
+  /* The arrow was baked into the header markup and never moved. Redraw it
+     on whichever column is active, pointing the way the list is ordered. */
+  var LIVE_SORT_LABELS = { assoc: 'Associate', elapsed: 'Elapsed', rate: 'Bags/min' };
+  function updateLiveSortHeaders() {
+    var table = document.getElementById('cbt-table');
+    if (!table) return;
+    var ths = table.querySelectorAll('.cbt-sortable-live');
+    for (var i = 0; i < ths.length; i++) {
+      var th = ths[i];
+      var k = th.dataset ? th.dataset.sort : th.getAttribute('data-sort');
+      var base = LIVE_SORT_LABELS[k] ||
+                 (th.textContent || '').replace(/[\u25B2\u25BC]/g, '').trim();
+      var arrow = (k === liveSortKey) ? (liveSortAsc ? ' \u25B2' : ' \u25BC') : '';
+      var next = base + arrow;
+      if (th.textContent !== next) th.textContent = next;
+    }
+  }
+
+  function lockLiveRowGeometry() {
+    var table = document.getElementById('cbt-table');
+    if (!table) return;
+
+    var header = table.querySelector('thead tr');
+    if (header) {
+      header.style.setProperty('display', 'grid', 'important');
+      header.style.setProperty('grid-template-columns',
+        'minmax(0,40%) minmax(0,30%) minmax(0,30%)', 'important');
+      header.style.setProperty('width', '100%', 'important');
+      header.style.setProperty('max-width', '100%', 'important');
+      header.style.setProperty('box-sizing', 'border-box', 'important');
+    }
+
+    var rows = table.querySelectorAll('tbody tr');
+    for (var i = 0; i < rows.length; i++) {
+      var tr = rows[i];
+
+      tr.style.setProperty('display', 'grid', 'important');
+      tr.style.setProperty('grid-template-columns',
+        'minmax(0,40%) minmax(0,30%) minmax(0,30%)', 'important');
+      tr.style.setProperty('width', '100%', 'important');
+      tr.style.setProperty('max-width', '100%', 'important');
+      tr.style.setProperty('height', '48px', 'important');
+      tr.style.setProperty('min-height', '48px', 'important');
+      tr.style.setProperty('max-height', '48px', 'important');
+      tr.style.setProperty('margin', '0', 'important');
+      tr.style.setProperty('padding', '0', 'important');
+      tr.style.setProperty('overflow', 'hidden', 'important');
+      tr.style.setProperty('box-sizing', 'border-box', 'important');
+
+      var cells = tr.children;
+      for (var c = 0; c < cells.length; c++) {
+        var td = cells[c];
+        td.style.setProperty('width', 'auto', 'important');
+        td.style.setProperty('min-width', '0', 'important');
+        td.style.setProperty('height', '48px', 'important');
+        td.style.setProperty('min-height', '48px', 'important');
+        td.style.setProperty('max-height', '48px', 'important');
+        td.style.setProperty('padding', '0 10px', 'important');
+        td.style.setProperty('margin', '0', 'important');
+        td.style.setProperty('display', 'flex', 'important');
+        td.style.setProperty('align-items', 'center', 'important');
+        td.style.setProperty('justify-content', c === 0 ? 'flex-start' : 'center', 'important');
+        td.style.setProperty('overflow', 'hidden', 'important');
+        td.style.setProperty('box-sizing', 'border-box', 'important');
+
+        if (c === 1) {
+          var elapsed = td.querySelector('.cbt-elapsed');
+          if (elapsed) {
+            elapsed.style.setProperty('display', 'inline-flex', 'important');
+            elapsed.style.setProperty('align-items', 'center', 'important');
+            elapsed.style.setProperty('justify-content', 'center', 'important');
+            elapsed.style.setProperty('width', '58px', 'important');
+            elapsed.style.setProperty('min-width', '58px', 'important');
+            elapsed.style.setProperty('max-width', '58px', 'important');
+            elapsed.style.setProperty('height', '22px', 'important');
+            elapsed.style.setProperty('min-height', '22px', 'important');
+            elapsed.style.setProperty('max-height', '22px', 'important');
+            elapsed.style.setProperty('padding', '0', 'important');
+            elapsed.style.setProperty('margin-left', 'auto', 'important');
+            elapsed.style.setProperty('margin-right', 'auto', 'important');
+            elapsed.style.setProperty('text-align', 'center', 'important');
+            elapsed.style.setProperty('line-height', '22px', 'important');
+            elapsed.style.setProperty('transform', 'none', 'important');
+            elapsed.style.setProperty('box-sizing', 'border-box', 'important');
+          }
+        }
+      }
+    }
+  }
+
+  function renderLive() {
+    var tbody=document.querySelector('#cbt-tbody'), empty=document.querySelector('#cbt-empty');
+    if (!tbody||!empty) return;
+    var lowerTerm = liveSearchTerm ? liveSearchTerm.toLowerCase() : '';
+    // Compute each row's stats once — previously computeRow ran inside the sort
+    // comparator (O(n log n) calls) and again in the render loop.
+    var rows=[]; taskCache.forEach(function(d){
+      if(cbtIsLiveBatch(d)) {
+        if (lowerTerm) {
+          var name = (d.associateId||d.associate||d.driverAssignment||d.shortClientRef||'').toLowerCase();
+          if (name.indexOf(lowerTerm) === -1) return;
+        }
+        rows.push({ d: d, r: computeRow(d) });
+      }
+    });
+    /* While the user is explicitly sorting by Bags/min, the LOW-first
+       grouping is suspended — otherwise LOW rows stayed pinned at the top in
+       their own fixed order and clicking the column appeared to do nothing.
+       Every other time, LOW batchers still float to the top as before. */
+    var groupLowFirst = !(liveSortUser && liveSortKey === 'rate');
+    rows.sort(function(A,B){
+      var a=A.d, b=B.d, ra=A.r, rb=B.r;
+      if (groupLowFirst) {
+        var slowA = ra.scanRate && ra.scanRate < ALERT_RATE && (ra.elapsedSec||0) > 120;
+        var slowB = rb.scanRate && rb.scanRate < ALERT_RATE && (rb.elapsedSec||0) > 120;
+        if (slowA && !slowB) return -1;
+        if (!slowA && slowB) return 1;
+        if (slowA && slowB) return (ra.scanRate||0) - (rb.scanRate||0);
+      }
+      var va, vb;
+      if(liveSortKey==='assoc'){va=(a.associateId||a.associate||'').toLowerCase();vb=(b.associateId||b.associate||'').toLowerCase();return liveSortAsc?va.localeCompare(vb):vb.localeCompare(va);}
+      else if(liveSortKey==='rate'){
+        /* rows with no rate yet always sink to the bottom, whichever
+           direction is active, so they never disturb the ordering */
+        var hasA = (ra.scanRate != null && !isNaN(ra.scanRate));
+        var hasB = (rb.scanRate != null && !isNaN(rb.scanRate));
+        if (hasA && !hasB) return -1;
+        if (!hasA && hasB) return 1;
+        if (!hasA && !hasB) return 0;
+        va = ra.scanRate; vb = rb.scanRate;      /* decimals compare fine */
+      }
+      else{va=ra.elapsedSec||0;vb=rb.elapsedSec||0;}
+      return liveSortAsc?va-vb:vb-va;
+    });
+    updateLiveSortHeaders();
+    if(rows.length===0){setHTML(tbody,'');empty.style.display='block';
+      var body2=document.querySelector('#cbt-body');
+      if(body2&&!body2.style.height){body2.style.height='350px';body2.style.maxHeight='350px';}
+      return;}
+
+    empty.style.display='none';
+    var html='';
+    for(var i=0;i<rows.length;i++){
+      var data=rows[i].d,assoc=data.associateId||data.associate||data.driverAssignment||data.shortClientRef,shortRef=data.shortClientRef,r=rows[i].r;
+      var elMin=r.elapsedSec!=null?r.elapsedSec/60:0;
+      var elCls=r.elapsedSec!=null?(elMin>=ALERT_ELAPSED_MIN?'alert':elMin>=WARN_ELAPSED_MIN?'warn':''):'';
+      var elTxt=r.elapsedSec!=null?fmt(r.elapsedSec):'--:--';
+      var rateCls=r.scanRate!=null?(r.scanRate<ALERT_RATE?'alert':r.scanRate<WARN_RATE?'warn':''):'pending';
+      var rateTxt=r.scanRate!=null?r.scanRate.toFixed(1):'\u2014';
+      var rateTitle =
+        r.rateSource==='api-full-span' ? 'Rate: packages batched / full BATCHING elapsed time' :
+        r.rateSource==='observed-delta' ? 'Rate fallback: package increase observed by this dashboard' :
+        r.rateSource==='invalid-api-span' ? 'Rate hidden: API timing/count combination produced an invalid spike' :
+        'Rate pending until enough trusted timing/progress is available';
+      var slowAlert=(r.scanRate!==null&&r.scanRate<ALERT_RATE&&r.elapsedSec>120)?'<span class="cbt-live-status-slot"><span class="cbt-slow-alert">⚠ SLOW</span></span>':'';
+      html+='<tr><td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-assoc">'+assoc+'</span>'+slowAlert+'</span><span class="cbt-ref">'+shortRef+'</span></span></td>';
+      html+='<td><span class="cbt-elapsed '+elCls+'" data-start="'+(r.startMs||'')+'" data-live="'+(r.inProgress?'1':'0')+'">'+elTxt+'</span></td>';
+      html+='<td><span class="cbt-rate '+rateCls+'" title="'+rateTitle+'">'+rateTxt+'</span></td></tr>';
+    }
+    setHTML(tbody, html);
+    lockLiveRowGeometry();
+    requestUnifiedSearchCount();
+  }
+
+  function renderHistory() {
+    var tbody=document.querySelector('#cbt-hist-tbody'),empty=document.querySelector('#cbt-hist-empty'),summary=document.querySelector('#cbt-hist-summary');
+    if(!tbody||!empty) return;
+    var history=getDisplayHistory(),entries=Object.values(history);
+    if(entries.length===0){setHTML(tbody,'');empty.style.display='block';if(summary)summary.innerHTML='';
+      if(historySearchTerm) renderHistoryCrossSearch(historySearchTerm);
+      return;}
+    empty.style.display='none';
+    if(summary){
+      var tA=entries.length,tS=entries.reduce(function(s,e){return s+e.totalSec;},0);
+      var oR=tS>0?entries.reduce(function(s,e){return s+e.totalPkgs;},0)/(tS/60):0;
+      var tMissing=entries.reduce(function(s,e){return s+(e.totalMissing||0);},0);
+      var tExpected=entries.reduce(function(s,e){return s+(e.totalExpected||0);},0);
+      var avgMissPct=tExpected>0?(tMissing/tExpected*100):0;
+      summary.innerHTML='<div class="cbt-ws-stat"><span class="cbt-ws-val">'+tA+'</span><span class="cbt-ws-label">Batchers</span></div>'+
+        '<div class="cbt-ws-stat"><span class="cbt-ws-val">'+oR.toFixed(1)+'</span><span class="cbt-ws-label">Avg Rate</span></div>'+
+        '<div class="cbt-ws-stat"><span class="cbt-ws-val">'+avgMissPct.toFixed(1)+'%</span><span class="cbt-ws-label">Avg Miss %</span></div>';
+    }
+
+    /* Sort the FULL Today list first and stamp each associate's real display
+       position. Search is applied only after that, so searching one person can
+       never renumber that person to #1 just because they are the only match. */
+    var ranked=entries.slice();
+    ranked.sort(function(a,b){
+      var va,vb;
+      if(historySortKey==='assoc'){va=a.assoc.toLowerCase();vb=b.assoc.toLowerCase();return historySortAsc?va.localeCompare(vb):vb.localeCompare(va);}
+      else if(historySortKey==='runs'){va=a.runs;vb=b.runs;}
+      else if(historySortKey==='pkgs'){va=a.totalPkgs;vb=b.totalPkgs;}
+      else if(historySortKey==='lastRate'){va=Number(a.lastRate)||0;vb=Number(b.lastRate)||0;}
+      else if(historySortKey==='bestRate'){va=Number(a.bestRate)||0;vb=Number(b.bestRate)||0;}
+      else{va=Number(a.bestRate)||0;vb=Number(b.bestRate)||0;}
+      return historySortAsc?va-vb:vb-va;
+    });
+    for(var ri=0;ri<ranked.length;ri++) ranked[ri]._displayRank=ri+1;
+
+    var filtered=ranked;
+    if(historySearchTerm){var term=historySearchTerm.toLowerCase();filtered=ranked.filter(function(e){return e.assoc.toLowerCase().indexOf(term)!==-1;});filtered=prioritizeNameMatches(filtered,term,function(e){return e.assoc;});}
+    var html='';
+    for(var i=0;i<filtered.length;i++){
+      var e=filtered[i],bestRate=Number(e.bestRate)||0;
+      var rateCls=bestRate>=WARN_RATE?'good':bestRate>=ALERT_RATE?'warn':'alert';
+      var rk=e._displayRank||0;
+      var rankCls=rk===1?'gold':rk===2?'silver':rk===3?'bronze':'';
+      html+='<tr><td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-assoc"><span class="cbt-rank '+rankCls+'">'+rk+'</span>'+e.assoc+'</span></span></span></td>';
+      html+='<td><span class="cbt-hist-meta">'+e.runs+'</span></td><td><span class="cbt-hist-meta">'+e.totalPkgs+'</span></td>';
+      html+='<td>'+(bestRate>0?'<span class="cbt-hist-rate '+rateCls+'">'+bestRate.toFixed(1)+'</span>':'<span class="cbt-hist-meta">—</span>')+'</td>';
+      var latestRate=Number(e.lastRate), latestCls=latestRate>=WARN_RATE?'good':latestRate>=ALERT_RATE?'warn':'alert';
+      html+='<td>'+(latestRate>0?'<span class="cbt-hist-rate '+latestCls+'">'+latestRate.toFixed(1)+'</span>':'<span class="cbt-hist-meta">—</span>')+'</td></tr>';
+    }
+    setHTML(tbody, html);
+
+    if(historySearchTerm) renderHistoryCrossSearch(historySearchTerm);
+    else {
+      var cross = document.getElementById('cbt-hist-cross');
+      if(cross) cross.innerHTML='';
+    }
+    requestUnifiedSearchCount();
+  }
+
+  function renderHistoryCrossSearch(term) {
+    var crossEl = document.getElementById('cbt-hist-cross');
+    if(!crossEl) return;
+    if(!term){ crossEl.innerHTML=''; return; }
+    term = term.toLowerCase();
+    var weekly = sanitizeWeekly(getDisplayWeekly()), agg = {};
+    for(var dk of Object.keys(weekly)){
+      for(var a of Object.keys(weekly[dk])){
+        if(a.toLowerCase().indexOf(term)===-1) continue;
+        if(!agg[a]) agg[a]={assoc:(weekly[dk][a].assoc||a),totalPkgs:0,totalSec:0,runs:0,daysSet:new Set()};
+        agg[a].totalPkgs+=weekly[dk][a].totalPkgs;
+        agg[a].totalSec+=weekly[dk][a].totalSec;
+        agg[a].runs+=weekly[dk][a].runs;
+        agg[a].daysSet.add(dk);
+      }
+    }
+    var entries = prioritizeNameMatches(Object.values(agg), term, function(e){ return e.assoc; });
+    var shown = new Set();
+    var todayHist = getDisplayHistory();
+    Object.values(todayHist).forEach(function(e){ if(e.assoc.toLowerCase().indexOf(term)!==-1) shown.add(e.assoc.toLowerCase()); });
+    var html='';
+    if(entries.length>0){
+      html+='<div class="cbt-search-result-section">WEEKLY</div>';
+      entries.forEach(function(e){
+        shown.add(e.assoc.toLowerCase());
+        var avgRate=e.totalSec>0?e.totalPkgs/(e.totalSec/60):0;
+        var rateCls=avgRate>=WARN_RATE?'good':avgRate>=ALERT_RATE?'warn':'alert';
+        html+='<div class="cbt-search-row"><span class="cbt-search-row-name">'+e.assoc+'</span>' +
+        '<span class="cbt-search-row-mid"><span style="display:inline-block;width:45px;text-align:right;">'+e.daysSet.size+'</span> days | <span style="display:inline-block;width:50px;text-align:left;">'+e.totalPkgs+'</span> pkgs</span>' +
+        '<span class="cbt-search-row-rate"><span class="cbt-hist-rate '+rateCls+'">'+avgRate.toFixed(1)+'</span></span></div>';
+      });
+    }
+    /* No-data saved names belong in Names, not performance results. */
+    setHTML(crossEl, html);
+  }
+
+  function sanitizeWeekly(w) {
+    var clean = {};
+    for (var dk in (w || {})) {
+      if (!cbtIsDateInCurrentWeek(dk)) continue;
+      if (!w[dk] || typeof w[dk] !== 'object') continue;
+
+      clean[dk] = {};
+      for (var a in w[dk]) {
+        var e = w[dk][a];
+        if (!e || typeof e !== 'object') continue;
+        var assoc = cbtNormalizeAssociate(e.assoc || a);
+        var key = cbtAssociateKey(assoc);
+        if (!key) continue;
+
+        var pkgs = cbtNonNegativeInt(e.totalPkgs, 50000);
+        var runs = cbtNonNegativeInt(e.runs, 300);
+        var sec = cbtNonNegativeNumber(e.totalSec, 7 * 24 * 3600);
+        if (Number(e.totalPkgs) > 50000 || Number(e.runs) > 300) continue;
+        if (runs <= 0 || pkgs <= 0 || sec <= 0) continue;
+        if (pkgs / (sec / 60) > CBT_MAX_TRUSTED_COMPLETED_RATE) continue;
+
+        var expected = cbtNonNegativeInt(e.totalExpected, 100000);
+        var missing = cbtNonNegativeInt(e.totalMissing, 100000);
+        if (expected > 0 && missing > expected) missing = expected;
+        if (!expected) missing = 0;
+        var bestRate = Number(e.bestRate);
+        if (!(bestRate > 0) || !isFinite(bestRate) || bestRate > CBT_MAX_TRUSTED_COMPLETED_RATE) bestRate = null;
+        var lastRate = Number(e.lastRate);
+        var lastAt = cbtNonNegativeNumber(e.lastAt);
+        if (!(lastRate > 0) || !isFinite(lastRate) || lastRate > CBT_MAX_TRUSTED_COMPLETED_RATE) { lastRate = null; lastAt = 0; }
+
+        var c = Object.assign({}, e, {
+          assoc: assoc, totalPkgs: pkgs, totalSec: sec, runs: runs,
+          avgRate: sec > 0 ? pkgs / (sec / 60) : 0,
+          totalMissing: missing, totalExpected: expected,
+          bestRate: bestRate, lastRate: lastRate, lastAt: lastAt
+        });
+        clean[dk][key] = cbtMergeSanitizedAggregate(clean[dk][key], c);
+      }
+      if (!Object.keys(clean[dk]).length) delete clean[dk];
+    }
+    return clean;
+  }
+
+  function renderWeekly() {
+    var tbody=document.querySelector('#cbt-weekly-tbody'),empty=document.querySelector('#cbt-weekly-empty'),summary=document.querySelector('#cbt-weekly-summary');
+    if(!tbody||!empty) return;
+    var weekly=sanitizeWeekly(getDisplayWeekly()),agg={};
+    for(var dayKey of Object.keys(weekly)){
+      for(var assoc of Object.keys(weekly[dayKey])){
+        var d3=weekly[dayKey][assoc];
+        if(!agg[assoc])agg[assoc]={assoc:(d3.assoc||assoc),totalPkgs:0,totalSec:0,runs:0,totalMissing:0,totalExpected:0,daysSet:new Set(),bestRate:null,lastRate:null,lastAt:0};
+        agg[assoc].totalPkgs+=d3.totalPkgs;agg[assoc].totalSec+=d3.totalSec;agg[assoc].runs+=d3.runs;
+        agg[assoc].totalMissing+=(d3.totalMissing||0);agg[assoc].totalExpected+=(d3.totalExpected||0);agg[assoc].daysSet.add(dayKey);
+        cbtMergeBestFields(agg[assoc], d3);
+        cbtMergeLatestFields(agg[assoc], d3);
+      }
+    }
+    var all=Object.values(agg).map(function(a){
+      var pkgs = Math.min(a.totalPkgs, 100000);
+      var sec  = Math.min(a.totalSec,  500*3600);
+      var runs = Math.min(a.runs, 500);
+      return{assoc:a.assoc,totalPkgs:pkgs,totalSec:sec,runs:runs,days:a.daysSet.size,avgRate:sec>0?pkgs/(sec/60):0,
+        bestRate:Number(a.bestRate)>0?Number(a.bestRate):null,
+        lastRate:Number(a.lastRate)>0?Number(a.lastRate):null,lastAt:Number(a.lastAt)||0,
+        totalMissing:a.totalMissing,totalExpected:a.totalExpected,
+        hrs:sec,missPct:a.totalExpected>0?(a.totalMissing/a.totalExpected*100):0};
+    });
+    if(all.length===0){setHTML(tbody,'');empty.style.display='block';if(summary)summary.innerHTML='';
+      if(weeklySearchTerm) renderWeeklyCrossSearch(weeklySearchTerm);
+      return;}
+    empty.style.display='none';
+    if(summary){
+      var tA=all.length,tS=all.reduce(function(s,e){return s+e.totalSec;},0);
+      var oR=tS>0?all.reduce(function(s,e){return s+e.totalPkgs;},0)/(tS/60):0;
+      var tMissing=all.reduce(function(s,e){return s+(Number(e.totalMissing)||0);},0);
+      var tExpected=all.reduce(function(s,e){return s+(Number(e.totalExpected)||0);},0);
+      var tM=tExpected>0?(tMissing/tExpected*100):0;
+      summary.innerHTML='<div class="cbt-ws-stat"><span class="cbt-ws-val">'+tA+'</span><span class="cbt-ws-label">Batchers</span></div>'+
+        '<div class="cbt-ws-stat"><span class="cbt-ws-val">'+oR.toFixed(1)+'</span><span class="cbt-ws-label">Avg Rate</span></div>'+
+        '<div class="cbt-ws-stat"><span class="cbt-ws-val">'+tM.toFixed(1)+'%</span><span class="cbt-ws-label">Avg Miss %</span></div>';
+    }
+
+    /* Same rule as Today: rank/position comes from the complete Weekly table,
+       then search hides non-matches without changing anybody's true position. */
+    var ranked=all.slice();
+    ranked.sort(function(a,b){
+      var va,vb;
+      if(weeklySortKey==='assoc'){va=a.assoc.toLowerCase();vb=b.assoc.toLowerCase();return weeklySortAsc?va.localeCompare(vb):vb.localeCompare(va);}
+      else if(weeklySortKey==='runs'){va=a.runs;vb=b.runs;}
+      else if(weeklySortKey==='pkgs'){va=a.totalPkgs;vb=b.totalPkgs;}
+      else if(weeklySortKey==='bestRate'){va=Number(a.bestRate)||0;vb=Number(b.bestRate)||0;}
+      else if(weeklySortKey==='lastRate'){va=Number(a.lastRate)||0;vb=Number(b.lastRate)||0;}
+      else if(weeklySortKey==='hrs'){va=a.hrs;vb=b.hrs;}else{va=Number(a.bestRate)||0;vb=Number(b.bestRate)||0;}
+      return weeklySortAsc?va-vb:vb-va;
+    });
+    for(var ri=0;ri<ranked.length;ri++) ranked[ri]._displayRank=ri+1;
+
+    var filtered=ranked;
+    if(weeklySearchTerm){var term=weeklySearchTerm.toLowerCase();filtered=ranked.filter(function(e){return e.assoc.toLowerCase().indexOf(term)!==-1;});filtered=prioritizeNameMatches(filtered,term,function(e){return e.assoc;});}
+    var html='';
+    for(var i=0;i<filtered.length;i++){
+      var e=filtered[i],bestRate=Number(e.bestRate)||0;
+      var rateCls=bestRate>=WARN_RATE?'good':bestRate>=ALERT_RATE?'warn':'alert';
+      var rk=e._displayRank||0;
+      var rankCls=rk===1?'gold':rk===2?'silver':rk===3?'bronze':'';
+      html+='<tr><td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-assoc"><span class="cbt-rank '+rankCls+'">'+rk+'</span>'+e.assoc+'</span></span></span></td>';
+      html+='<td><span class="cbt-hist-meta">'+e.runs+'</span></td>';
+      html+='<td><span class="cbt-hist-meta">'+e.totalPkgs+'</span></td>';
+      html+='<td>'+(bestRate>0?'<span class="cbt-hist-rate '+rateCls+'">'+bestRate.toFixed(1)+'</span>':'<span class="cbt-hist-meta">—</span>')+'</td>';
+      var latestRate=Number(e.lastRate), latestCls=latestRate>=WARN_RATE?'good':latestRate>=ALERT_RATE?'warn':'alert';
+      html+='<td>'+(latestRate>0?'<span class="cbt-hist-rate '+latestCls+'">'+latestRate.toFixed(1)+'</span>':'<span class="cbt-hist-meta">—</span>')+'</td>';
+      html+='<td><span class="cbt-hist-meta">'+fmtHours(e.totalSec)+'</span></td></tr>';
+    }
+    setHTML(tbody, html);
+
+    if(weeklySearchTerm) renderWeeklyCrossSearch(weeklySearchTerm);
+    else {
+      var cross2 = document.getElementById('cbt-weekly-cross');
+      if(cross2) cross2.innerHTML='';
+    }
+    requestUnifiedSearchCount();
+  }
+
+  function savedNamesSearchHTML(term, excludeSet) {
+    term = (term||'').toLowerCase().trim();
+    if (!term) return '';
+    var all = loadAllNames();
+    var matches = [];
+    for (var k in all) {
+      if (k.indexOf(term) !== -1 && (!excludeSet || !excludeSet.has(k))) matches.push(all[k]);
+    }
+    if (!matches.length) return '';
+    matches.sort(function(a,b){ return a.toLowerCase().localeCompare(b.toLowerCase()); });
+    matches = prioritizeNameMatches(matches, term, function(n){ return n; });
+    var html = '<div class="cbt-search-result-section">SAVED NAMES</div>';
+    matches.slice(0, 50).forEach(function(n){
+      html += '<div class="cbt-search-row"><span class="cbt-search-row-name cbt-name-cell">' + n + '</span>' +
+        '<span class="cbt-search-row-mid"></span>' +
+        '<span class="cbt-search-row-rate" style="color:#aaa;">—</span></div>';
+    });
+    if (matches.length > 50) html += '<div style="text-align:center;color:#888;padding:4px;font-size:11px;">+' + (matches.length-50) + ' more, refine search</div>';
+    return html;
+  }
+
+  var _namesScanLast = 0;
+  function renderNames() {
+    var tbody = document.getElementById('cbt-names-tbody');
+    if (!tbody) return;
+    // Throttle the full localStorage scan — it parses every stored JSON blob,
+    // which is wasteful on each search keystroke. Capture still happens via
+    // API hooks and the 5s background interval.
+    var _nowN = Date.now();
+    if (_nowN - _namesScanLast > 5000) {
+      _namesScanLast = _nowN;
+      scanLocalStorageForNames();
+      syncNamesFromAllTabs();
+    }
+    var all = loadAllNames();
+    var totalCount = Object.keys(all).length;
+    var names = Object.keys(all).map(function(k){ return all[k]; });
+    names.sort(function(a,b){ return a.toLowerCase().localeCompare(b.toLowerCase()); });
+
+    var term = (namesSearchTerm||'').toLowerCase().trim();
+    if (term) {
+      names = names.filter(function(n){ return n.toLowerCase().indexOf(term) !== -1; });
+      names = prioritizeNameMatches(names, term, function(n){ return n; });
+    }
+
+    var countEl = document.getElementById('cbt-names-count');
+    if (countEl) {
+      countEl.textContent = totalCount + ' names saved';
+      // Respect dark mode
+      var isDarkMode = document.getElementById('cbt-panel') && document.getElementById('cbt-panel').classList.contains('dark');
+      countEl.style.color = isDarkMode ? '#8faac0' : '#5a7a96';
+    }
+
+    var emptyEl = document.getElementById('cbt-names-empty');
+    if (!names.length) {
+      setHTML(tbody, '');
+      if (emptyEl) { emptyEl.style.display = 'block'; emptyEl.textContent = term ? 'No names match "' + namesSearchTerm + '"' : 'No names saved yet'; }
+      return;
+    }
+    if (emptyEl) emptyEl.style.display = 'none';
+
+    var html = '';
+    names.forEach(function(n){
+      html += '<tr><td style="text-align:left;"><span class="cbt-name-cell">' + n + '</span></td></tr>';
+    });
+    setHTML(tbody, html);
+    requestUnifiedSearchCount();
+  }
+
+  function renderWeeklyCrossSearch(term) {
+    var crossEl = document.getElementById('cbt-weekly-cross');
+    if(!crossEl) return;
+    if(!term){ crossEl.innerHTML=''; return; }
+    term = term.toLowerCase();
+    var history = loadHistory();
+    var entries = Object.values(history).filter(function(e){ return e.assoc.toLowerCase().indexOf(term)!==-1; });
+    entries = prioritizeNameMatches(entries, term, function(e){ return e.assoc; });
+    var shown = new Set();
+    /* Weekly is already sanitized to the current Sunday-Saturday period.
+       Do not write/prune storage on every search keystroke. */
+    var weeklyData = sanitizeWeekly(getDisplayWeekly());
+    for(var wdk of Object.keys(weeklyData)){
+      for(var wa of Object.keys(weeklyData[wdk])){
+        if(wa.toLowerCase().indexOf(term)!==-1) shown.add(wa.toLowerCase());
+      }
+    }
+    var html='';
+    if(entries.length>0){
+      html+='<div class="cbt-search-result-section">TODAY</div>';
+      entries.forEach(function(e){
+        shown.add(e.assoc.toLowerCase());
+        var rateCls=e.avgRate>=WARN_RATE?'good':e.avgRate>=ALERT_RATE?'warn':'alert';
+        html+='<div class="cbt-search-row"><span class="cbt-search-row-name">'+e.assoc+'</span>' +
+        '<span class="cbt-search-row-mid"><span style="display:inline-block;width:45px;text-align:right;">'+e.runs+'</span> runs | <span style="display:inline-block;width:50px;text-align:left;">'+e.totalPkgs+'</span> pkgs</span>' +
+        '<span class="cbt-search-row-rate"><span class="cbt-hist-rate '+rateCls+'">'+e.avgRate.toFixed(1)+'</span></span></div>';
+      });
+    }
+    /* No-data saved names belong in Names, not performance results. */
+    setHTML(crossEl, html);
+  }
+
+  function tickLive() {
+    if (document.hidden || activeTab !== 'live') return;
+
+    var tbody = document.getElementById('cbt-tbody');
+    if (!tbody || !tbody.isConnected) return;
+
+    var nowMs = cbtNowMs();
+    tbody.querySelectorAll('.cbt-elapsed[data-live="1"]').forEach(function(el){
+      var startMs = parseFloat(el.dataset.start);
+      if (!startMs) return;
+
+      var sec = Math.max(0, (nowMs - startMs) / 1000);
+      var min = sec / 60;
+      var nextClass = 'cbt-elapsed ' +
+        (min >= ALERT_ELAPSED_MIN ? 'alert' : min >= WARN_ELAPSED_MIN ? 'warn' : '');
+      var nextText = fmt(sec);
+
+      if (el.className !== nextClass) el.className = nextClass;
+      if (el.textContent !== nextText) el.textContent = nextText;
+    });
+  }
+
+
+  /* ── Task Detail Panel ── */
+  var _tpRef = null, _tpLiveTerm = '';
+
+  function buildTaskPanel() {
+    var p = document.createElement('div');
+    p.id = 'cbt-tp';
+    var isDark = localStorage.getItem('cbt_dark') !== '0';
+    if (isDark) p.classList.add('dark');
+
+    p.innerHTML =
+      '<div id="cbt-tp-header">' +
+        '<span id="cbt-tp-title">Search Associate</span>' +
+        '<div id="cbt-tp-controls">' +
+          '<span id="cbt-tp-font-dec" title="Smaller text">A−</span>' +
+          '<span id="cbt-tp-font-inc" title="Larger text">A+</span>' +
+          '<span id="cbt-tp-theme" title="Toggle Dark/Light" style="font-size:16px;cursor:pointer;">' + (isDark?'☀️':'🌙') + '</span>' +
+          '<span id="cbt-tp-collapse" title="Roll up/down">🔼</span>' +
+        '</div>' +
+      '</div>' +
+      '<div id="cbt-tp-body">' +
+        '<div style="padding:6px 8px;display:flex;align-items:center;gap:6px;">' +
+          '<input id="cbt-tp-search-input" type="text" placeholder="Search any associate..."/>' +
+          '<button id="cbt-tp-search-clear">✕</button>' +
+        '</div>' +
+        '<div id="cbt-tp-results"></div>' +
+      '</div>';
+
+    return p;
+  }
+
+  function tpRenderSearch(term) {
+    var el = document.getElementById('cbt-tp-results'); if (!el) return;
+    if (!term || !term.trim()) { el.innerHTML = ''; return; }
+    term = term.toLowerCase().trim();
+    var html = '';
+    var seen = new Set();
+
+    taskCache.forEach(function(d){
+      if (cbtIsLiveBatch(d)) {
+        var name = (d.associateId||d.associate||d.driverAssignment||d.shortClientRef||'').toLowerCase();
+        if (name.indexOf(term) !== -1 && !seen.has(name)) {
+          seen.add(name);
+          var r = computeRow(d);
+          var displayName = d.associateId||d.associate||d.driverAssignment||d.shortClientRef||'—';
+          var rc = !r.scanRate?'color:#aaa':r.scanRate>=WARN_RATE?'color:#2a9d2a':r.scanRate>=ALERT_RATE?'color:#e6a817':'color:#cc0000';
+          html += '<div class="cbt-tp-row"><span class="cbt-tp-row-name">' + displayName + '</span><span class="cbt-tp-row-mid"></span><span class="cbt-tp-row-rate" style="' + rc + ';">' + (r.scanRate?r.scanRate.toFixed(1):'—') + '</span></div>';
+        }
+      }
+    });
+
+    var hist = loadHistory();
+    Object.values(hist).forEach(function(e){
+      if (e.assoc.toLowerCase().indexOf(term) !== -1 && !seen.has(e.assoc.toLowerCase())) {
+        seen.add(e.assoc.toLowerCase());
+        var rc = e.avgRate>=WARN_RATE?'color:#2a9d2a':e.avgRate>=ALERT_RATE?'color:#e6a817':'color:#cc0000';
+        html += '<div class="cbt-tp-row"><span class="cbt-tp-row-name">' + e.assoc + '</span><span class="cbt-tp-row-mid"></span><span class="cbt-tp-row-rate" style="' + rc + ';">' + e.avgRate.toFixed(1) + '</span></div>';
+      }
+    });
+
+    var weekly = sanitizeWeekly(getDisplayWeekly()), agg = {};
+    for (var dk of Object.keys(weekly)) {
+      for (var a of Object.keys(weekly[dk])) {
+        if (a.toLowerCase().indexOf(term) === -1) continue;
+        if (!agg[a]) agg[a] = {assoc:(weekly[dk][a].assoc||a),totalPkgs:0,totalSec:0};
+        agg[a].totalPkgs+=weekly[dk][a].totalPkgs; agg[a].totalSec+=weekly[dk][a].totalSec;
+      }
+    }
+    Object.values(agg).forEach(function(e){
+      if (!seen.has(e.assoc.toLowerCase())) {
+        seen.add(e.assoc.toLowerCase());
+        var avg = e.totalSec>0 ? e.totalPkgs/(e.totalSec/60) : 0;
+        var rc = avg>=WARN_RATE?'color:#2a9d2a':avg>=ALERT_RATE?'color:#e6a817':'color:#cc0000';
+        html += '<div class="cbt-tp-row"><span class="cbt-tp-row-name">' + e.assoc + '</span><span class="cbt-tp-row-mid"></span><span class="cbt-tp-row-rate" style="' + rc + ';">' + avg.toFixed(1) + '</span></div>';
+      }
+    });
+
+    // Saved names — anyone captured from localStorage/sync who isn't already shown above
+    var savedHtml = savedNamesSearchHTML(term, seen);
+    if (savedHtml) html += savedHtml;
+
+    if (!html) html = '<div style="text-align:center;color:#aaa;padding:10px;font-size:13px;font-style:italic;">No results for "' + term + '"</div>';
+    setHTML(el, html);
+  }
+
+  /* ── Search Associate panel: drag to move, position remembered ── */
+  var TP_POS_KEY = 'cbt_tp_pos';
+
+  function loadTpPos() {
+    var raw = gmGet(TP_POS_KEY, null);
+    if (raw == null) { try { raw = localStorage.getItem(TP_POS_KEY); } catch(e) {} }
+    if (!raw) return null;
+    try {
+      var p = (typeof raw === 'string') ? JSON.parse(raw) : raw;
+      if (p && typeof p.left === 'number' && typeof p.top === 'number') return p;
+    } catch(e) {}
+    return null;
+  }
+  function saveTpPos(left, top) {
+    var json = JSON.stringify({ left: left, top: top });
+    gmSet(TP_POS_KEY, json);
+    try { localStorage.setItem(TP_POS_KEY, json); } catch(e) {}
+  }
+  /* Keep the panel reachable rather than boxed in: it may hang off any edge
+     as long as a grabbable strip of the header stays on screen, so you can
+     park it literally anywhere and still drag it back. */
+  function clampTpPos(tp, left, top) {
+    var w = tp.offsetWidth  || 420;
+    var h = tp.offsetHeight || 300;
+    var KEEP = 90;                                  /* visible strip, px */
+    var minLeft = -(w - KEEP);
+    var maxLeft = window.innerWidth - KEEP;
+    var minTop  = 0;                                /* header never above the top */
+    var maxTop  = Math.max(0, window.innerHeight - 44);
+    return {
+      left: Math.min(Math.max(minLeft, left), maxLeft),
+      top:  Math.min(Math.max(minTop,  top),  maxTop)
+    };
+  }
+  /* The panel's own CSS declares `top: 90px !important; right: 12px !important`.
+     A plain inline style loses to !important, which pinned the panel
+     vertically at 90px — horizontal drags worked, vertical ones did nothing.
+     Setting the position with matching priority frees it to go anywhere. */
+  function tpSetPos(tp, left, top) {
+    tp.style.setProperty('left',   left + 'px', 'important');
+    tp.style.setProperty('top',    top  + 'px', 'important');
+    tp.style.setProperty('right',  'auto',      'important');
+    tp.style.setProperty('bottom', 'auto',      'important');
+  }
+  /* Read the position from the box itself, not from inline styles. */
+  function tpCurrentPos(tp) {
+    var r = tp.getBoundingClientRect();
+    return { left: r.left, top: r.top };
+  }
+
+  function applyTpPos(tp) {
+    var p = loadTpPos();
+    if (!p) return;                 /* never moved — keep the default corner */
+    var c = clampTpPos(tp, p.left, p.top);
+    tpSetPos(tp, c.left, c.top);
+  }
+  function tpAttachDrag(tp) {
+    var header = tp.querySelector('#cbt-tp-header');
+    if (!header) return;
+    var dragging = false, startX = 0, startY = 0, startLeft = 0, startTop = 0;
+
+    header.addEventListener('mousedown', function(e){
+      /* the +/-, theme and roll buttons must stay clickable */
+      if (e.target.closest('#cbt-tp-controls')) return;
+      if (e.button !== 0) return;
+      var r = tp.getBoundingClientRect();
+      dragging = true;
+      startX = e.clientX; startY = e.clientY;
+      startLeft = r.left;  startTop = r.top;
+      /* pin to left/top so dragging works regardless of the right-anchored default */
+      tpSetPos(tp, r.left, r.top);
+      tp.classList.add('cbt-tp-dragging');
+      e.preventDefault();
+    });
+
+    document.addEventListener('mousemove', function(e){
+      if (!dragging) return;
+      var c = clampTpPos(tp, startLeft + (e.clientX - startX), startTop + (e.clientY - startY));
+      tpSetPos(tp, c.left, c.top);
+    });
+
+    document.addEventListener('mouseup', function(){
+      if (!dragging) return;
+      dragging = false;
+      tp.classList.remove('cbt-tp-dragging');
+      var p = tpCurrentPos(tp);
+      saveTpPos(p.left, p.top);
+    });
+
+    /* if the window shrinks, pull the panel back into view */
+    window.addEventListener('resize', function(){
+      if (!tp.isConnected || !loadTpPos()) return;
+      var p = tpCurrentPos(tp);
+      var c = clampTpPos(tp, p.left, p.top);
+      tpSetPos(tp, c.left, c.top);
+      saveTpPos(c.left, c.top);
+    });
+  }
+
+  /* ── Roll the Search Associate panel up/down; state is remembered ── */
+  var TP_ROLLED_KEY = 'cbt_tp_rolled';
+  function loadTpRolled() {
+    var raw = gmGet(TP_ROLLED_KEY, null);
+    if (raw == null) { try { raw = localStorage.getItem(TP_ROLLED_KEY); } catch(e) {} }
+    return raw === '1' || raw === true;
+  }
+  function saveTpRolled(rolled) {
+    var v = rolled ? '1' : '0';
+    gmSet(TP_ROLLED_KEY, v);
+    try { localStorage.setItem(TP_ROLLED_KEY, v); } catch(e) {}
+  }
+  function applyTpRolled(tp, rolled) {
+    if (rolled) tp.classList.add('cbt-tp-rolled');
+    else tp.classList.remove('cbt-tp-rolled');
+    var btn = tp.querySelector('#cbt-tp-collapse');
+    if (btn) btn.textContent = rolled ? '🔽' : '🔼';
+  }
+
+  function tpAttachEvents(tp) {
+    /* ── roll up / down ── */
+    var _tpRolled = loadTpRolled();
+    applyTpRolled(tp, _tpRolled);
+    var rollBtn = tp.querySelector('#cbt-tp-collapse');
+    if (rollBtn) rollBtn.addEventListener('click', function(){
+      _tpRolled = !_tpRolled;
+      applyTpRolled(tp, _tpRolled);
+      saveTpRolled(_tpRolled);
+      /* rolled up the panel is short — make sure it is still on screen */
+      if (loadTpPos()) {
+        var p = tpCurrentPos(tp);
+        var c = clampTpPos(tp, p.left, p.top);
+        tpSetPos(tp, c.left, c.top);
+      }
+    });
+
+    // ── theme toggle ──
+    var themeBtn = tp.querySelector('#cbt-tp-theme');
+    if (themeBtn) themeBtn.addEventListener('click', function(){
+      var isDark = tp.classList.toggle('dark');
+      localStorage.setItem('cbt_dark', isDark ? '1' : '0');
+      themeBtn.textContent = isDark ? '☀️' : '🌙';
+    });
+
+    // ── font size +/- ──
+    var _tpFontScale = loadTpFontScale();
+    applyTpFontScale(tp, _tpFontScale);
+
+    var fontIncBtn = tp.querySelector('#cbt-tp-font-inc');
+    var fontDecBtn = tp.querySelector('#cbt-tp-font-dec');
+    if (fontIncBtn) fontIncBtn.addEventListener('click', function() {
+      _tpFontScale = Math.min(2.0, Math.round((_tpFontScale + 0.1) * 10) / 10);
+      saveTpFontScale(_tpFontScale);
+      applyTpFontScale(tp, _tpFontScale);
+    });
+    if (fontDecBtn) fontDecBtn.addEventListener('click', function() {
+      _tpFontScale = Math.max(0.7, Math.round((_tpFontScale - 0.1) * 10) / 10);
+      saveTpFontScale(_tpFontScale);
+      applyTpFontScale(tp, _tpFontScale);
+    });
+
+    // ── search input ──
+    tp.addEventListener('input', function(e){
+      if (e.target.id === 'cbt-tp-search-input') {
+        _tpLiveTerm = e.target.value;
+        tpRenderSearch(_tpLiveTerm);
+      }
+    });
+
+    // ── clear + click-to-copy ──
+    tp.addEventListener('click', function(e){
+      if (e.target.id === 'cbt-tp-search-clear') {
+        var i = tp.querySelector('#cbt-tp-search-input');
+        if (i) { i.value = ''; _tpLiveTerm = ''; tpRenderSearch(''); }
+      }
+      var nameEl = e.target.closest('.cbt-tp-row-name');
+      if (nameEl && tp.contains(nameEl)) {
+        var oldTag4 = nameEl.querySelector('.cbt-copied-tag');
+        if (oldTag4) oldTag4.remove();
+        var text = nameEl.textContent.trim();
+        copyWithFeedback(nameEl, text, e);
+      }
+    });
+  }
+
+  function injectTaskPanel() {
+    var existingTp = document.getElementById('cbt-tp');
+    if (existingTp && existingTp.isConnected) return;
+    if (!shouldShowSearchPanel()) return;
+
+    /* COMO's cart page clips fixed-position children, so ancestors get
+       overflow:visible. The Outbound site needs none of that. */
+    if (document.querySelector('div.job-details')) {
+      var mainContent = document.querySelector('div.container.main-content') || document.querySelector('.container.main-content');
+      if (mainContent) mainContent.style.overflow = 'visible';
+      var body = document.querySelector('body');
+      if (body) body.style.overflow = 'visible';
+      var ngScope = document.querySelector('.ng-scope');
+      if (ngScope) ngScope.style.overflow = 'visible';
+      var el = document.querySelector('div.job-details');
+      while (el && el !== document.body) {
+        var s = window.getComputedStyle(el).overflow;
+        if (s === 'hidden' || s === 'auto' || s === 'scroll') el.style.overflow = 'visible';
+        el = el.parentElement;
+      }
+    }
+
+    _tpRef = buildTaskPanel();
+    document.body.appendChild(_tpRef);
+    applyTpPos(_tpRef);
+    tpAttachDrag(_tpRef);
+    tpAttachEvents(_tpRef);
+  }
+
+  /* Exactly one panel per page type:
+       cart/task detail page -> Associate Search only
+       dashboard view        -> Batcher Timers only                */
+  var _panelMutationRun = coalesced(function() {
+    try { ensureSortAttachment(); } catch(e0) {}
+    if (shouldShowSearchPanel()) {
+      /* cart/task detail, or any Outbound page -> Associate Search only */
+      detachMainPanel();
+      var tp = document.getElementById('cbt-tp');
+      if (!tp || !tp.isConnected) injectTaskPanel();
+      return;
+    }
+    /* nowhere the search panel belongs -> make sure it is gone */
+    var tpOff = document.getElementById('cbt-tp');
+    if (tpOff) { tpOff.remove(); _tpRef = null; }
+
+    if (!isDashboardView()) { detachMainPanel(); return; }  /* Packages/Orders/etc */
+
+    var mp = document.getElementById('cbt-panel');
+    if (!mp || !mp.isConnected) injectPanel();
+  }, 50);
+
+  var panelWatcher = new MutationObserver(function(mutations) {
+    /* v23.9.92: while the dashboard panel is healthy, normal Angular DOM churn
+       is irrelevant to panel mounting. Returning here avoids waking the heavier
+       route/sort/mount checks for every package/progress repaint. */
+    if (isDashboardView()) {
+      var livePanel = document.getElementById('cbt-panel');
+      if (livePanel && livePanel.isConnected) return;
+      try { injectPanel(); } catch(eFastPanel) {}
+      try { ensureSortAttachment(); } catch(eSortPanel) {}
+      return;
+    }
+
+    /* Search-side recovery is needed only on pages where that UI is enabled. */
+    if (!shouldShowSearchPanel()) return;
+    for (var i = 0; i < mutations.length; i++) {
+      if (!cbtMutationIsOnlyOwnUi(mutations[i])) {
+        _panelMutationRun();
+        return;
+      }
+    }
+  });
+
+  /* ══════════════════════════════════════
+     QR CODE FROM SELECTED TEXT
+     Highlight any text on the page and a centered QR popup appears
+     encoding it. The text field below the code is editable and the
+     QR redraws live as you type. Click outside the card (or press
+     Esc, or the ✕) to close. The encoder library is embedded, so QR
+     generation is instant, offline, and needs no external requests.
+     qrcode-generator (MIT, Kazuhiko Arase) embedded below.
+  ══════════════════════════════════════ */
+  var qrcode = (function(){
+    var module = { exports: {} }, exports = module.exports, define;
+    var qrcode=function(){var t=function(t,r){var e=t,n=g[r],o=null,i=0,a=null,u=[],f={},c=function(t,r){o=function(t){for(var r=new Array(t),e=0;e<t;e+=1){r[e]=new Array(t);for(var n=0;n<t;n+=1)r[e][n]=null}return r}(i=4*e+17),l(0,0),l(i-7,0),l(0,i-7),s(),h(),d(t,r),e>=7&&v(t),null==a&&(a=p(e,n,u)),w(a,r)},l=function(t,r){for(var e=-1;e<=7;e+=1)if(!(t+e<=-1||i<=t+e))for(var n=-1;n<=7;n+=1)r+n<=-1||i<=r+n||(o[t+e][r+n]=0<=e&&e<=6&&(0==n||6==n)||0<=n&&n<=6&&(0==e||6==e)||2<=e&&e<=4&&2<=n&&n<=4)},h=function(){for(var t=8;t<i-8;t+=1)null==o[t][6]&&(o[t][6]=t%2==0);for(var r=8;r<i-8;r+=1)null==o[6][r]&&(o[6][r]=r%2==0)},s=function(){for(var t=B.getPatternPosition(e),r=0;r<t.length;r+=1)for(var n=0;n<t.length;n+=1){var i=t[r],a=t[n];if(null==o[i][a])for(var u=-2;u<=2;u+=1)for(var f=-2;f<=2;f+=1)o[i+u][a+f]=-2==u||2==u||-2==f||2==f||0==u&&0==f}},v=function(t){for(var r=B.getBCHTypeNumber(e),n=0;n<18;n+=1){var a=!t&&1==(r>>n&1);o[Math.floor(n/3)][n%3+i-8-3]=a}for(n=0;n<18;n+=1){a=!t&&1==(r>>n&1);o[n%3+i-8-3][Math.floor(n/3)]=a}},d=function(t,r){for(var e=n<<3|r,a=B.getBCHTypeInfo(e),u=0;u<15;u+=1){var f=!t&&1==(a>>u&1);u<6?o[u][8]=f:u<8?o[u+1][8]=f:o[i-15+u][8]=f}for(u=0;u<15;u+=1){f=!t&&1==(a>>u&1);u<8?o[8][i-u-1]=f:u<9?o[8][15-u-1+1]=f:o[8][15-u-1]=f}o[i-8][8]=!t},w=function(t,r){for(var e=-1,n=i-1,a=7,u=0,f=B.getMaskFunction(r),c=i-1;c>0;c-=2)for(6==c&&(c-=1);;){for(var g=0;g<2;g+=1)if(null==o[n][c-g]){var l=!1;u<t.length&&(l=1==(t[u]>>>a&1)),f(n,c-g)&&(l=!l),o[n][c-g]=l,-1==(a-=1)&&(u+=1,a=7)}if((n+=e)<0||i<=n){n-=e,e=-e;break}}},p=function(t,r,e){for(var n=A.getRSBlocks(t,r),o=b(),i=0;i<e.length;i+=1){var a=e[i];o.put(a.getMode(),4),o.put(a.getLength(),B.getLengthInBits(a.getMode(),t)),a.write(o)}var u=0;for(i=0;i<n.length;i+=1)u+=n[i].dataCount;if(o.getLengthInBits()>8*u)throw"code length overflow. ("+o.getLengthInBits()+">"+8*u+")";for(o.getLengthInBits()+4<=8*u&&o.put(0,4);o.getLengthInBits()%8!=0;)o.putBit(!1);for(;!(o.getLengthInBits()>=8*u||(o.put(236,8),o.getLengthInBits()>=8*u));)o.put(17,8);return function(t,r){for(var e=0,n=0,o=0,i=new Array(r.length),a=new Array(r.length),u=0;u<r.length;u+=1){var f=r[u].dataCount,c=r[u].totalCount-f;n=Math.max(n,f),o=Math.max(o,c),i[u]=new Array(f);for(var g=0;g<i[u].length;g+=1)i[u][g]=255&t.getBuffer()[g+e];e+=f;var l=B.getErrorCorrectPolynomial(c),h=k(i[u],l.getLength()-1).mod(l);for(a[u]=new Array(l.getLength()-1),g=0;g<a[u].length;g+=1){var s=g+h.getLength()-a[u].length;a[u][g]=s>=0?h.getAt(s):0}}var v=0;for(g=0;g<r.length;g+=1)v+=r[g].totalCount;var d=new Array(v),w=0;for(g=0;g<n;g+=1)for(u=0;u<r.length;u+=1)g<i[u].length&&(d[w]=i[u][g],w+=1);for(g=0;g<o;g+=1)for(u=0;u<r.length;u+=1)g<a[u].length&&(d[w]=a[u][g],w+=1);return d}(o,n)};f.addData=function(t,r){var e=null;switch(r=r||"Byte"){case"Numeric":e=M(t);break;case"Alphanumeric":e=x(t);break;case"Byte":e=m(t);break;case"Kanji":e=L(t);break;default:throw"mode:"+r}u.push(e),a=null},f.isDark=function(t,r){if(t<0||i<=t||r<0||i<=r)throw t+","+r;return o[t][r]},f.getModuleCount=function(){return i},f.make=function(){if(e<1){for(var t=1;t<40;t++){for(var r=A.getRSBlocks(t,n),o=b(),i=0;i<u.length;i++){var a=u[i];o.put(a.getMode(),4),o.put(a.getLength(),B.getLengthInBits(a.getMode(),t)),a.write(o)}var g=0;for(i=0;i<r.length;i++)g+=r[i].dataCount;if(o.getLengthInBits()<=8*g)break}e=t}c(!1,function(){for(var t=0,r=0,e=0;e<8;e+=1){c(!0,e);var n=B.getLostPoint(f);(0==e||t>n)&&(t=n,r=e)}return r}())},f.createTableTag=function(t,r){t=t||2;var e="";e+='<table style="',e+=" border-width: 0px; border-style: none;",e+=" border-collapse: collapse;",e+=" padding: 0px; margin: "+(r=void 0===r?4*t:r)+"px;",e+='">',e+="<tbody>";for(var n=0;n<f.getModuleCount();n+=1){e+="<tr>";for(var o=0;o<f.getModuleCount();o+=1)e+='<td style="',e+=" border-width: 0px; border-style: none;",e+=" border-collapse: collapse;",e+=" padding: 0px; margin: 0px;",e+=" width: "+t+"px;",e+=" height: "+t+"px;",e+=" background-color: ",e+=f.isDark(n,o)?"#000000":"#ffffff",e+=";",e+='"/>';e+="</tr>"}return e+="</tbody>",e+="</table>"},f.createSvgTag=function(t,r,e,n){var o={};"object"==typeof arguments[0]&&(t=(o=arguments[0]).cellSize,r=o.margin,e=o.alt,n=o.title),t=t||2,r=void 0===r?4*t:r,(e="string"==typeof e?{text:e}:e||{}).text=e.text||null,e.id=e.text?e.id||"qrcode-description":null,(n="string"==typeof n?{text:n}:n||{}).text=n.text||null,n.id=n.text?n.id||"qrcode-title":null;var i,a,u,c,g=f.getModuleCount()*t+2*r,l="";for(c="l"+t+",0 0,"+t+" -"+t+",0 0,-"+t+"z ",l+='<svg version="1.1" xmlns="http://www.w3.org/2000/svg"',l+=o.scalable?"":' width="'+g+'px" height="'+g+'px"',l+=' viewBox="0 0 '+g+" "+g+'" ',l+=' preserveAspectRatio="xMinYMin meet"',l+=n.text||e.text?' role="img" aria-labelledby="'+y([n.id,e.id].join(" ").trim())+'"':"",l+=">",l+=n.text?'<title id="'+y(n.id)+'">'+y(n.text)+"</title>":"",l+=e.text?'<description id="'+y(e.id)+'">'+y(e.text)+"</description>":"",l+='<rect width="100%" height="100%" fill="white" cx="0" cy="0"/>',l+='<path d="',a=0;a<f.getModuleCount();a+=1)for(u=a*t+r,i=0;i<f.getModuleCount();i+=1)f.isDark(a,i)&&(l+="M"+(i*t+r)+","+u+c);return l+='" stroke="transparent" fill="black"/>',l+="</svg>"},f.createDataURL=function(t,r){t=t||2,r=void 0===r?4*t:r;var e=f.getModuleCount()*t+2*r,n=r,o=e-r;return I(e,e,function(r,e){if(n<=r&&r<o&&n<=e&&e<o){var i=Math.floor((r-n)/t),a=Math.floor((e-n)/t);return f.isDark(a,i)?0:1}return 1})},f.createImgTag=function(t,r,e){t=t||2,r=void 0===r?4*t:r;var n=f.getModuleCount()*t+2*r,o="";return o+="<img",o+=' src="',o+=f.createDataURL(t,r),o+='"',o+=' width="',o+=n,o+='"',o+=' height="',o+=n,o+='"',e&&(o+=' alt="',o+=y(e),o+='"'),o+="/>"};var y=function(t){for(var r="",e=0;e<t.length;e+=1){var n=t.charAt(e);switch(n){case"<":r+="&lt;";break;case">":r+="&gt;";break;case"&":r+="&amp;";break;case'"':r+="&quot;";break;default:r+=n}}return r};return f.createASCII=function(t,r){if((t=t||1)<2)return function(t){t=void 0===t?2:t;var r,e,n,o,i,a=1*f.getModuleCount()+2*t,u=t,c=a-t,g={"██":"█","█ ":"▀"," █":"▄","  ":" "},l={"██":"▀","█ ":"▀"," █":" ","  ":" "},h="";for(r=0;r<a;r+=2){for(n=Math.floor((r-u)/1),o=Math.floor((r+1-u)/1),e=0;e<a;e+=1)i="█",u<=e&&e<c&&u<=r&&r<c&&f.isDark(n,Math.floor((e-u)/1))&&(i=" "),u<=e&&e<c&&u<=r+1&&r+1<c&&f.isDark(o,Math.floor((e-u)/1))?i+=" ":i+="█",h+=t<1&&r+1>=c?l[i]:g[i];h+="\n"}return a%2&&t>0?h.substring(0,h.length-a-1)+Array(a+1).join("▀"):h.substring(0,h.length-1)}(r);t-=1,r=void 0===r?2*t:r;var e,n,o,i,a=f.getModuleCount()*t+2*r,u=r,c=a-r,g=Array(t+1).join("██"),l=Array(t+1).join("  "),h="",s="";for(e=0;e<a;e+=1){for(o=Math.floor((e-u)/t),s="",n=0;n<a;n+=1)i=1,u<=n&&n<c&&u<=e&&e<c&&f.isDark(o,Math.floor((n-u)/t))&&(i=0),s+=i?g:l;for(o=0;o<t;o+=1)h+=s+"\n"}return h.substring(0,h.length-1)},f.renderTo2dContext=function(t,r){r=r||2;for(var e=f.getModuleCount(),n=0;n<e;n++)for(var o=0;o<e;o++)t.fillStyle=f.isDark(n,o)?"black":"white",t.fillRect(o*r,n*r,r,r)},f};t.stringToBytes=(t.stringToBytesFuncs={default:function(t){for(var r=[],e=0;e<t.length;e+=1){var n=t.charCodeAt(e);r.push(255&n)}return r}}).default,t.createStringToBytes=function(t,r){var e=function(){for(var e=S(t),n=function(){var t=e.read();if(-1==t)throw"eof";return t},o=0,i={};;){var a=e.read();if(-1==a)break;var u=n(),f=n()<<8|n();i[String.fromCharCode(a<<8|u)]=f,o+=1}if(o!=r)throw o+" != "+r;return i}(),n="?".charCodeAt(0);return function(t){for(var r=[],o=0;o<t.length;o+=1){var i=t.charCodeAt(o);if(i<128)r.push(i);else{var a=e[t.charAt(o)];"number"==typeof a?(255&a)==a?r.push(a):(r.push(a>>>8),r.push(255&a)):r.push(n)}}return r}};var r,e,n,o,i,a=1,u=2,f=4,c=8,g={L:1,M:0,Q:3,H:2},l=0,h=1,s=2,v=3,d=4,w=5,p=6,y=7,B=(r=[[],[6,18],[6,22],[6,26],[6,30],[6,34],[6,22,38],[6,24,42],[6,26,46],[6,28,50],[6,30,54],[6,32,58],[6,34,62],[6,26,46,66],[6,26,48,70],[6,26,50,74],[6,30,54,78],[6,30,56,82],[6,30,58,86],[6,34,62,90],[6,28,50,72,94],[6,26,50,74,98],[6,30,54,78,102],[6,28,54,80,106],[6,32,58,84,110],[6,30,58,86,114],[6,34,62,90,118],[6,26,50,74,98,122],[6,30,54,78,102,126],[6,26,52,78,104,130],[6,30,56,82,108,134],[6,34,60,86,112,138],[6,30,58,86,114,142],[6,34,62,90,118,146],[6,30,54,78,102,126,150],[6,24,50,76,102,128,154],[6,28,54,80,106,132,158],[6,32,58,84,110,136,162],[6,26,54,82,110,138,166],[6,30,58,86,114,142,170]],e=1335,n=7973,i=function(t){for(var r=0;0!=t;)r+=1,t>>>=1;return r},(o={}).getBCHTypeInfo=function(t){for(var r=t<<10;i(r)-i(e)>=0;)r^=e<<i(r)-i(e);return 21522^(t<<10|r)},o.getBCHTypeNumber=function(t){for(var r=t<<12;i(r)-i(n)>=0;)r^=n<<i(r)-i(n);return t<<12|r},o.getPatternPosition=function(t){return r[t-1]},o.getMaskFunction=function(t){switch(t){case l:return function(t,r){return(t+r)%2==0};case h:return function(t,r){return t%2==0};case s:return function(t,r){return r%3==0};case v:return function(t,r){return(t+r)%3==0};case d:return function(t,r){return(Math.floor(t/2)+Math.floor(r/3))%2==0};case w:return function(t,r){return t*r%2+t*r%3==0};case p:return function(t,r){return(t*r%2+t*r%3)%2==0};case y:return function(t,r){return(t*r%3+(t+r)%2)%2==0};default:throw"bad maskPattern:"+t}},o.getErrorCorrectPolynomial=function(t){for(var r=k([1],0),e=0;e<t;e+=1)r=r.multiply(k([1,C.gexp(e)],0));return r},o.getLengthInBits=function(t,r){if(1<=r&&r<10)switch(t){case a:return 10;case u:return 9;case f:case c:return 8;default:throw"mode:"+t}else if(r<27)switch(t){case a:return 12;case u:return 11;case f:return 16;case c:return 10;default:throw"mode:"+t}else{if(!(r<41))throw"type:"+r;switch(t){case a:return 14;case u:return 13;case f:return 16;case c:return 12;default:throw"mode:"+t}}},o.getLostPoint=function(t){for(var r=t.getModuleCount(),e=0,n=0;n<r;n+=1)for(var o=0;o<r;o+=1){for(var i=0,a=t.isDark(n,o),u=-1;u<=1;u+=1)if(!(n+u<0||r<=n+u))for(var f=-1;f<=1;f+=1)o+f<0||r<=o+f||0==u&&0==f||a==t.isDark(n+u,o+f)&&(i+=1);i>5&&(e+=3+i-5)}for(n=0;n<r-1;n+=1)for(o=0;o<r-1;o+=1){var c=0;t.isDark(n,o)&&(c+=1),t.isDark(n+1,o)&&(c+=1),t.isDark(n,o+1)&&(c+=1),t.isDark(n+1,o+1)&&(c+=1),0!=c&&4!=c||(e+=3)}for(n=0;n<r;n+=1)for(o=0;o<r-6;o+=1)t.isDark(n,o)&&!t.isDark(n,o+1)&&t.isDark(n,o+2)&&t.isDark(n,o+3)&&t.isDark(n,o+4)&&!t.isDark(n,o+5)&&t.isDark(n,o+6)&&(e+=40);for(o=0;o<r;o+=1)for(n=0;n<r-6;n+=1)t.isDark(n,o)&&!t.isDark(n+1,o)&&t.isDark(n+2,o)&&t.isDark(n+3,o)&&t.isDark(n+4,o)&&!t.isDark(n+5,o)&&t.isDark(n+6,o)&&(e+=40);var g=0;for(o=0;o<r;o+=1)for(n=0;n<r;n+=1)t.isDark(n,o)&&(g+=1);return e+=Math.abs(100*g/r/r-50)/5*10},o),C=function(){for(var t=new Array(256),r=new Array(256),e=0;e<8;e+=1)t[e]=1<<e;for(e=8;e<256;e+=1)t[e]=t[e-4]^t[e-5]^t[e-6]^t[e-8];for(e=0;e<255;e+=1)r[t[e]]=e;var n={glog:function(t){if(t<1)throw"glog("+t+")";return r[t]},gexp:function(r){for(;r<0;)r+=255;for(;r>=256;)r-=255;return t[r]}};return n}();function k(t,r){if(void 0===t.length)throw t.length+"/"+r;var e=function(){for(var e=0;e<t.length&&0==t[e];)e+=1;for(var n=new Array(t.length-e+r),o=0;o<t.length-e;o+=1)n[o]=t[o+e];return n}(),n={getAt:function(t){return e[t]},getLength:function(){return e.length},multiply:function(t){for(var r=new Array(n.getLength()+t.getLength()-1),e=0;e<n.getLength();e+=1)for(var o=0;o<t.getLength();o+=1)r[e+o]^=C.gexp(C.glog(n.getAt(e))+C.glog(t.getAt(o)));return k(r,0)},mod:function(t){if(n.getLength()-t.getLength()<0)return n;for(var r=C.glog(n.getAt(0))-C.glog(t.getAt(0)),e=new Array(n.getLength()),o=0;o<n.getLength();o+=1)e[o]=n.getAt(o);for(o=0;o<t.getLength();o+=1)e[o]^=C.gexp(C.glog(t.getAt(o))+r);return k(e,0).mod(t)}};return n}var A=function(){var t=[[1,26,19],[1,26,16],[1,26,13],[1,26,9],[1,44,34],[1,44,28],[1,44,22],[1,44,16],[1,70,55],[1,70,44],[2,35,17],[2,35,13],[1,100,80],[2,50,32],[2,50,24],[4,25,9],[1,134,108],[2,67,43],[2,33,15,2,34,16],[2,33,11,2,34,12],[2,86,68],[4,43,27],[4,43,19],[4,43,15],[2,98,78],[4,49,31],[2,32,14,4,33,15],[4,39,13,1,40,14],[2,121,97],[2,60,38,2,61,39],[4,40,18,2,41,19],[4,40,14,2,41,15],[2,146,116],[3,58,36,2,59,37],[4,36,16,4,37,17],[4,36,12,4,37,13],[2,86,68,2,87,69],[4,69,43,1,70,44],[6,43,19,2,44,20],[6,43,15,2,44,16],[4,101,81],[1,80,50,4,81,51],[4,50,22,4,51,23],[3,36,12,8,37,13],[2,116,92,2,117,93],[6,58,36,2,59,37],[4,46,20,6,47,21],[7,42,14,4,43,15],[4,133,107],[8,59,37,1,60,38],[8,44,20,4,45,21],[12,33,11,4,34,12],[3,145,115,1,146,116],[4,64,40,5,65,41],[11,36,16,5,37,17],[11,36,12,5,37,13],[5,109,87,1,110,88],[5,65,41,5,66,42],[5,54,24,7,55,25],[11,36,12,7,37,13],[5,122,98,1,123,99],[7,73,45,3,74,46],[15,43,19,2,44,20],[3,45,15,13,46,16],[1,135,107,5,136,108],[10,74,46,1,75,47],[1,50,22,15,51,23],[2,42,14,17,43,15],[5,150,120,1,151,121],[9,69,43,4,70,44],[17,50,22,1,51,23],[2,42,14,19,43,15],[3,141,113,4,142,114],[3,70,44,11,71,45],[17,47,21,4,48,22],[9,39,13,16,40,14],[3,135,107,5,136,108],[3,67,41,13,68,42],[15,54,24,5,55,25],[15,43,15,10,44,16],[4,144,116,4,145,117],[17,68,42],[17,50,22,6,51,23],[19,46,16,6,47,17],[2,139,111,7,140,112],[17,74,46],[7,54,24,16,55,25],[34,37,13],[4,151,121,5,152,122],[4,75,47,14,76,48],[11,54,24,14,55,25],[16,45,15,14,46,16],[6,147,117,4,148,118],[6,73,45,14,74,46],[11,54,24,16,55,25],[30,46,16,2,47,17],[8,132,106,4,133,107],[8,75,47,13,76,48],[7,54,24,22,55,25],[22,45,15,13,46,16],[10,142,114,2,143,115],[19,74,46,4,75,47],[28,50,22,6,51,23],[33,46,16,4,47,17],[8,152,122,4,153,123],[22,73,45,3,74,46],[8,53,23,26,54,24],[12,45,15,28,46,16],[3,147,117,10,148,118],[3,73,45,23,74,46],[4,54,24,31,55,25],[11,45,15,31,46,16],[7,146,116,7,147,117],[21,73,45,7,74,46],[1,53,23,37,54,24],[19,45,15,26,46,16],[5,145,115,10,146,116],[19,75,47,10,76,48],[15,54,24,25,55,25],[23,45,15,25,46,16],[13,145,115,3,146,116],[2,74,46,29,75,47],[42,54,24,1,55,25],[23,45,15,28,46,16],[17,145,115],[10,74,46,23,75,47],[10,54,24,35,55,25],[19,45,15,35,46,16],[17,145,115,1,146,116],[14,74,46,21,75,47],[29,54,24,19,55,25],[11,45,15,46,46,16],[13,145,115,6,146,116],[14,74,46,23,75,47],[44,54,24,7,55,25],[59,46,16,1,47,17],[12,151,121,7,152,122],[12,75,47,26,76,48],[39,54,24,14,55,25],[22,45,15,41,46,16],[6,151,121,14,152,122],[6,75,47,34,76,48],[46,54,24,10,55,25],[2,45,15,64,46,16],[17,152,122,4,153,123],[29,74,46,14,75,47],[49,54,24,10,55,25],[24,45,15,46,46,16],[4,152,122,18,153,123],[13,74,46,32,75,47],[48,54,24,14,55,25],[42,45,15,32,46,16],[20,147,117,4,148,118],[40,75,47,7,76,48],[43,54,24,22,55,25],[10,45,15,67,46,16],[19,148,118,6,149,119],[18,75,47,31,76,48],[34,54,24,34,55,25],[20,45,15,61,46,16]],r=function(t,r){var e={};return e.totalCount=t,e.dataCount=r,e},e={};return e.getRSBlocks=function(e,n){var o=function(r,e){switch(e){case g.L:return t[4*(r-1)+0];case g.M:return t[4*(r-1)+1];case g.Q:return t[4*(r-1)+2];case g.H:return t[4*(r-1)+3];default:return}}(e,n);if(void 0===o)throw"bad rs block @ typeNumber:"+e+"/errorCorrectionLevel:"+n;for(var i=o.length/3,a=[],u=0;u<i;u+=1)for(var f=o[3*u+0],c=o[3*u+1],l=o[3*u+2],h=0;h<f;h+=1)a.push(r(c,l));return a},e}(),b=function(){var t=[],r=0,e={getBuffer:function(){return t},getAt:function(r){var e=Math.floor(r/8);return 1==(t[e]>>>7-r%8&1)},put:function(t,r){for(var n=0;n<r;n+=1)e.putBit(1==(t>>>r-n-1&1))},getLengthInBits:function(){return r},putBit:function(e){var n=Math.floor(r/8);t.length<=n&&t.push(0),e&&(t[n]|=128>>>r%8),r+=1}};return e},M=function(t){var r=a,e=t,n={getMode:function(){return r},getLength:function(t){return e.length},write:function(t){for(var r=e,n=0;n+2<r.length;)t.put(o(r.substring(n,n+3)),10),n+=3;n<r.length&&(r.length-n==1?t.put(o(r.substring(n,n+1)),4):r.length-n==2&&t.put(o(r.substring(n,n+2)),7))}},o=function(t){for(var r=0,e=0;e<t.length;e+=1)r=10*r+i(t.charAt(e));return r},i=function(t){if("0"<=t&&t<="9")return t.charCodeAt(0)-"0".charCodeAt(0);throw"illegal char :"+t};return n},x=function(t){var r=u,e=t,n={getMode:function(){return r},getLength:function(t){return e.length},write:function(t){for(var r=e,n=0;n+1<r.length;)t.put(45*o(r.charAt(n))+o(r.charAt(n+1)),11),n+=2;n<r.length&&t.put(o(r.charAt(n)),6)}},o=function(t){if("0"<=t&&t<="9")return t.charCodeAt(0)-"0".charCodeAt(0);if("A"<=t&&t<="Z")return t.charCodeAt(0)-"A".charCodeAt(0)+10;switch(t){case" ":return 36;case"$":return 37;case"%":return 38;case"*":return 39;case"+":return 40;case"-":return 41;case".":return 42;case"/":return 43;case":":return 44;default:throw"illegal char :"+t}};return n},m=function(r){var e=f,n=t.stringToBytes(r),o={getMode:function(){return e},getLength:function(t){return n.length},write:function(t){for(var r=0;r<n.length;r+=1)t.put(n[r],8)}};return o},L=function(r){var e=c,n=t.stringToBytesFuncs.SJIS;if(!n)throw"sjis not supported.";!function(){var t=n("友");if(2!=t.length||38726!=(t[0]<<8|t[1]))throw"sjis not supported."}();var o=n(r),i={getMode:function(){return e},getLength:function(t){return~~(o.length/2)},write:function(t){for(var r=o,e=0;e+1<r.length;){var n=(255&r[e])<<8|255&r[e+1];if(33088<=n&&n<=40956)n-=33088;else{if(!(57408<=n&&n<=60351))throw"illegal char at "+(e+1)+"/"+n;n-=49472}n=192*(n>>>8&255)+(255&n),t.put(n,13),e+=2}if(e<r.length)throw"illegal char at "+(e+1)}};return i},D=function(){var t=[],r={writeByte:function(r){t.push(255&r)},writeShort:function(t){r.writeByte(t),r.writeByte(t>>>8)},writeBytes:function(t,e,n){e=e||0,n=n||t.length;for(var o=0;o<n;o+=1)r.writeByte(t[o+e])},writeString:function(t){for(var e=0;e<t.length;e+=1)r.writeByte(t.charCodeAt(e))},toByteArray:function(){return t},toString:function(){var r="";r+="[";for(var e=0;e<t.length;e+=1)e>0&&(r+=","),r+=t[e];return r+="]"}};return r},S=function(t){var r=t,e=0,n=0,o=0,i={read:function(){for(;o<8;){if(e>=r.length){if(0==o)return-1;throw"unexpected end of file./"+o}var t=r.charAt(e);if(e+=1,"="==t)return o=0,-1;t.match(/^\s$/)||(n=n<<6|a(t.charCodeAt(0)),o+=6)}var i=n>>>o-8&255;return o-=8,i}},a=function(t){if(65<=t&&t<=90)return t-65;if(97<=t&&t<=122)return t-97+26;if(48<=t&&t<=57)return t-48+52;if(43==t)return 62;if(47==t)return 63;throw"c:"+t};return i},I=function(t,r,e){for(var n=function(t,r){var e=t,n=r,o=new Array(t*r),i={setPixel:function(t,r,n){o[r*e+t]=n},write:function(t){t.writeString("GIF87a"),t.writeShort(e),t.writeShort(n),t.writeByte(128),t.writeByte(0),t.writeByte(0),t.writeByte(0),t.writeByte(0),t.writeByte(0),t.writeByte(255),t.writeByte(255),t.writeByte(255),t.writeString(","),t.writeShort(0),t.writeShort(0),t.writeShort(e),t.writeShort(n),t.writeByte(0);var r=a(2);t.writeByte(2);for(var o=0;r.length-o>255;)t.writeByte(255),t.writeBytes(r,o,255),o+=255;t.writeByte(r.length-o),t.writeBytes(r,o,r.length-o),t.writeByte(0),t.writeString(";")}},a=function(t){for(var r=1<<t,e=1+(1<<t),n=t+1,i=u(),a=0;a<r;a+=1)i.add(String.fromCharCode(a));i.add(String.fromCharCode(r)),i.add(String.fromCharCode(e));var f,c,g,l=D(),h=(f=l,c=0,g=0,{write:function(t,r){if(t>>>r!=0)throw"length over";for(;c+r>=8;)f.writeByte(255&(t<<c|g)),r-=8-c,t>>>=8-c,g=0,c=0;g|=t<<c,c+=r},flush:function(){c>0&&f.writeByte(g)}});h.write(r,n);var s=0,v=String.fromCharCode(o[s]);for(s+=1;s<o.length;){var d=String.fromCharCode(o[s]);s+=1,i.contains(v+d)?v+=d:(h.write(i.indexOf(v),n),i.size()<4095&&(i.size()==1<<n&&(n+=1),i.add(v+d)),v=d)}return h.write(i.indexOf(v),n),h.write(e,n),h.flush(),l.toByteArray()},u=function(){var t={},r=0,e={add:function(n){if(e.contains(n))throw"dup key:"+n;t[n]=r,r+=1},size:function(){return r},indexOf:function(r){return t[r]},contains:function(r){return void 0!==t[r]}};return e};return i}(t,r),o=0;o<r;o+=1)for(var i=0;i<t;i+=1)n.setPixel(i,o,e(i,o));var a=D();n.write(a);for(var u=function(){var t=0,r=0,e=0,n="",o={},i=function(t){n+=String.fromCharCode(a(63&t))},a=function(t){if(t<0);else{if(t<26)return 65+t;if(t<52)return t-26+97;if(t<62)return t-52+48;if(62==t)return 43;if(63==t)return 47}throw"n:"+t};return o.writeByte=function(n){for(t=t<<8|255&n,r+=8,e+=1;r>=6;)i(t>>>r-6),r-=6},o.flush=function(){if(r>0&&(i(t<<6-r),t=0,r=0),e%3!=0)for(var o=3-e%3,a=0;a<o;a+=1)n+="="},o.toString=function(){return n},o}(),f=a.toByteArray(),c=0;c<f.length;c+=1)u.writeByte(f[c]);return u.flush(),"data:image/gif;base64,"+u};return t}();qrcode.stringToBytesFuncs["UTF-8"]=function(t){return function(t){for(var r=[],e=0;e<t.length;e++){var n=t.charCodeAt(e);n<128?r.push(n):n<2048?r.push(192|n>>6,128|63&n):n<55296||n>=57344?r.push(224|n>>12,128|n>>6&63,128|63&n):(e++,n=65536+((1023&n)<<10|1023&t.charCodeAt(e)),r.push(240|n>>18,128|n>>12&63,128|n>>6&63,128|63&n))}return r}(t)},function(t){"function"==typeof define&&define.amd?define([],t):"object"==typeof exports&&(module.exports=t())}(function(){return qrcode});
+    return module.exports;
+  })();
+
+  var _qrOverlay = null;
+  var _qrSuppressNextMouseup = false;
+  var _qrRenderRAF = 0;
+  var _qrLastOpenedText = '';
+  var _qrOutsideHandler = null;
+  var _qrSelectionTimer = 0;
+  var _qrDragCleanup = null;
+  var QR_POSITION_KEY = 'cbt_qr_snap_position_v23953';
+  var QR_DEFAULT_POSITION = 'bottom-right';
+  var QR_ALLOWED_POSITIONS = {
+    'bottom-left': 1,
+    'bottom-center': 1,
+    'bottom-right': 1
+  };
+
+  /* Every surface this script draws. Text inside these is not selectable and
+     never becomes a QR code — the feature is for the page's own content. */
+  var QR_UI_IDS = ['cbt-panel', 'cbt-tp', 'cbt-qr-overlay', 'cbt-afa-overlay', 'cbt-ac-drop'];
+
+  function qrNormalizePosition(pos) {
+    pos = String(pos || '');
+    if (pos === 'middle-left') return 'bottom-left';
+    if (pos === 'middle-center') return 'bottom-center';
+    if (pos === 'middle-right') return 'bottom-right';
+    return QR_ALLOWED_POSITIONS[pos] ? pos : QR_DEFAULT_POSITION;
+  }
+
+  function qrLoadPosition() {
+    try {
+      var saved = qrNormalizePosition(localStorage.getItem(QR_POSITION_KEY) || '');
+      return saved;
+    } catch(e) {}
+    return QR_DEFAULT_POSITION;
+  }
+
+  function qrSavePosition(pos) {
+    pos = qrNormalizePosition(pos);
+    try { localStorage.setItem(QR_POSITION_KEY, pos); } catch(e) {}
+    return pos;
+  }
+
+  function qrApplyPosition(pos) {
+    if (!_qrOverlay) return;
+    pos = qrNormalizePosition(pos);
+    _qrOverlay.setAttribute('data-qr-pos', pos);
+    qrRefreshArrowState();
+  }
+
+  function qrRefreshArrowState() {
+    if (!_qrOverlay) return;
+
+    var leftBtn = _qrOverlay.querySelector('#cbt-qr-left');
+    var rightBtn = _qrOverlay.querySelector('#cbt-qr-right');
+    if (!leftBtn || !rightBtn) return;
+
+    var pos = _qrOverlay.getAttribute('data-qr-pos') || qrLoadPosition();
+    var col = String(pos).split('-').pop();
+
+    leftBtn.disabled = col === 'left';
+    rightBtn.disabled = col === 'right';
+
+    leftBtn.title = 'Move QR left';
+    rightBtn.title = 'Move QR right';
+  }
+
+  function qrMoveHorizontal(direction) {
+    if (!_qrOverlay) return;
+
+    direction = direction < 0 ? -1 : 1;
+
+    var current = _qrOverlay.getAttribute('data-qr-pos') || qrLoadPosition();
+    var parts = String(current).split('-');
+    var row = 'bottom';
+    var cols = ['left', 'center', 'right'];
+    var idx = cols.indexOf(parts[1]);
+    if (idx < 0) idx = 2;
+
+    var nextIdx = Math.max(0, Math.min(2, idx + direction));
+    if (nextIdx === idx) {
+      qrRefreshArrowState();
+      return;
+    }
+
+    var nextPos = qrSavePosition(row + '-' + cols[nextIdx]);
+    qrApplyPosition(nextPos);
+
+  }
+
+  /* Snap a dragged QR card only along the bottom row:
+     bottom-left / bottom-center / bottom-right. */
+  function qrSnapPositionFromPoint(clientX, clientY) {
+    var vw = Math.max(1, window.innerWidth || document.documentElement.clientWidth || 1);
+
+    var col = clientX < vw / 3
+      ? 'left'
+      : clientX > (vw * 2 / 3)
+        ? 'right'
+        : 'center';
+
+    /* Dragging upward never moves the QR upward. It always stays on bottom. */
+    return 'bottom-' + col;
+  }
+
+  function qrEnableSnapDrag(card) {
+    if (!card) return;
+    var head = card.querySelector('#cbt-qr-head');
+    if (!head) return;
+
+    var dragging = false;
+    var pointerId = null;
+    var lastX = 0;
+    var lastY = 0;
+
+    function onMove(e) {
+      if (!dragging || (pointerId !== null && e.pointerId !== pointerId)) return;
+      lastX = e.clientX;
+      lastY = e.clientY;
+      try { e.preventDefault(); } catch(ignore) {}
+    }
+
+    function finish(e) {
+      if (!dragging || (pointerId !== null && e.pointerId !== pointerId)) return;
+      dragging = false;
+
+      if (isFinite(e.clientX)) lastX = e.clientX;
+      if (isFinite(e.clientY)) lastY = e.clientY;
+
+      var pos = qrSavePosition(qrSnapPositionFromPoint(lastX, lastY));
+      qrApplyPosition(pos);
+
+      try {
+        if (pointerId !== null && head.releasePointerCapture) {
+          head.releasePointerCapture(pointerId);
+        }
+      } catch(ignore) {}
+      pointerId = null;
+      try { e.preventDefault(); } catch(ignore2) {}
+    }
+
+    function onDown(e) {
+      /* Header controls keep their own click behavior and never start drag. */
+      if (e.target && e.target.closest &&
+          e.target.closest('#cbt-qr-left,#cbt-qr-right')) return;
+
+      dragging = true;
+      pointerId = e.pointerId;
+      lastX = e.clientX;
+      lastY = e.clientY;
+
+      try {
+        if (head.setPointerCapture) head.setPointerCapture(pointerId);
+      } catch(ignore) {}
+      try { e.preventDefault(); } catch(ignore2) {}
+    }
+
+    head.addEventListener('pointerdown', onDown);
+    head.addEventListener('pointermove', onMove);
+    head.addEventListener('pointerup', finish);
+    head.addEventListener('pointercancel', finish);
+
+    _qrDragCleanup = function(){
+      try { head.removeEventListener('pointerdown', onDown); } catch(e0) {}
+      try { head.removeEventListener('pointermove', onMove); } catch(e1) {}
+      try { head.removeEventListener('pointerup', finish); } catch(e2) {}
+      try { head.removeEventListener('pointercancel', finish); } catch(e3) {}
+      dragging = false;
+      pointerId = null;
+    };
+  }
+
+  /* Walks up through shadow roots as well as normal parents. */
+  function qrInScriptUI(node) {
+    var n = node, guard = 0;
+    while (n && guard++ < 200) {
+      if (n.nodeType === 1 && n.id && QR_UI_IDS.indexOf(n.id) !== -1) return true;
+      if (n.nodeType === 11 && n.host) { n = n.host; continue; }   /* shadow root */
+      n = n.parentNode;
+    }
+    return false;
+  }
+
+  function qrRender(text) {
+    var host = document.getElementById('cbt-qr-svg');
+    var err = document.getElementById('cbt-qr-err');
+    if (!host) return;
+
+    text = String(text || '');
+    if (!text.trim()) {
+      host.innerHTML = '';
+      if (err) err.style.display = 'none';
+      return;
+    }
+
+    try {
+      var qr = qrcode(0, 'M');
+      qr.addData(text);
+      qr.make();
+
+      var n = qr.getModuleCount();
+      var quiet = 4;
+      var size = n + quiet * 2;
+      var path = '';
+
+      /* One SVG path is substantially cheaper than hundreds of DOM nodes and
+         does not depend on Canvas APIs, which some browser privacy extensions
+         can restrict. */
+      for (var r = 0; r < n; r++) {
+        for (var c = 0; c < n; c++) {
+          if (!qr.isDark(r, c)) continue;
+          var x = c + quiet;
+          var y = r + quiet;
+          path += 'M' + x + ' ' + y + 'h1v1h-1z';
+        }
+      }
+
+      host.innerHTML =
+        '<svg xmlns="http://www.w3.org/2000/svg" ' +
+             'viewBox="0 0 ' + size + ' ' + size + '" ' +
+             'preserveAspectRatio="xMidYMid meet" ' +
+             'role="img" aria-label="Generated QR code">' +
+          '<rect width="' + size + '" height="' + size + '" fill="#ffffff"/>' +
+          '<path d="' + path + '" fill="#000000"/>' +
+        '</svg>';
+
+      if (err) {
+        err.textContent = '';
+        err.style.display = 'none';
+      }
+    } catch(e) {
+      host.innerHTML = '';
+      if (err) {
+        err.textContent = 'Could not generate QR code';
+        err.style.display = 'block';
+      }
+      try { console.warn('[CBT QR] QR generation failed:', e); } catch(ignore) {}
+    }
+  }
+
+  function qrScheduleRender(text) {
+    if (_qrRenderRAF) {
+      try { cancelAnimationFrame(_qrRenderRAF); } catch(e) {}
+    }
+    var raf = (typeof requestAnimationFrame === 'function')
+      ? requestAnimationFrame
+      : function(cb){ return setTimeout(cb, 16); };
+
+    _qrRenderRAF = raf(function(){
+      _qrRenderRAF = 0;
+      qrRender(text);
+    });
+  }
+
+  function qrTeardown() {
+    if (_qrDragCleanup) {
+      try { _qrDragCleanup(); } catch(eDrag) {}
+      _qrDragCleanup = null;
+    }
+    if (_qrSelectionTimer) {
+      clearTimeout(_qrSelectionTimer);
+      _qrSelectionTimer = 0;
+    }
+    if (_qrRenderRAF) {
+      try { cancelAnimationFrame(_qrRenderRAF); } catch(e0) {}
+      _qrRenderRAF = 0;
+    }
+    if (_qrOutsideHandler) {
+      try { document.removeEventListener('mousedown', _qrOutsideHandler, true); } catch(e1) {}
+      _qrOutsideHandler = null;
+    }
+    if (_qrOverlay && _qrOverlay.parentNode) _qrOverlay.parentNode.removeChild(_qrOverlay);
+    _qrOverlay = null;
+    _qrLastOpenedText = '';
+  }
+
+  function qrClose() {
+    qrTeardown();
+    /* The page text stays highlighted behind the popup. Left alone, a later
+       mouseup would read that same selection and reopen the popup on its
+       own. Dropping the selection means closed stays closed until a NEW
+       highlight is made. */
+    try {
+      var s = window.getSelection();
+      if (s && s.removeAllRanges) s.removeAllRanges();
+    } catch(e) {}
+  }
+
+  function qrOpen(text) {
+    text = String(text || '').trim();
+    if (!text) return;
+
+    /* Same text + already open = no DOM rebuild and no QR re-encode. */
+    if (_qrOverlay && _qrOverlay.isConnected && _qrLastOpenedText === text) return;
+
+    qrTeardown();
+    _qrLastOpenedText = text;
+
+    _qrOverlay = document.createElement('div');
+    _qrOverlay.id = 'cbt-qr-overlay';
+    _qrOverlay.innerHTML =
+      '<div id="cbt-qr-card" role="dialog" aria-label="QR Code">' +
+        '<div id="cbt-qr-head">' +
+          '<span id="cbt-qr-head-left">' +
+            '<button id="cbt-qr-left" type="button" title="Move QR left" aria-label="Move QR left">←</button>' +
+          '</span>' +
+          '<span id="cbt-qr-title">QR Code</span>' +
+          '<span id="cbt-qr-head-right">' +
+            '<button id="cbt-qr-right" type="button" title="Move QR right" aria-label="Move QR right">→</button>' +
+          '</span>' +
+        '</div>' +
+        '<div id="cbt-qr-canvas-wrap"><div id="cbt-qr-svg" aria-live="polite"></div></div>' +
+        '<div id="cbt-qr-err"></div>' +
+        '<input id="cbt-qr-input" type="text" spellcheck="false" autocomplete="off" aria-label="QR value" placeholder="Text to encode..."/>' +
+      '</div>';
+
+    document.body.appendChild(_qrOverlay);
+
+    /* Position survives close/reopen and every new text highlight. */
+    qrApplyPosition(qrLoadPosition());
+
+    var card = _qrOverlay.querySelector('#cbt-qr-card');
+    var input = _qrOverlay.querySelector('#cbt-qr-input');
+    input.value = text;
+
+    var qrLeftBtn = _qrOverlay.querySelector('#cbt-qr-left');
+    var qrRightBtn = _qrOverlay.querySelector('#cbt-qr-right');
+
+    if (qrLeftBtn) {
+      qrLeftBtn.addEventListener('click', function(e){
+        e.preventDefault();
+        e.stopPropagation();
+        qrMoveHorizontal(-1);
+      });
+    }
+    if (qrRightBtn) {
+      qrRightBtn.addEventListener('click', function(e){
+        e.preventDefault();
+        e.stopPropagation();
+        qrMoveHorizontal(1);
+      });
+    }
+
+    qrRefreshArrowState();
+    qrEnableSnapDrag(card);
+
+    /* Re-render at most once per animation frame while editing. */
+    input.addEventListener('input', function(){
+      qrScheduleRender(input.value);
+    });
+
+    /* The page stays completely clear/clickable. A temporary document listener
+       exists ONLY while the small QR card is open and only checks one contains()
+       call. Clicking elsewhere closes the card without blocking COMO. */
+    _qrOutsideHandler = function(e) {
+      if (!_qrOverlay || !card || card.contains(e.target)) return;
+
+      /* Do not destroy the QR at the start of a possible new text highlight.
+         The selection handler can replace its contents afterward while the
+         saved snap position stays unchanged. Normal outside clicks still
+         close after a very short selection check. */
+      setTimeout(function(){
+        if (!_qrOverlay || !card || !card.isConnected) return;
+        var selected = '';
+        try {
+          var s = window.getSelection();
+          selected = s && !s.isCollapsed ? qrCleanSelectedText(s.toString()) : '';
+        } catch(ignore) {}
+
+        if (!selected) qrClose();
+      }, 80);
+    };
+    document.addEventListener('mousedown', _qrOutsideHandler, true);
+
+    qrRender(text);
+  }
+
+  function qrCleanSelectedText(value) {
+    return String(value || '').replace(/\s+/g, ' ').trim();
+  }
+
+  function qrControlSelection(target) {
+    if (!target || target.nodeType !== 1) return '';
+    if (qrInScriptUI(target)) return '';
+
+    var tag = String(target.tagName || '').toLowerCase();
+    if (tag !== 'input' && tag !== 'textarea') return '';
+
+    try {
+      var start = Number(target.selectionStart);
+      var end = Number(target.selectionEnd);
+      if (!isFinite(start) || !isFinite(end) || end <= start) return '';
+      return qrCleanSelectedText(String(target.value || '').slice(start, end));
+    } catch(e) {
+      return '';
+    }
+  }
+
+  function qrSelectionFromObject(sel) {
+    if (!sel || sel.isCollapsed || !sel.rangeCount) return '';
+
+    var text = qrCleanSelectedText(sel.toString());
+    if (!text) return '';
+
+    try {
+      if (qrInScriptUI(sel.anchorNode) || qrInScriptUI(sel.focusNode)) return '';
+      var common = sel.getRangeAt(0).commonAncestorContainer;
+      if (qrInScriptUI(common)) return '';
+    } catch(e) {}
+
+    return text;
+  }
+
+  function qrSelectionText(event) {
+    /* Inputs/textareas have their own selectionStart/selectionEnd API and do
+       not always appear in window.getSelection(). */
+    var direct = qrControlSelection(event && event.target);
+    if (direct) return direct;
+
+    var candidates = [];
+
+    function addSelection(sel) {
+      if (!sel) return;
+      if (candidates.indexOf(sel) === -1) candidates.push(sel);
+    }
+
+    try { addSelection(window.getSelection()); } catch(e0) {}
+    try { addSelection(document.getSelection()); } catch(e1) {}
+
+    /* COMO uses KAT/web components. If the highlight lives in an open shadow
+       root, use that root's selection API when the browser exposes it. */
+    try {
+      var path = event && typeof event.composedPath === 'function'
+        ? event.composedPath()
+        : [];
+
+      for (var i = 0; i < path.length; i++) {
+        var node = path[i];
+        if (!node) continue;
+
+        var root = null;
+        try {
+          if (node.nodeType === 11) root = node;
+          else if (node.getRootNode) root = node.getRootNode();
+        } catch(e2) {}
+
+        if (root && typeof root.getSelection === 'function') {
+          try { addSelection(root.getSelection()); } catch(e3) {}
+        }
+      }
+    } catch(e4) {}
+
+    var best = '';
+    for (var j = 0; j < candidates.length; j++) {
+      var value = qrSelectionFromObject(candidates[j]);
+      if (value && value.length > best.length) best = value;
+    }
+    return best;
+  }
+
+  function qrOpenCurrentSelection(event) {
+    if (_qrSuppressNextMouseup) {
+      _qrSuppressNextMouseup = false;
+      return;
+    }
+
+    var selected = qrSelectionText(event);
+    if (!selected) return;
+    qrOpen(selected);
+  }
+
+  function qrQueueSelectionOpen(event) {
+    if (event && qrInScriptUI(event.target)) return;
+
+    if (_qrSelectionTimer) {
+      clearTimeout(_qrSelectionTimer);
+      _qrSelectionTimer = 0;
+    }
+
+    /* Capture the useful event fields before the browser/event object is
+       recycled. composedPath() is captured now for shadow-root support. */
+    var snapshot = {
+      target: event ? event.target : null,
+      path: []
+    };
+    try {
+      if (event && typeof event.composedPath === 'function') {
+        snapshot.path = event.composedPath();
+      }
+    } catch(e) {}
+
+    snapshot.composedPath = function(){ return snapshot.path || []; };
+
+    /* Selection finalization happens after pointer/mouse up. One zero-delay
+       task is enough; no repeated checking is needed. */
+    _qrSelectionTimer = setTimeout(function(){
+      _qrSelectionTimer = 0;
+      qrOpenCurrentSelection(snapshot);
+    }, 0);
+  }
+
+  /* Restored QR feature. Capture phase is intentional: some COMO/KAT
+     components stop mouse/pointer events before they bubble to document.
+     Capture lets the QR feature see the completed selection without adding
+     any observer, interval, polling, or network request. */
+  if (typeof PointerEvent !== 'undefined') {
+    document.addEventListener('pointerup', qrQueueSelectionOpen, true);
+  } else {
+    document.addEventListener('mouseup', qrQueueSelectionOpen, true);
+  }
+
+  /* Keyboard text selection remains supported. */
+  document.addEventListener('keyup', function(e) {
+    if (!e || !e.shiftKey) return;
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight' &&
+        e.key !== 'ArrowUp' && e.key !== 'ArrowDown' &&
+        e.key !== 'Home' && e.key !== 'End') return;
+    qrQueueSelectionOpen(e);
+  }, true);
+
+  document.addEventListener('keydown', function(e) {
+    if (e && e.key === 'Escape' && _qrOverlay) qrClose();
+  }, true);
+
+
+  /* ══════════════════════════════════════
+     AUTO FORCE ASSIGN
+
+     Does exactly what doing it by hand does, just without opening each
+     cart: POST /api/store/{storeId}/job/{jobId}/forceAssignable with
+     {"ignoreProblemSolve": false}, on the page's own logged-in session.
+     No auth, permission or CSRF handling is touched — the browser attaches
+     the same session it uses for every other click, and nothing is
+     requested that the account cannot already do by hand.
+
+     Carts are read off the dashboard you are looking at: only rows whose
+     status reads UNASSIGNABLE are eligible. Full job IDs come from the
+     row's own link, falling back to the dashboard API responses the
+     script already sees. One cart at a time, re-checked immediately
+     before each request, never the same cart twice.
+  ══════════════════════════════════════ */
+  var AFA_DELAY_MS   = 900;    /* pause between carts */
+  var AFA_TIMEOUT_MS = 15000;  /* give up on a single request after this */
+  var _afaJobIndex = Object.create(null);  /* shortRef -> full job id */
+  var _afaJobInfo  = Object.create(null);  /* job id -> { assignability, ref } */
+  /* Duplicate prevention is scoped to ONE run: it is emptied when a run
+     starts and again when it ends. A cart that failed, or that the request
+     did not shift out of Partially Batched, therefore stays eligible for
+     the next press of Force Assign instead of being locked out for the
+     rest of the session. */
+  var _afaDone     = Object.create(null);  /* job id -> claimed during THIS run */
+  var _afaRunning  = false, _afaStop = false, _afaOverlay = null;
+
+  /* Missing QR availability is verified only when ▶ Run opens.
+     The button remains disabled unless a real MISSING package is confirmed. */
+  var _afaMissingMenuInfo = null;
+  var _afaMissingMenuCheckSeq = 0;
+
+  /* Job ids look like {storeId}_CHECKIN_SERVICE_PUP-C-{uuid} */
+  function afaLooksLikeJobId(v) {
+    if (typeof v !== 'string' || v.length < 30 || v.indexOf('_') === -1) return false;
+    return STORE_ID ? v.indexOf(STORE_ID) === 0 : true;
+  }
+
+  /* Harvest shortRef -> full id from whatever JSON the dashboard fetches,
+     so a row's short id can be resolved even if its link carries no href. */
+  function afaRecordJobs(obj, depth) {
+    if (obj == null || depth > 6) return;
+    if (Array.isArray(obj)) {
+      for (var i = 0; i < obj.length && i < 5000; i++) afaRecordJobs(obj[i], depth + 1);
+      return;
+    }
+    if (typeof obj !== 'object') return;
+    var ref = obj.shortClientRef;
+    if (typeof ref === 'string' && ref) {
+      var id = null, named = ['id','jobId','jobID','taskId'];
+      for (var n = 0; n < named.length; n++) { if (afaLooksLikeJobId(obj[named[n]])) { id = obj[named[n]]; break; } }
+      if (!id) { for (var k in obj) { if (afaLooksLikeJobId(obj[k])) { id = obj[k]; break; } } }
+      if (id) {
+        _afaJobIndex[ref] = id;
+        var asg = afaAssignabilityFrom(obj);
+        if (!_afaJobInfo[id]) _afaJobInfo[id] = { ref: ref, assignability: null };
+        _afaJobInfo[id].ref = ref;
+        if (asg) _afaJobInfo[id].assignability = asg;
+      }
+    }
+    for (var k2 in obj) { var v = obj[k2]; if (v && typeof v === 'object') afaRecordJobs(v, depth + 1); }
+  }
+
+  /* Every dashboard row whose status reads UNASSIGNABLE.
+     'ASSIGNABLE' rows are NOT matched: the test is for the whole word
+     UNASSIGNABLE, and rows in the Partially Batched / Staged for Pickup
+     sections are excluded exactly like the Time Left column excludes them. */
+  /* Pull an ASSIGNABLE / UNASSIGNABLE verdict out of a job record.
+     Field names are not assumed: any property whose name mentions
+     "assign" and whose value is one of those two words counts. Falls back
+     to a whole-object scan so a renamed field still resolves. */
+  function afaAssignabilityFrom(obj) {
+    if (!obj || typeof obj !== 'object') return null;
+    var k, v;
+    for (k in obj) {
+      v = obj[k];
+      if (typeof v !== 'string') continue;
+      if (!/assign/i.test(k)) continue;
+      if (/^UNASSIGNABLE$/i.test(v.trim())) return 'UNASSIGNABLE';
+      if (/^ASSIGNABLE$/i.test(v.trim()))   return 'ASSIGNABLE';
+    }
+    for (k in obj) {
+      v = obj[k];
+      if (typeof v !== 'string') continue;
+      if (/^UNASSIGNABLE$/i.test(v.trim())) return 'UNASSIGNABLE';
+      if (/^ASSIGNABLE$/i.test(v.trim()))   return 'ASSIGNABLE';
+    }
+    return null;
+  }
+
+  /* Ask the server directly for one job's details. Read-only GET; if the
+     endpoint is not there it simply fails and the caller falls back to the
+     dashboard data the script already holds. */
+  function afaFetchJobInfo(jobId) {
+    var url = COMO_BASE + '/api/store/' + STORE_ID + '/job/' + encodeURIComponent(jobId);
+    var ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
+    var timer = setTimeout(function(){ if (ctrl) ctrl.abort(); }, AFA_TIMEOUT_MS);
+    var opts = { method: 'GET', credentials: 'include', headers: { 'Accept': 'application/json' } };
+    if (ctrl) opts.signal = ctrl.signal;
+    return _origFetch(url, opts).then(function(res){
+      clearTimeout(timer);
+      if (!res.ok) return null;
+      return res.json().then(function(j){ return j; }, function(){ return null; });
+    }, function(){ clearTimeout(timer); return null; });
+  }
+
+
+  /* Deep-scan a fetched job payload for its assignability. */
+  function afaAssignabilityDeep(obj, depth) {
+    if (obj == null || depth > 6) return null;
+    if (Array.isArray(obj)) {
+      for (var i = 0; i < obj.length && i < 500; i++) {
+        var r = afaAssignabilityDeep(obj[i], depth + 1);
+        if (r) return r;
+      }
+      return null;
+    }
+    if (typeof obj !== 'object') return null;
+    var direct = afaAssignabilityFrom(obj);
+    if (direct) return direct;
+    for (var k in obj) {
+      var v = obj[k];
+      if (v && typeof v === 'object') {
+        var r2 = afaAssignabilityDeep(v, depth + 1);
+        if (r2) return r2;
+      }
+    }
+    return null;
+  }
+
+  /* Decide whether one Partially Batched cart may be force-assigned.
+     Nothing is sent unless the cart is positively confirmed UNASSIGNABLE.
+     Unknown status is treated as "do not touch", never as permission. */
+  function afaVerifyForcible(item) {
+    var cached = _afaJobInfo[item.id];
+    if (cached && cached.assignability === 'ASSIGNABLE') {
+      return Promise.resolve({ eligible: false, reason: 'already assignable' });
+    }
+    if (cached && cached.assignability === 'UNASSIGNABLE') {
+      return Promise.resolve({ eligible: true, reason: 'unassignable (dashboard data)' });
+    }
+    return afaFetchJobInfo(item.id).then(function(info){
+      var asg = info ? afaAssignabilityDeep(info, 0) : null;
+      if (asg === 'ASSIGNABLE')   return { eligible: false, reason: 'already assignable' };
+      if (asg === 'UNASSIGNABLE') return { eligible: true,  reason: 'unassignable (verified)' };
+      return { eligible: false, reason: 'could not verify status \u2014 skipped' };
+    });
+  }
+
+  /* Anchors sitting between one section heading and the next.
+     Used to read the Partially Batched table without ever reaching into
+     Staged for Pickup or Problem Solve. */
+  function afaSectionAnchors(startRe, stopRes) {
+    /* Never enumerate every element in document.body. Search only plausible
+       section-heading elements, then collect anchors between heading bounds. */
+    var heads;
+    try {
+      heads = Array.prototype.slice.call(document.querySelectorAll(
+        'h1,h2,h3,h4,h5,h6,[role="heading"],legend,.panel-title,.card-title,[class*="section-title"],[class*="section-header"]'
+      ));
+    } catch(e) { return []; }
+    var start = null, stop = null, i, t;
+    for (i = 0; i < heads.length; i++) {
+      t = (heads[i].textContent || '').trim();
+      if (!start) {
+        if (t.length < 80 && startRe.test(t)) start = heads[i];
+        continue;
+      }
+      if (t.length >= 80) continue;
+      for (var j = 0; j < stopRes.length; j++) {
+        if (stopRes[j].test(t)) { stop = heads[i]; break; }
+      }
+      if (stop) break;
+    }
+    if (!start) return [];
+
+    var scope = null;
+    try { scope = start.closest('section,article,[class*="section"],[class*="panel"],[class*="card"]'); } catch(e2) {}
+    if (!scope || scope === document.body || scope === document.documentElement) scope = start.parentElement;
+    if (!scope) return [];
+
+    var anchors = [];
+    try { anchors = Array.prototype.slice.call(scope.querySelectorAll('a')); } catch(e3) { return []; }
+    return anchors.filter(function(a){
+      try {
+        var afterStart = !!(start.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING);
+        if (!afterStart) return false;
+        if (!stop) return true;
+        return !!(a.compareDocumentPosition(stop) & Node.DOCUMENT_POSITION_FOLLOWING);
+      } catch(e4) { return false; }
+    });
+  }
+
+  /* Carts listed under Partially Batched. This section shows no
+     assignability column, so every row is only a CANDIDATE here — each one
+     is verified individually before anything is sent. Problem Solve and
+     Staged for Pickup act as hard stops for the scan. */
+  /* The count the dashboard shows next to a section heading. Used as the
+     authority the popup must agree with. */
+  function afaSectionCount(labelRe) {
+    var heads;
+    try {
+      heads = document.querySelectorAll(
+        'h1,h2,h3,h4,h5,h6,[role="heading"],legend,.panel-title,.card-title,[class*="section-title"],[class*="section-header"]'
+      );
+    } catch(e) { return null; }
+    for (var i = 0; i < heads.length; i++) {
+      var t = (heads[i].textContent || '').trim();
+      if (t.length >= 80 || !labelRe.test(t)) continue;
+      var m = t.match(/\((\d+)\)/);
+      if (m) return parseInt(m[1], 10);
+    }
+    return null;
+  }
+
+  /* Pull the dashboard's current job list straight from the API and feed it
+     through the recorder, so job IDs are up to date the moment the popup
+     opens instead of relying on whatever happened to be intercepted
+     earlier. Read-only; same session as every other call. */
+  function afaRefreshJobData() {
+    return new Promise(function(resolve){
+      try {
+        var ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
+        var timer = setTimeout(function(){ if (ctrl) ctrl.abort(); }, 6000);
+        var opts = { credentials: 'include', headers: { Accept: 'application/json' } };
+        if (ctrl) opts.signal = ctrl.signal;
+        _origFetch(COMO_BASE + '/store/' + STORE_ID + '/activeJobsWithSiteSummary', opts)
+          .then(function(r){ clearTimeout(timer); return r.ok ? r.json() : null; })
+          .then(function(j){
+            if (j) { try { afaRecordJobs(j, 0); } catch(e) {} }
+            resolve();
+          }, function(){ clearTimeout(timer); resolve(); });
+      } catch(e) { resolve(); }
+    });
+  }
+
+  function afaScanPartiallyBatched() {
+    var stops = [/^Staged\s+for\s+Pickup/i, /^Problem\s+Solve/i, /^Unassigned/i, /^Assigned/i];
+    var anchors = afaSectionAnchors(/^Partially\s+Batched(\s*\(\d+\))?$/i, stops);
+    var found = [], seen = Object.create(null);
+    for (var i = 0; i < anchors.length; i++) {
+      var a = anchors[i];
+      var ref = (a.textContent || '').trim();
+      if (!ref || ref.length > 24) continue;
+      var id = null;
+      var href = a.getAttribute('href') || '';
+      var m = href.match(/jobId=([^&#]+)/i);
+      if (m) { try { id = decodeURIComponent(m[1]); } catch(e) { id = m[1]; } }
+      if (!id && _afaJobIndex[ref]) id = _afaJobIndex[ref];
+      /* keyed on identity, never on position, so the same cart appearing
+         twice in the markup is counted once */
+      var key = id || ('ref:' + ref);
+      if (seen[key]) continue;
+      seen[key] = true;
+      found.push({ ref: ref, id: id, partial: true });
+    }
+    return found;
+  }
+
+  function afaScanDashboard() {
+    var found = [], seen = Object.create(null);
+    var cards = document.querySelectorAll('job-card');
+    for (var i = 0; i < cards.length; i++) {
+      var card = cards[i];
+      try { if (isInExcludedSection(card)) continue; } catch(e) {}
+      var txt = card.innerText || card.textContent || '';
+      if (!/UNASSIGNABLE/i.test(txt)) continue;
+      var a = card.querySelector('a');
+      var ref = a ? (a.textContent || '').trim() : '';
+      var id = null;
+      if (a) {
+        var href = a.getAttribute('href') || '';
+        var m = href.match(/jobId=([^&#]+)/i);
+        if (m) { try { id = decodeURIComponent(m[1]); } catch(e2) { id = m[1]; } }
+      }
+      if (!id && ref && _afaJobIndex[ref]) id = _afaJobIndex[ref];
+      var key = id || ('ref:' + ref + ':' + i);
+      if (seen[key]) continue;
+      seen[key] = true;
+      found.push({ ref: ref || '(unknown)', id: id, unassignable: true });
+    }
+    return found;
+  }
+
+  /* ── Missing Package QR — READ ONLY ──
+     This helper runs only after the user deliberately clicks the red action
+     in ▶ Run. It checks the normal Tasks list PLUS Problem Solve and
+     Partially Batched, then finds the first job whose details contain a
+     package with Status = MISSING or DAMAGED.
+
+     QR #1 = the Scannable Id from the SAME MISSING/DAMAGED package row.
+     QR #2 = the first CART_... Last Known Location found in that job.
+     If the job has no CART_... value, only QR #1 is generated.
+
+     Discovery checks only alert-looking rows in the main Tasks list for
+     performance, but checks EVERY readable row in Problem Solve and Partially
+     Batched because missing/damaged packages can move there without the same warning
+     marker. No writes, assignment changes, completion calls, or background
+     observers are added by this feature. */
+
+  function afaMissingText(v) {
+    return String(v == null ? '' : v).replace(/\s+/g, ' ').trim();
+  }
+
+  function afaMissingCartValue(v) {
+    var s = afaMissingText(v);
+    var m = s.match(/\bCART_[A-Z0-9][A-Z0-9_-]*\b/i);
+    return m ? m[0] : '';
+  }
+
+  function afaMissingScannableFromObject(obj) {
+    if (!obj || typeof obj !== 'object') return '';
+
+    var preferred = [
+      'scannableId', 'scannableID', 'scannable_id',
+      'packageScannableId', 'packageScannableID',
+      'bagScannableId', 'bagScannableID'
+    ];
+
+    for (var i = 0; i < preferred.length; i++) {
+      var v = obj[preferred[i]];
+      if (typeof v === 'string' && afaMissingText(v)) return afaMissingText(v);
+    }
+
+    for (var k in obj) {
+      if (!/scannable.*id/i.test(k)) continue;
+      var v2 = obj[k];
+      if (typeof v2 === 'string' && afaMissingText(v2)) return afaMissingText(v2);
+    }
+    return '';
+  }
+
+  function afaMissingStatusFromObject(obj) {
+    if (!obj || typeof obj !== 'object') return '';
+    for (var k in obj) {
+      if (!/status/i.test(k)) continue;
+      var v = obj[k];
+      if (typeof v !== 'string') continue;
+
+      var status = v.trim().toUpperCase();
+      if (status === 'MISSING' || status === 'DAMAGED') return status;
+    }
+    return '';
+  }
+
+  function afaMissingInfoFromJson(root) {
+    var missingIds = [];
+    var problemPackages = [];
+    var cart = '';
+    var sawPackageSignals = false;
+    var seenProblem = Object.create(null);
+
+    function walk(obj, depth) {
+      if (obj == null || depth > 8) return;
+
+      if (Array.isArray(obj)) {
+        for (var i = 0; i < obj.length && i < 3000; i++) walk(obj[i], depth + 1);
+        return;
+      }
+      if (typeof obj !== 'object') return;
+
+      var hasStatusKey = false;
+      var hasScannableKey = false;
+      for (var k in obj) {
+        if (/status/i.test(k)) hasStatusKey = true;
+        if (/scannable.*id/i.test(k)) hasScannableKey = true;
+
+        if (!cart && typeof obj[k] === 'string') {
+          var cv = afaMissingCartValue(obj[k]);
+          if (cv) cart = cv;
+        }
+      }
+
+      if (hasStatusKey || hasScannableKey) sawPackageSignals = true;
+
+      var packageStatus = afaMissingStatusFromObject(obj);
+      if (packageStatus === 'MISSING' || packageStatus === 'DAMAGED') {
+        var sid = afaMissingScannableFromObject(obj);
+        var problemKey = packageStatus + '|' + sid;
+        if (sid && !seenProblem[problemKey]) {
+          seenProblem[problemKey] = true;
+          missingIds.push(sid);
+          problemPackages.push({ id: sid, status: packageStatus });
+        }
+      }
+
+      for (var k2 in obj) {
+        var child = obj[k2];
+        if (child && typeof child === 'object') walk(child, depth + 1);
+      }
+    }
+
+    walk(root, 0);
+    return {
+      missingIds: missingIds,
+      problemPackages: problemPackages,
+      cart: cart,
+      sawPackageSignals: sawPackageSignals
+    };
+  }
+
+  function afaMissingInfoFromDocument(doc) {
+    if (!doc) return { missingIds: [], problemPackages: [], cart: '' };
+
+    var missingIds = [];
+    var problemPackages = [];
+    var cart = '';
+    var seen = Object.create(null);
+    var rows = [];
+
+    try { rows = Array.prototype.slice.call(doc.querySelectorAll('tr')); } catch(e) {}
+
+    for (var i = 0; i < rows.length; i++) {
+      var row = rows[i];
+      var cells = [];
+      try { cells = Array.prototype.slice.call(row.querySelectorAll('td')); } catch(e2) {}
+      if (!cells.length) continue;
+
+      for (var c = 0; c < cells.length; c++) {
+        if (!cart) {
+          var cv = afaMissingCartValue(cells[c].textContent || '');
+          if (cv) cart = cv;
+        }
+      }
+
+      var statusIdx = -1;
+      var packageStatus = '';
+      for (var s = 0; s < cells.length; s++) {
+        var cellText = afaMissingText(cells[s].textContent || '').toUpperCase();
+        if (cellText === 'MISSING' || cellText === 'DAMAGED') {
+          statusIdx = s;
+          packageStatus = cellText;
+          break;
+        }
+      }
+      if (statusIdx < 0) continue;
+
+      /* The inspected COMO markup places Scannable Id immediately after the
+         MISSING/DAMAGED status cell. Prefer that exact relationship. */
+      var sid = '';
+      if (cells[statusIdx + 1]) sid = afaMissingText(cells[statusIdx + 1].textContent || '');
+
+      /* Fallback to the known Scannable Id class if table order ever shifts. */
+      if (!sid) {
+        try {
+          var statusCell = row.querySelector('.jobdetails-package-status');
+          if (statusCell && statusCell.nextElementSibling) {
+            sid = afaMissingText(statusCell.nextElementSibling.textContent || '');
+          }
+        } catch(e3) {}
+      }
+
+      var problemKey = packageStatus + '|' + sid;
+      if (sid && !seen[problemKey]) {
+        seen[problemKey] = true;
+        missingIds.push(sid);
+        problemPackages.push({ id: sid, status: packageStatus });
+      }
+    }
+
+    return { missingIds: missingIds, problemPackages: problemPackages, cart: cart };
+  }
+
+  function afaMissingCandidateFromAnchor(a, section, order, baseScore) {
+    if (!a) return null;
+
+    var ref = afaMissingText(a.textContent || '');
+    if (!ref || ref.length > 40) return null;
+
+    var id = null;
+    var href = a.getAttribute('href') || '';
+    var m = href.match(/jobId=([^&#]+)/i);
+    if (m) {
+      try { id = decodeURIComponent(m[1]); }
+      catch(e) { id = m[1]; }
+    }
+    if (!id && ref && _afaJobIndex[ref]) id = _afaJobIndex[ref];
+    if (!id) return null;
+
+    return {
+      ref: ref,
+      id: id,
+      section: section || 'Tasks',
+      alertScore: Number(baseScore) || 0,
+      domOrder: Number(order) || 0
+    };
+  }
+
+  function afaHasMissingPackageSignal(node) {
+    if (!node) return false;
+
+    var txt = '';
+    try { txt = afaMissingText(node.innerText || node.textContent || ''); } catch(e) {}
+
+    /* Explicit package status if the dashboard ever renders it directly. */
+    if (/\b(?:MISSING|DAMAGED)\b/i.test(txt)) return true;
+
+    /* Current COMO alert badge can render as a warning triangle + count
+       (for example ▲1 / ⚠1) rather than the literal characters A1. */
+    if (/(?:▲|⚠|❗|⛔)\s*\d*/.test(txt)) return true;
+
+    /* Keep backward compatibility with deployments that expose A1/A2 text. */
+    if (/\bA\d+\b/i.test(txt)) return true;
+
+    /* Icon fonts often render no useful textContent at all. Check only a
+       handful of alert-ish class names inside THIS task row. This is cheap and
+       does not open any job page or start any observer. */
+    try {
+      if (node.querySelector(
+        '[class*="warning-sign"],[class*="warning"],' +
+        '[class*="exclamation"],[class*="triangle"],' +
+        '[class*="danger"],[class*="alert"]'
+      )) {
+        return true;
+      }
+    } catch(e2) {}
+
+    /* Last cheap fallback for Bootstrap / FontAwesome warning icons. */
+    try {
+      var html = String(node.innerHTML || '');
+      if (/glyphicon-(?:warning-sign|exclamation-sign)|fa-(?:exclamation|triangle-exclamation|exclamation-triangle)|warning-sign|exclamation-triangle/i.test(html)) {
+        return true;
+      }
+    } catch(e3) {}
+
+    return false;
+  }
+
+  function afaScanMissingCandidates() {
+    var found = [], seen = Object.create(null);
+    var cards = document.querySelectorAll('job-card');
+
+    function pushCandidate(item) {
+      if (!item || !item.id) return;
+      var key = String(item.id);
+      if (seen[key]) return;
+      seen[key] = true;
+      found.push(item);
+    }
+
+    /* 1) Normal Tasks list.
+       Keep the existing Time Left exclusions untouched elsewhere; Missing QR
+       has its own read-only scan and intentionally does not use those rules. */
+    for (var i = 0; i < cards.length; i++) {
+      var card = cards[i];
+
+      /* job-card rows under Problem Solve / Partially Batched, if a page
+         version renders them that way, are handled by the explicit section
+         scans below so section labeling stays correct. */
+      try {
+        if (isInExcludedSection(card)) continue;
+      } catch(e) {}
+
+      var a = card.querySelector('a');
+      var item = afaMissingCandidateFromAnchor(a, 'Tasks', i, 0);
+      if (!item) continue;
+
+      var txt = afaMissingText(card.innerText || card.textContent || '');
+
+      /* Do not open every task's job-details page. Only rows with the actual
+         dashboard warning signal are deep-checked, then Status=MISSING or
+         Status=DAMAGED is still verified from the job details before the button enables. */
+      if (!afaHasMissingPackageSignal(card)) continue;
+
+      item.alertScore += 20;
+      if (/\b(?:MISSING|DAMAGED)\b/i.test(txt)) item.alertScore += 30;
+
+      pushCandidate(item);
+    }
+
+    /* 2) Problem Solve.
+       Completed carts with an unstaged missing package can move here, so this
+       section MUST be searched even though normal Time Left/Force actions
+       intentionally exclude it. This remains read-only. */
+    var psStops = [
+      /^Partially\s+Batched/i,
+      /^Staged\s+for\s+Pickup/i,
+      /^Unassigned/i,
+      /^Assigned/i,
+      /^Utilization/i,
+      /^Late\s+Batch/i
+    ];
+    var psAnchors = afaSectionAnchors(/^Problem\s+Solve(\s*\(\d+\))?$/i, psStops);
+    for (var p = 0; p < psAnchors.length; p++) {
+      /* Check EVERY readable Problem Solve job. A finished cart with an
+         unstaged missing package can move here even if the row's alert icon
+         is rendered differently or is temporarily absent. */
+      pushCandidate(afaMissingCandidateFromAnchor(
+        psAnchors[p],
+        'Problem Solve',
+        10000 + p,
+        15
+      ));
+    }
+
+    /* 3) Partially Batched.
+       A completed/partially-finished cart can also land here before staging,
+       so Missing Package QR checks it too. Staged for Pickup remains excluded
+       because the user only requested Problem Solve + Partially Batched. */
+    var partialStops = [
+      /^Staged\s+for\s+Pickup/i,
+      /^Problem\s+Solve/i,
+      /^Unassigned/i,
+      /^Assigned/i,
+      /^Utilization/i,
+      /^Late\s+Batch/i
+    ];
+    var partialAnchors = afaSectionAnchors(
+      /^Partially\s+Batched(\s*\(\d+\))?$/i,
+      partialStops
+    );
+    for (var q = 0; q < partialAnchors.length; q++) {
+      /* Check EVERY readable Partially Batched job. Missing-package rows in
+         this section do not always carry the same red warning triangle because
+         the whole cart itself may simply not be ready yet. */
+      pushCandidate(afaMissingCandidateFromAnchor(
+        partialAnchors[q],
+        'Partially Batched',
+        20000 + q,
+        10
+      ));
+    }
+
+    found.sort(function(a, b){
+      if (b.alertScore !== a.alertScore) return b.alertScore - a.alertScore;
+      return a.domOrder - b.domOrder;
+    });
+
+    return found;
+  }
+
+  function afaProbeMissingJobPage(item) {
+    return new Promise(function(resolve){
+      if (!item || !item.id || !document.body) {
+        resolve(null);
+        return;
+      }
+
+      var frame = document.createElement('iframe');
+      var done = false;
+      var started = Date.now();
+
+      frame.setAttribute('aria-hidden', 'true');
+      frame.className = 'cbt-missing-probe-frame';
+      frame.tabIndex = -1;
+      frame.style.cssText =
+        'position:fixed!important;left:-10000px!important;top:-10000px!important;' +
+        'width:1px!important;height:1px!important;opacity:0!important;' +
+        'pointer-events:none!important;border:0!important;';
+
+      function finish(result) {
+        if (done) return;
+        done = true;
+        try { frame.remove(); }
+        catch(e) {
+          try { frame.parentNode && frame.parentNode.removeChild(frame); } catch(e2) {}
+        }
+        resolve(result);
+      }
+
+      function poll() {
+        if (done) return;
+        if (Date.now() - started > 5500) {
+          finish(null);
+          return;
+        }
+
+        var doc = null;
+        try { doc = frame.contentDocument || (frame.contentWindow && frame.contentWindow.document); }
+        catch(e) {}
+
+        if (doc) {
+          var info = afaMissingInfoFromDocument(doc);
+          if (info.missingIds.length) {
+            info.ref = item.ref;
+            info.id = item.id;
+            info.section = item.section || 'Tasks';
+            info.source = 'job-details-page';
+            finish(info);
+            return;
+          }
+
+          /* If the package table has clearly rendered and contains rows but no
+             MISSING/DAMAGED status, there is no need to wait the full timeout. */
+          try {
+            var renderedRows = doc.querySelectorAll('tr.ng-scope, tr');
+            var renderedText = afaMissingText(doc.body && doc.body.textContent || '');
+            if (renderedRows.length >= 2 &&
+                /Scannable\s*Id/i.test(renderedText) &&
+                /Packages/i.test(renderedText) &&
+                Date.now() - started > 900) {
+              finish(null);
+              return;
+            }
+          } catch(e2) {}
+        }
+        setTimeout(poll, 140);
+      }
+
+      frame.src = COMO_BASE + '/store/' + encodeURIComponent(STORE_ID) +
+        '/jobdetails?jobId=' + encodeURIComponent(item.id) + '&cbtMissingQrProbe=1';
+      document.body.appendChild(frame);
+      setTimeout(poll, 140);
+    });
+  }
+
+  function afaProbeMissingJob(item) {
+    return afaFetchJobInfo(item.id).then(function(info){
+      if (info) {
+        var parsed = afaMissingInfoFromJson(info);
+        if (parsed.missingIds.length) {
+          parsed.ref = item.ref;
+          parsed.id = item.id;
+          parsed.section = item.section || 'Tasks';
+          parsed.source = 'job-json';
+          return parsed;
+        }
+
+        /* If this JSON clearly contained package/status data and none was
+           MISSING/DAMAGED, trust it and skip the heavier page probe. */
+        if (parsed.sawPackageSignals) return null;
+      }
+
+      /* Some deployments keep package rows in the Angular job-details page
+         rather than the JSON endpoint. Fall back to a short hidden same-origin
+         page probe only for this explicit user action. */
+      return afaProbeMissingJobPage(item);
+    }, function(){
+      return afaProbeMissingJobPage(item);
+    });
+  }
+
+  function afaFindFirstMissingJob(candidates, onProgress) {
+    candidates = candidates || [];
+    var idx = 0;
+
+    function next() {
+      if (idx >= candidates.length) return Promise.resolve(null);
+      var item = candidates[idx++];
+
+      if (typeof onProgress === 'function') {
+        try { onProgress(idx, candidates.length, item); } catch(e) {}
+      }
+
+      return afaProbeMissingJob(item).then(function(info){
+        if (info && info.missingIds && info.missingIds.length) return info;
+        return next();
+      });
+    }
+
+    return next();
+  }
+
+  /* Collect every verified missing-package ID across every requested section.
+     Each entry keeps its own task/cart context so the carousel can show one
+     missing package at a time without mixing carts between jobs. */
+  function afaFindAllMissingJobs(candidates, onProgress) {
+    candidates = candidates || [];
+    var idx = 0;
+    var entries = [];
+    var seen = Object.create(null);
+
+    function next() {
+      if (idx >= candidates.length) {
+        return Promise.resolve({ entries: entries });
+      }
+
+      var item = candidates[idx++];
+
+      if (typeof onProgress === 'function') {
+        try { onProgress(idx, candidates.length, item); } catch(e) {}
+      }
+
+      return afaProbeMissingJob(item).then(function(info){
+        if (info && info.missingIds && info.missingIds.length) {
+          var packages = Array.isArray(info.problemPackages) && info.problemPackages.length
+            ? info.problemPackages
+            : info.missingIds.map(function(id){ return { id: id, status: 'MISSING' }; });
+
+          for (var i = 0; i < packages.length; i++) {
+            var sid = afaMissingText(packages[i] && packages[i].id);
+            var packageStatus = afaMissingText(packages[i] && packages[i].status).toUpperCase() || 'MISSING';
+            if (!sid) continue;
+
+            var key = String(info.id || item.id || '') + '|' + packageStatus + '|' + sid;
+            if (seen[key]) continue;
+            seen[key] = true;
+
+            entries.push({
+              missingId: sid,
+              packageStatus: packageStatus,
+              cart: info.cart || '',
+              ref: info.ref || item.ref || '',
+              id: info.id || item.id || '',
+              section: info.section || item.section || 'Tasks'
+            });
+          }
+        }
+        return new Promise(function(resolveNext){
+          setTimeout(function(){ resolveNext(next()); }, 35);
+        });
+      }, function(){
+        return new Promise(function(resolveNext){
+          setTimeout(function(){ resolveNext(next()); }, 35);
+        });
+      });
+    }
+
+    return next();
+  }
+
+  function afaMissingQrEntries(info) {
+    if (!info) return [];
+
+    if (Array.isArray(info.entries)) {
+      return info.entries.filter(function(entry){
+        return entry && afaMissingText(entry.missingId);
+      });
+    }
+
+    var out = [];
+    var packages = Array.isArray(info.problemPackages) && info.problemPackages.length
+      ? info.problemPackages
+      : (Array.isArray(info.missingIds) ? info.missingIds : []).map(function(id){
+          return { id: id, status: 'MISSING' };
+        });
+
+    for (var i = 0; i < packages.length; i++) {
+      var sid = afaMissingText(packages[i] && packages[i].id);
+      if (!sid) continue;
+      out.push({
+        missingId: sid,
+        packageStatus: afaMissingText(packages[i] && packages[i].status).toUpperCase() || 'MISSING',
+        cart: info.cart || '',
+        ref: info.ref || '',
+        id: info.id || '',
+        section: info.section || 'Tasks'
+      });
+    }
+    return out;
+  }
+
+  function afaQrSvgMarkup(value) {
+    value = String(value == null ? '' : value);
+    if (!value.trim()) return '';
+
+    try {
+      var qr = qrcode(0, 'M');
+      qr.addData(value);
+      qr.make();
+
+      var n = qr.getModuleCount();
+      var quiet = 4;
+      var size = n + quiet * 2;
+      var path = '';
+
+      for (var r = 0; r < n; r++) {
+        for (var c = 0; c < n; c++) {
+          if (!qr.isDark(r, c)) continue;
+          var x = c + quiet;
+          var y = r + quiet;
+          path += 'M' + x + ' ' + y + 'h1v1h-1z';
+        }
+      }
+
+      return '<svg xmlns="http://www.w3.org/2000/svg" ' +
+               'viewBox="0 0 ' + size + ' ' + size + '" ' +
+               'preserveAspectRatio="xMidYMid meet" role="img" aria-label="Generated QR code">' +
+               '<rect width="' + size + '" height="' + size + '" fill="#ffffff"/>' +
+               '<path d="' + path + '" fill="#000000"/>' +
+             '</svg>';
+    } catch(e) {
+      return '';
+    }
+  }
+
+  function afaMissingQrTile(kind, value) {
+    var svg = afaQrSvgMarkup(value);
+    if (!svg) return '';
+
+    return '<div class="cbt-missing-qr-tile">' +
+      '<div class="cbt-missing-qr-kind">' + afaEsc(kind) + '</div>' +
+      '<div class="cbt-missing-qr-svg">' + svg + '</div>' +
+      '<div class="cbt-missing-qr-value">' + afaEsc(value) + '</div>' +
+    '</div>';
+  }
+
+  function afaMissingQrResult(info) {
+    var entries = afaMissingQrEntries(info);
+
+    if (!entries.length) {
+      afaShell(
+        'Missing Package QR',
+        '<div id="cbt-afa-lead">No MISSING or DAMAGED package was found in Tasks, Problem Solve, or Partially Batched.</div>' +
+        '<div class="cbt-afa-note">Nothing was changed. This action is read-only.</div>',
+        '<button class="cbt-afa-act" data-afa="back">Back</button>'
+      );
+
+      var emptyCard = _afaOverlay && _afaOverlay.querySelector('#cbt-afa-card');
+      if (emptyCard) {
+        emptyCard.addEventListener('click', function(e){
+          var b = e.target.closest('[data-afa="back"]');
+          if (b) afaConfirm();
+        });
+      }
+      return;
+    }
+
+    var currentIndex = 0;
+
+    afaShell(
+      'Missing Package QR',
+      '<div id="cbt-missing-qr-stage"></div>',
+      '<button class="cbt-afa-act" data-afa="back">Back</button>' +
+      '<button class="cbt-afa-act go" data-afa="close">Done</button>'
+    );
+
+    var card = _afaOverlay && _afaOverlay.querySelector('#cbt-afa-card');
+    if (!card) return;
+    card.classList.add('cbt-afa-missing-qr-card');
+
+    /* afaShell creates/scales the card before this result class exists.
+       Re-apply once here so the very first QR frame is already fixed at 130%. */
+    try { applyUiScale(); } catch(eScale) {}
+
+    function renderCurrent() {
+      if (!_afaOverlay || !card.isConnected) return;
+
+      var stage = card.querySelector('#cbt-missing-qr-stage');
+      if (!stage) return;
+
+      var entry = entries[currentIndex];
+      var total = entries.length;
+      var hasPrev = currentIndex > 0;
+      var hasNext = currentIndex < total - 1;
+
+      /* Only render an arrow when there is actually somewhere to go.
+         The empty grid cell is just spacing; no hidden/disabled arrow exists. */
+      var nav =
+        '<div class="cbt-missing-qr-nav">' +
+          (hasPrev
+            ? '<button type="button" class="cbt-missing-qr-nav-btn cbt-missing-qr-prev" data-afa="missing-prev" aria-label="Previous missing package">←</button>'
+            : '') +
+          '<div class="cbt-missing-qr-count">' + (currentIndex + 1) + '/' + total + '</div>' +
+          (hasNext
+            ? '<button type="button" class="cbt-missing-qr-nav-btn cbt-missing-qr-next" data-afa="missing-next" aria-label="Next missing package">→</button>'
+            : '') +
+        '</div>';
+
+      var packageStatus = afaMissingText(entry.packageStatus).toUpperCase() || 'MISSING';
+      var packageKind = packageStatus === 'DAMAGED' ? 'Damaged Package' : 'Missing Package';
+      var tiles = afaMissingQrTile(packageKind, entry.missingId);
+      var hasCart = !!entry.cart;
+
+      if (hasCart) {
+        tiles += afaMissingQrTile('Cart', entry.cart);
+      }
+
+      var note = hasCart
+        ? packageKind + ' QR + cart QR.'
+        : 'No CART_ location was found, so only the ' + packageKind.toLowerCase() + ' QR is shown.';
+
+      stage.innerHTML =
+        '<div class="cbt-missing-qr-summary">' +
+          afaEsc(entry.section || 'Tasks') + ' · Task <b>' +
+          afaEsc(entry.ref || '') + '</b> · ' + afaEsc(note) +
+        '</div>' +
+        nav +
+        '<div class="cbt-missing-qr-grid' + (hasCart ? '' : ' single') + '">' +
+          tiles +
+        '</div>';
+    }
+
+    renderCurrent();
+
+    function moveMissingQr(direction) {
+      var nextIndex = currentIndex + direction;
+      if (nextIndex < 0 || nextIndex >= entries.length) return false;
+      currentIndex = nextIndex;
+      renderCurrent();
+      return true;
+    }
+
+    /* Keep keyboard focus on the Missing Package QR result so the physical
+       keyboard arrows work immediately without requiring an extra click. */
+    card.setAttribute('tabindex', '-1');
+    card.setAttribute('aria-keyshortcuts', 'ArrowLeft ArrowRight');
+    try { card.focus({ preventScroll: true }); }
+    catch(eFocus) { try { card.focus(); } catch(eFocus2) {} }
+
+    card.addEventListener('keydown', function(e){
+      if (!e) return;
+
+      var isLeft = e.key === 'ArrowLeft' || e.keyCode === 37;
+      var isRight = e.key === 'ArrowRight' || e.keyCode === 39;
+      if (!isLeft && !isRight) return;
+
+      /* Do not let the browser/page consume the arrow while this QR carousel
+         is active. At the first/last result the unavailable direction simply
+         does nothing, matching the on-screen arrow behavior. */
+      try { e.preventDefault(); } catch(ignoreKey1) {}
+      try { e.stopPropagation(); } catch(ignoreKey2) {}
+
+      moveMissingQr(isLeft ? -1 : 1);
+    });
+
+    card.addEventListener('click', function(e){
+      var b = e.target.closest('[data-afa]');
+      if (!b) return;
+
+      var action = b.getAttribute('data-afa');
+
+      if (action === 'missing-prev') {
+        moveMissingQr(-1);
+        return;
+      }
+
+      if (action === 'missing-next') {
+        moveMissingQr(1);
+        return;
+      }
+
+      if (action === 'close') {
+        afaClose();
+      } else if (action === 'back') {
+        afaConfirm();
+      }
+    });
+  }
+
+  function afaMissingQrChecking() {
+    afaShell(
+      'Missing Package QR',
+      '<div id="cbt-afa-lead">Finding MISSING / DAMAGED packages…</div>' +
+      '<div id="cbt-afa-bar"><div id="cbt-afa-fill"></div></div>' +
+      '<div id="cbt-afa-live" style="color:var(--cb-text2);font-size:12px;">Checking Tasks alerts + all Problem Solve + all Partially Batched.</div>',
+      '<button class="cbt-afa-act" data-afa="close">Cancel</button>'
+    );
+
+    var card = _afaOverlay && _afaOverlay.querySelector('#cbt-afa-card');
+    if (!card) return;
+    card.addEventListener('click', function(e){
+      var b = e.target.closest('[data-afa="close"]');
+      if (b) afaClose();
+    });
+  }
+
+  function afaRunMissingQr() {
+    if (_afaRunning) return;
+
+    var candidates = afaScanMissingCandidates();
+    if (!candidates.length) {
+      afaMissingQrResult(null);
+      return;
+    }
+
+    afaMissingQrChecking();
+
+    afaRefreshJobData().then(function(){
+      if (!_afaOverlay) return;
+
+      /* Re-scan after the fresh dashboard response so job IDs are current. */
+      var freshCandidates = afaScanMissingCandidates();
+      if (freshCandidates.length) candidates = freshCandidates;
+
+      return afaFindAllMissingJobs(candidates, function(done, total, item){
+        if (!_afaOverlay) return;
+        var lead = document.getElementById('cbt-afa-lead');
+        var fill = document.getElementById('cbt-afa-fill');
+        var live = document.getElementById('cbt-afa-live');
+
+        if (lead) lead.innerHTML =
+          'Finding MISSING / DAMAGED packages… <b>' + done + '</b> of <b>' + total + '</b>';
+        if (fill) fill.style.width = Math.round((done / Math.max(1, total)) * 100) + '%';
+        if (live) {
+          live.textContent = 'Checking ' + (item.section || 'Tasks') +
+            ' · task ' + (item.ref || '');
+        }
+      });
+    }).then(function(info){
+      if (!_afaOverlay) return;
+      afaMissingQrResult(info || null);
+    }).catch(function(){
+      if (!_afaOverlay) return;
+      afaShell(
+        'Missing Package QR',
+        '<div id="cbt-afa-lead">Could not read the package details right now.</div>' +
+        '<div class="cbt-afa-note">Nothing was changed. Try again after the dashboard finishes loading.</div>',
+        '<button class="cbt-afa-act" data-afa="back">Back</button>'
+      );
+      var card = _afaOverlay && _afaOverlay.querySelector('#cbt-afa-card');
+      if (card) {
+        card.addEventListener('click', function(e){
+          if (e.target.closest('[data-afa="back"]')) afaConfirm();
+        });
+      }
+    });
+  }
+
+  /* ── Complete Task eligibility — NO time rule ──
+     The old AM/PM / Batch Target heuristic is intentionally gone. When Auto
+     Complete is enabled, the script asks the site itself whether Complete Task
+     is available for that cart by loading the real job-details route in a
+     hidden same-origin iframe and reading the actual Complete Task button state.
+
+     This is read-only. No completeJob POST is sent unless the site's own button
+     has settled into an enabled state. If the site cannot be checked, the cart
+     is skipped for completion rather than guessed. */
+  var AFA_COMPLETE_PROBE_TIMEOUT_MS = 7000;
+
+  function afaFindCompleteButton(doc) {
+    if (!doc) return null;
+    var buttons;
+    try { buttons = doc.querySelectorAll('button'); } catch(e) { return null; }
+    for (var i = 0; i < buttons.length; i++) {
+      var b = buttons[i];
+      var label = ((b.getAttribute('title') || '') + ' ' + (b.textContent || '')).replace(/\s+/g, ' ').trim();
+      if (/complete\s*task/i.test(label)) return b;
+    }
+    return null;
+  }
+
+  /* If the job-details JSON exposes a clearly named boolean capability flag,
+     trust that first. This is deliberately strict: unrelated "complete"
+     counters/statuses are ignored, and only boolean keys that explicitly mean
+     can/enable/allow/eligible/completable are accepted. */
+  function afaCompleteCapabilityFlag(obj, depth) {
+    if (obj == null || depth > 7) return null;
+    if (Array.isArray(obj)) {
+      for (var i = 0; i < obj.length && i < 600; i++) {
+        var ar = afaCompleteCapabilityFlag(obj[i], depth + 1);
+        if (ar !== null) return ar;
+      }
+      return null;
+    }
+    if (typeof obj !== 'object') return null;
+    for (var k in obj) {
+      var v = obj[k];
+      if (typeof v !== 'boolean') continue;
+      var key = String(k).replace(/[_\-\s]/g, '').toLowerCase();
+      var explicit =
+        /^(can|should|is)?(enable|enabled|allow|allowed|eligible|completable).*complete/.test(key) ||
+        /^complete.*(enable|enabled|allow|allowed|eligible|completable)$/.test(key) ||
+        /^(can|should)complete(job|task)?$/.test(key) ||
+        /^(is)?completable(job|task)?$/.test(key);
+      if (explicit) return v;
+    }
+    for (var k2 in obj) {
+      var child = obj[k2];
+      if (child && typeof child === 'object') {
+        var r = afaCompleteCapabilityFlag(child, depth + 1);
+        if (r !== null) return r;
+      }
+    }
+    return null;
+  }
+
+  function afaProbeCompleteButtonState(jobId) {
+    return new Promise(function(resolve){
+      if (!jobId || !document.body) {
+        resolve({ eligible: false, verified: false, reason: 'Complete Task eligibility could not be checked' });
+        return;
+      }
+
+      var frame = document.createElement('iframe');
+      var done = false, started = Date.now(), firstSeen = 0;
+      var lastDisabled = null, stable = 0;
+      frame.setAttribute('aria-hidden', 'true');
+      frame.tabIndex = -1;
+      frame.style.cssText = 'position:fixed!important;left:-10000px!important;top:-10000px!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important;border:0!important;';
+
+      function finish(result) {
+        if (done) return;
+        done = true;
+        try { frame.remove(); } catch(e) { try { frame.parentNode && frame.parentNode.removeChild(frame); } catch(e2) {} }
+        resolve(result);
+      }
+
+      function poll() {
+        if (done) return;
+        if (Date.now() - started > AFA_COMPLETE_PROBE_TIMEOUT_MS) {
+          finish({ eligible: false, verified: false, reason: 'Complete Task eligibility could not be verified' });
+          return;
+        }
+
+        var doc = null, btn = null;
+        try { doc = frame.contentDocument || (frame.contentWindow && frame.contentWindow.document); } catch(e) {}
+        try { btn = afaFindCompleteButton(doc); } catch(e2) {}
+
+        if (btn) {
+          if (!firstSeen) firstSeen = Date.now();
+          var aria = String(btn.getAttribute('aria-disabled') || '').toLowerCase();
+          var disabled = !!btn.disabled || btn.hasAttribute('disabled') || aria === 'true' || btn.classList.contains('disabled');
+          if (disabled === lastDisabled) stable++; else { lastDisabled = disabled; stable = 1; }
+
+          /* Wait long enough for Angular's ng-disabled expression to settle.
+             Enabled gets the longer dwell because a button can briefly render
+             enabled before the controller finishes applying its state. */
+          var dwell = disabled ? 400 : 900;
+          if (stable >= 3 && Date.now() - firstSeen >= dwell) {
+            finish({
+              eligible: !disabled,
+              verified: true,
+              reason: disabled ? 'Complete Task is disabled by the site' : 'Complete Task is enabled by the site'
+            });
+            return;
+          }
+        }
+        setTimeout(poll, 120);
+      }
+
+      var src = COMO_BASE + '/store/' + encodeURIComponent(STORE_ID) + '/jobdetails?jobId=' + encodeURIComponent(jobId) + '&cbtAfaProbe=1';
+      frame.src = src;
+      document.body.appendChild(frame);
+      setTimeout(poll, 120);
+    });
+  }
+
+  function afaProbeCompletable(jobId) {
+    return afaFetchJobInfo(jobId).then(function(info){
+      var flag = info ? afaCompleteCapabilityFlag(info, 0) : null;
+      if (flag !== null) {
+        return {
+          eligible: !!flag,
+          verified: true,
+          reason: flag ? 'Complete Task is enabled by job data' : 'Complete Task is disabled by job data'
+        };
+      }
+      /* No explicit capability flag in the JSON: fall back to the exact UI
+         control that the user would see on the real job-details page. */
+      return afaProbeCompleteButtonState(jobId);
+    }, function(){
+      return afaProbeCompleteButtonState(jobId);
+    });
+  }
+
+  /* Every regular task on the main dashboard is only a completion CANDIDATE.
+     No write is made from this scan. The hidden probe above decides whether
+     the site's own Complete Task control is actually enabled. Problem rows and
+     the side sections are deliberately excluded. */
+  function afaScanCompletionCandidates() {
+    var found = [], seen = Object.create(null);
+    var cards = document.querySelectorAll('job-card');
+    for (var i = 0; i < cards.length; i++) {
+      var card = cards[i];
+      try { if (isInExcludedSection(card)) continue; } catch(e) {}
+      var txt = card.innerText || card.textContent || '';
+      if (/problem\s*solve|\bproblem\b/i.test(txt)) continue;
+      var a = card.querySelector('a');
+      var ref = a ? (a.textContent || '').trim() : '';
+      var id = null;
+      if (a) {
+        var href = a.getAttribute('href') || '';
+        var m = href.match(/jobId=([^&#]+)/i);
+        if (m) { try { id = decodeURIComponent(m[1]); } catch(e2) { id = m[1]; } }
+      }
+      if (!id && ref && _afaJobIndex[ref]) id = _afaJobIndex[ref];
+      var key = id || ('ref:' + ref + ':' + i);
+      if (seen[key]) continue;
+      seen[key] = true;
+      found.push({ ref: ref || '(unknown)', id: id, completeCandidate: true });
+    }
+    return found;
+  }
+
+  /* Merge candidate sources by cart identity. Flags are preserved because
+     the Force Assign and Auto Complete modes build separate queues from the
+     same dashboard data; Auto Complete never falls back to Force Assign. */
+  function afaMergeQueue(base, extra) {
+    var out = [];
+    function same(a, b) {
+      if (a.id && b.id && a.id === b.id) return true;
+      return !!(a.ref && b.ref && a.ref === b.ref);
+    }
+    function add(it) {
+      if (!it) return;
+      var hit = null;
+      for (var i = 0; i < out.length; i++) { if (same(out[i], it)) { hit = out[i]; break; } }
+      if (!hit) {
+        out.push({
+          ref: it.ref, id: it.id,
+          partial: !!it.partial,
+          unassignable: !!it.unassignable,
+          completeCandidate: !!it.completeCandidate
+        });
+        return;
+      }
+      if (!hit.id && it.id) hit.id = it.id;
+      hit.partial = hit.partial || !!it.partial;
+      hit.unassignable = hit.unassignable || !!it.unassignable;
+      hit.completeCandidate = hit.completeCandidate || !!it.completeCandidate;
+    }
+    (base || []).forEach(add);
+    (extra || []).forEach(add);
+    return out;
+  }
+
+  /* Complete Task — the same call the site's own Complete Task button makes,
+     captured from DevTools: POST with an empty JSON body, answering 200 with
+     the literal `true`. Store and job ids are substituted per cart, and the
+     browser attaches the existing session exactly as it does for a manual
+     click. Nothing here is requested that the account cannot already do. */
+  var AFA_COMPLETE_PATH = '/api/store/{storeId}/job/{jobId}/completeJob';
+  var AFA_COMPLETE_BODY = {};
+
+  /* The server answers a real completion with the literal `true`. A 200
+     carrying anything else is NOT treated as success — better to report the
+     odd response than to claim a cart was completed when it may not be. */
+  function afaCompletedOk(r) {
+    if (!r || !r.ok) return false;
+    var body = String(r.body == null ? '' : r.body).trim().replace(/^"|"$/g, '');
+    return /^true$/i.test(body);
+  }
+
+  function afaCompleteTask(jobId) {
+    if (!AFA_COMPLETE_PATH) {
+      return Promise.resolve({ ok: false, status: 0, body: 'Complete Task endpoint not configured' });
+    }
+    var url = COMO_BASE + AFA_COMPLETE_PATH
+      .replace('{storeId}', encodeURIComponent(STORE_ID))
+      .replace('{jobId}', encodeURIComponent(jobId));
+    var ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
+    var timer = setTimeout(function(){ if (ctrl) ctrl.abort(); }, AFA_TIMEOUT_MS);
+    var opts = {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify(AFA_COMPLETE_BODY)
+    };
+    if (ctrl) opts.signal = ctrl.signal;
+    return _origFetch(url, opts).then(function(res){
+      clearTimeout(timer);
+      return res.text().then(
+        function(t){ return { ok: res.ok, status: res.status, body: t }; },
+        function(){  return { ok: res.ok, status: res.status, body: '' }; }
+      );
+    }, function(err){
+      clearTimeout(timer);
+      return { ok: false, status: 0, body: (err && err.message) ? String(err.message) : 'network error' };
+    });
+  }
+
+  /* The one write this feature makes — the same call the Yes button makes. */
+  function afaForceAssign(jobId) {
+    var url = COMO_BASE + '/api/store/' + STORE_ID + '/job/' + encodeURIComponent(jobId) + '/forceAssignable';
+    var ctrl = (typeof AbortController === 'function') ? new AbortController() : null;
+    var timer = setTimeout(function(){ if (ctrl) ctrl.abort(); }, AFA_TIMEOUT_MS);
+    var opts = {
+      method: 'POST',
+      credentials: 'include',          /* the page's existing session, nothing added */
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({ ignoreProblemSolve: false })
+    };
+    if (ctrl) opts.signal = ctrl.signal;
+    return _origFetch(url, opts).then(function(res){
+      clearTimeout(timer);
+      return res.text().then(
+        function(t){ return { ok: res.ok, status: res.status, body: t }; },
+        function(){  return { ok: res.ok, status: res.status, body: '' }; }
+      );
+    }, function(err){
+      clearTimeout(timer);
+      return { ok: false, status: 0, body: (err && err.message) ? String(err.message) : 'network error' };
+    });
+  }
+
+  /* ── modal ── */
+  /* Keeps the icon and label as separate elements so they stay aligned. */
+  function afaSetBtn(text, busy) {
+    var b = document.getElementById('cbt-afa-btn');
+    if (!b) return;
+    b.innerHTML = '<span class="cbt-afa-lbl">' + text + '</span>';
+    if (busy) b.classList.add('busy'); else b.classList.remove('busy');
+  }
+
+  function afaClose() {
+    if (_afaRunning) return;                    /* never vanish mid-run */
+    _afaMissingMenuInfo = null;
+    _afaMissingMenuCheckSeq++;
+    if (_afaOverlay && _afaOverlay.parentNode) _afaOverlay.parentNode.removeChild(_afaOverlay);
+    _afaOverlay = null;
+    afaSetBtn('▶ Run', false);
+  }
+  function afaShell(title, bodyHtml, footHtml) {
+    if (!_afaOverlay) {
+      _afaOverlay = document.createElement('div');
+      _afaOverlay.id = 'cbt-afa-overlay';
+      document.body.appendChild(_afaOverlay);
+      _afaOverlay.addEventListener('mousedown', function(e){ if (e.target === _afaOverlay) afaClose(); });
+    }
+    _afaOverlay.innerHTML =
+      '<div id="cbt-afa-card">' +
+        '<div id="cbt-afa-head"><span id="cbt-afa-title">' + title + '</span>' +
+        '<button id="cbt-afa-x" title="Close">\u2715</button></div>' +
+        '<div id="cbt-afa-body">' + bodyHtml + '</div>' +
+        '<div id="cbt-afa-foot">' + footHtml + '</div>' +
+      '</div>';
+    var x = _afaOverlay.querySelector('#cbt-afa-x');
+    if (x) x.addEventListener('click', afaClose);
+    try { applyPopupTheme(); } catch(e) {}
+    try { applyUiScale(); } catch(e) {}
+  }
+  function afaEsc(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function afaRowsHtml(items) {
+    return '<div class="cbt-afa-list">' + items.map(function(it){
+      var cls = it.ok === true ? 'ok' : (it.skip ? 'skip' : (it.ok === false ? 'bad' : ''));
+      return '<div class="cbt-afa-row ' + cls + '">' +
+             '<span class="cbt-afa-ref">' + afaEsc(it.ref) + '</span>' +
+             '<span class="cbt-afa-msg">' + afaEsc(it.msg || (it.id ? 'ready' : 'task ID not found')) + '</span>' +
+             '</div>';
+    }).join('') + '</div>';
+  }
+
+  /* Step 1: show what would be touched and wait for a deliberate go-ahead. */
+  /* Opens with a short "checking" state, refreshes the job data, then waits
+     until the resolved list agrees with the count the dashboard prints
+     (or gives up after a couple of seconds and reports what it has).
+     This is what stopped the popup showing a stale 5-of-9. */
+  function afaConfirm() {
+    if (_afaRunning) { afaProgressView(); return; }
+
+    /* Opening ▶ Run must be instant. Do NOT show the old animated
+       "Checking the dashboard..." screen. Render the current action menu from
+       the DOM immediately. Each individual action performs a fresh backend
+       refresh right before execution, so removing this opening loader does not
+       make Force Assign / Partial / Auto Complete stale. */
+    var pbNow = afaScanPartiallyBatched();
+    var expected = afaSectionCount(/^Partially\s+Batched(\s*\(\d+\))?$/i);
+    afaConfirmRender(afaScanDashboard(), pbNow, expected);
+  }
+
+  function afaConfirmRender(list, pbAll, pbExpected, suppress) {
+    /* Three completely independent actions:
+         1) Force Assign         -> UNASSIGNABLE only
+         2) Partially Batched    -> Partially Batched only
+         3) Auto Complete        -> regular completion candidates only
+       No checkbox can mix one queue into another. */
+
+    suppress = suppress || {
+      force: Object.create(null),
+      partial: Object.create(null),
+      complete: Object.create(null)
+    };
+
+    function isSuppressed(action, item) {
+      var bucket = suppress[action];
+      if (!bucket || !item) return false;
+      if (item.id && bucket['id:' + String(item.id)]) return true;
+      if (item.ref && bucket['ref:' + String(item.ref)]) return true;
+      return false;
+    }
+
+    /* The page's own DOM can lag behind a successful Force Assign/Complete
+       request. When returning with Back, hide tasks that THIS run already
+       succeeded on so the menu immediately reflects the completed action
+       instead of offering the same cart again. */
+    list = (list || []).filter(function(x){ return !isSuppressed('force', x); });
+    pbAll = (pbAll || []).filter(function(x){ return !isSuppressed('partial', x); });
+
+    var ready = list.filter(function(x){ return x.id; });
+    var noId  = list.filter(function(x){ return !x.id; });
+
+    var pbReady = pbAll.filter(function(x){ return x.id; });
+    var pbFound = (pbExpected != null) ? Math.max(pbExpected, pbAll.length) : pbAll.length;
+    var pbUnresolved = Math.max(0, pbFound - pbReady.length);
+
+    var completionCandidates = afaScanCompletionCandidates()
+      .filter(function(x){ return !isSuppressed('complete', x); });
+    var completeReady = completionCandidates.filter(function(x){ return x.id; });
+
+    var forceDisabled   = ready.length === 0;
+    var partialDisabled = pbReady.length === 0;
+    var completeDisabled = !AFA_COMPLETE_PATH || completeReady.length === 0;
+
+    function actionBlock(action, label, count, disabled, copy) {
+      return '<div class="cbt-afa-action-block' + (disabled ? ' off' : '') + '">' +
+        '<button type="button" class="cbt-afa-act go cbt-afa-action-btn" data-afa="' + action + '"' +
+          (disabled ? ' disabled' : '') + '>' +
+          label + (count != null ? ' (' + count + ')' : '') +
+        '</button>' +
+        '<span class="cbt-afa-action-copy">' + copy + '</span>' +
+      '</div>';
+    }
+
+    var forceBlock = actionBlock(
+      'force',
+      '▶ Force Assign',
+      ready.length,
+      forceDisabled,
+      forceDisabled
+        ? 'No UNASSIGNABLE carts are available right now.'
+        : 'Runs only the UNASSIGNABLE carts. Partially Batched is not included.'
+    );
+
+    var partialBlock = actionBlock(
+      'partial',
+      '▶ Partially Batched',
+      pbReady.length,
+      partialDisabled,
+      partialDisabled
+        ? (pbFound
+            ? 'No Partially Batched cart has a readable task ID yet.'
+            : 'No Partially Batched carts are available right now.')
+        : 'Runs only Partially Batched carts. Each one is verified before Force Assign.'
+    );
+
+    var completeBlock = actionBlock(
+      'complete',
+      '▶ Auto Complete',
+      completeReady.length,
+      completeDisabled,
+      !AFA_COMPLETE_PATH
+        ? 'Unavailable: the Complete Task request is not configured.'
+        : (completeDisabled
+            ? 'No regular tasks are available to Auto Complete right now.'
+            : 'Runs Complete Task only. It never Force Assigns and never includes Partially Batched.')
+    );
+
+    var missingCandidates = afaScanMissingCandidates();
+    _afaMissingMenuInfo = null;
+
+    var missingBlock =
+      '<div class="cbt-afa-action-block off" id="cbt-afa-missing-block">' +
+        '<button type="button" class="cbt-afa-act cbt-afa-action-btn cbt-afa-missing-btn" ' +
+          'id="cbt-afa-missing-btn" data-afa="missingqr" disabled>' +
+          '<span class="cbt-afa-missing-triangle">▲</span>' +
+          (missingCandidates.length ? 'Checking…' : 'No Missing/Damaged') +
+        '</button>' +
+        '<span class="cbt-afa-action-copy" id="cbt-afa-missing-copy">' +
+          (missingCandidates.length
+            ? 'Checking warning rows in Tasks plus every Problem Solve and Partially Batched row. The button enables if a real MISSING or DAMAGED package is found.'
+            : 'No readable task IDs are available in Tasks, Problem Solve, or Partially Batched right now. This button is disabled.') +
+        '</span>' +
+      '</div>';
+
+    var warnings = '';
+    if (noId.length) {
+      warnings += '<div class="cbt-afa-warn">' + noId.length +
+        ' UNASSIGNABLE cart(s) have no readable task ID yet and are not included.</div>';
+    }
+    if (pbUnresolved) {
+      warnings += '<div class="cbt-afa-warn">' + pbUnresolved +
+        ' Partially Batched cart(s) have no readable task ID yet and are not included.</div>';
+    }
+
+    var listHtml = '';
+    if (list.length) {
+      listHtml =
+        '<div style="margin-top:12px;color:var(--cb-text2);font-size:12px;font-weight:700;">UNASSIGNABLE CARTS</div>' +
+        afaRowsHtml(list);
+    }
+
+    afaShell(
+      'Cart Actions',
+      '<div id="cbt-afa-lead">Choose an action. Each button performs <b>only the action shown</b>.</div>' +
+      forceBlock +
+      partialBlock +
+      completeBlock +
+      missingBlock +
+      warnings +
+      listHtml +
+      '<div class="cbt-afa-note">Each action only affects its own cart group. Problem Solve is never touched. Missing Package QR is read-only.</div>',
+      '<button class="cbt-afa-act" data-afa="close">Close</button>'
+    );
+
+    var card = _afaOverlay.querySelector('#cbt-afa-card');
+    if (!card) return;
+
+    /* Confirm an actual MISSING or DAMAGED package before enabling this action.
+       This runs only when ▶ Run is opened, not in the background. */
+    var missingCheckSeq = ++_afaMissingMenuCheckSeq;
+    var missingOverlay = _afaOverlay;
+
+    function setMissingMenuState(info, finished) {
+      if (!_afaOverlay || _afaOverlay !== missingOverlay ||
+          missingCheckSeq !== _afaMissingMenuCheckSeq) return;
+
+      var btn = document.getElementById('cbt-afa-missing-btn');
+      var block = document.getElementById('cbt-afa-missing-block');
+      var copy = document.getElementById('cbt-afa-missing-copy');
+      if (!btn || !block || !copy) return;
+
+      var verifiedEntries = afaMissingQrEntries(info);
+
+      if (verifiedEntries.length) {
+        _afaMissingMenuInfo = info;
+        btn.disabled = false;
+        btn.innerHTML = '<span class="cbt-afa-missing-triangle">▲</span>Missing Package QR';
+        block.classList.remove('off');
+        var damagedCount = verifiedEntries.filter(function(entry){
+          return afaMissingText(entry.packageStatus).toUpperCase() === 'DAMAGED';
+        }).length;
+        var missingCount = verifiedEntries.length - damagedCount;
+
+        var parts = [];
+        if (missingCount) parts.push(missingCount + ' MISSING');
+        if (damagedCount) parts.push(damagedCount + ' DAMAGED');
+
+        copy.textContent =
+          parts.join(' + ') + ' package' +
+          (verifiedEntries.length === 1 ? '' : 's') +
+          ' found. Click to open QR' +
+          (verifiedEntries.length === 1 ? '' : 's') +
+          (verifiedEntries.length > 1 ? ' with left/right navigation.' : '.');
+        return;
+      }
+
+      _afaMissingMenuInfo = null;
+      btn.disabled = true;
+      block.classList.add('off');
+
+      if (finished) {
+        btn.innerHTML = '<span class="cbt-afa-missing-triangle">▲</span>No Missing/Damaged';
+        copy.textContent =
+          'No MISSING or DAMAGED package was found in Tasks, Problem Solve, or Partially Batched. This button is disabled.';
+      }
+    }
+
+    if (missingCandidates.length) {
+      cbtAfterFirstPaint(function(){
+        cbtIdle(function(){
+          if (!_afaOverlay || _afaOverlay !== missingOverlay ||
+              missingCheckSeq !== _afaMissingMenuCheckSeq) return;
+
+          afaFindAllMissingJobs(missingCandidates, function(done, total, item){
+            if (!_afaOverlay || _afaOverlay !== missingOverlay ||
+                missingCheckSeq !== _afaMissingMenuCheckSeq) return;
+
+            var copy = document.getElementById('cbt-afa-missing-copy');
+            if (copy) {
+              copy.textContent = 'Checking ' + (item.section || 'Tasks') +
+                ' · ' + done + ' of ' + total + '…';
+            }
+          }).then(function(info){
+            setMissingMenuState(info || null, true);
+          }).catch(function(){
+            setMissingMenuState(null, true);
+          });
+        }, 350);
+      }, 30);
+    } else {
+      setMissingMenuState(null, true);
+    }
+
+    /* Refresh immediately before every run. This avoids stale closures after
+       changing Live/Today/Weekly/Fastest/Names tabs or leaving the popup open
+       while the dashboard itself changes. */
+    function runFresh(action, button) {
+      if (!button || button.disabled || _afaRunning) return;
+
+      var original = button.textContent;
+      button.disabled = true;
+
+      /* Refresh silently. The old visible "Checking..." state looked like a
+         second loader after the user had already chosen an action. */
+      afaRefreshJobData().then(function(){
+        if (!_afaOverlay || _afaRunning) return;
+
+        var queue = [];
+        var opts = {};
+
+        if (action === 'force') {
+          queue = afaScanDashboard()
+            .filter(function(x){ return x.id && !isSuppressed('force', x); });
+          opts = { mode: 'force', autoComplete: false, completeOnly: false };
+        } else if (action === 'partial') {
+          queue = afaScanPartiallyBatched()
+            .filter(function(x){ return x.id && !isSuppressed('partial', x); });
+          opts = { mode: 'partial', autoComplete: false, completeOnly: false };
+        } else if (action === 'complete') {
+          queue = afaScanCompletionCandidates()
+            .filter(function(x){ return x.id && !isSuppressed('complete', x); });
+          opts = { mode: 'complete', autoComplete: true, completeOnly: true };
+        }
+
+        if (!queue.length) {
+          /* State changed while the menu was open. Rebuild instantly with no
+             loading screen so the now-empty action becomes disabled. */
+          var pbNow2 = afaScanPartiallyBatched();
+          var expected2 = afaSectionCount(/^Partially\s+Batched(\s*\(\d+\))?$/i);
+          afaConfirmRender(afaScanDashboard(), pbNow2, expected2, suppress);
+          return;
+        }
+
+        afaRun(queue, opts);
+      }).catch(function(){
+        if (!_afaOverlay) return;
+        button.disabled = false;
+        button.textContent = original;
+      });
+    }
+
+    card.addEventListener('click', function(e){
+      var b = e.target.closest('[data-afa]');
+      if (!b) return;
+      var action = b.getAttribute('data-afa');
+
+      if (action === 'close') {
+        afaClose();
+        return;
+      }
+
+      if (action === 'missingqr') {
+        if (b.disabled || !afaMissingQrEntries(_afaMissingMenuInfo).length) {
+          return;
+        }
+
+        /* The action only works after one or more real MISSING packages were
+           verified. The result view shows one missing package at a time. */
+        afaMissingQrResult(_afaMissingMenuInfo);
+        return;
+      }
+
+      if (action === 'force' || action === 'partial' || action === 'complete') {
+        runFresh(action, b);
+      }
+    });
+  }
+
+  function afaProgressView(mode) {
+    var isComplete = mode === 'complete';
+    var isPartial = mode === 'partial';
+    var title = isComplete ? 'Auto Complete' : (isPartial ? 'Partially Batched' : 'Force Assign');
+    afaShell(title + ' \u2014 running',
+      '<div id="cbt-afa-lead"><span id="cbt-afa-count">Starting\u2026</span></div>' +
+      '<div id="cbt-afa-bar"><div id="cbt-afa-fill"></div></div>' +
+      '<div id="cbt-afa-live"></div>',
+      '<button class="cbt-afa-act stop" data-afa="stop">⏹ Stop</button>');
+    var card = _afaOverlay.querySelector('#cbt-afa-card');
+    card.addEventListener('click', function(e){
+      var b = e.target.closest('[data-afa]');
+      if (b && b.getAttribute('data-afa') === 'stop') {
+        _afaStop = true;
+        b.textContent = '⏹ Stopping\u2026';
+        b.disabled = true;
+      }
+    });
+  }
+  function afaProgress(done, total, ref, results) {
+    var c = document.getElementById('cbt-afa-count');
+    if (c) c.innerHTML = 'Processing <b>' + done + '</b> of <b>' + total + '</b>' + (ref ? ' \u2014 cart ' + afaEsc(ref) : '');
+    var f = document.getElementById('cbt-afa-fill');
+    if (f) f.style.width = Math.round((done / Math.max(1, total)) * 100) + '%';
+    var live = document.getElementById('cbt-afa-live');
+    if (live && results.length) live.innerHTML = afaRowsHtml(results.slice(-6));
+  }
+
+  function afaSummary(results, stopped, retryable, mode) {
+    var isComplete = mode === 'complete';
+    var isPartial = mode === 'partial';
+    var title = isComplete ? 'Auto Complete' : (isPartial ? 'Partially Batched' : 'Force Assign');
+    var okN   = results.filter(function(r){ return r.ok === true; }).length;
+    var skipN = results.filter(function(r){ return r.skip; }).length;
+    var badN  = results.filter(function(r){ return r.ok === false && !r.skip; }).length;
+    afaShell(title + ' \u2014 finished',
+      '<div id="cbt-afa-lead">' + (stopped ? 'Stopped early. ' : '') +
+      '<b>' + okN + '</b> ' + (isComplete ? 'completed' : 'assigned') +
+      (skipN ? ', <b>' + skipN + '</b> skipped' : '') +
+      (badN  ? ', <b>' + badN  + '</b> failed'  : '') + '.</div>' +
+      (isPartial && retryable
+        ? '<div class="cbt-afa-warn">' + retryable + ' cart(s) are still listed under Partially Batched. Press the Partially Batched button again to retry them.</div>'
+        : '') +
+      (results.length ? afaRowsHtml(results) : '<div style="color:var(--cb-text2)">Nothing was processed.</div>'),
+      '<button class="cbt-afa-act" data-afa="back">Back</button>' +
+      '<button class="cbt-afa-act go" data-afa="close">Done</button>');
+    var card = _afaOverlay.querySelector('#cbt-afa-card');
+    card.addEventListener('click', function(e){
+      var b = e.target.closest('[data-afa]');
+      if (!b) return;
+
+      var action = b.getAttribute('data-afa');
+      if (action === 'close') {
+        afaClose();
+        return;
+      }
+
+      if (action === 'back') {
+        /* The dashboard DOM can take a few seconds to visually remove a cart
+           after a successful write. Build a suppression map from the exact
+           successful results of THIS run, then return instantly to Cart
+           Actions. This makes counts/buttons correct immediately without any
+           loading animation and prevents the same successful cart from being
+           run again while the page catches up. */
+        var suppress = {
+          force: Object.create(null),
+          partial: Object.create(null),
+          complete: Object.create(null)
+        };
+
+        var bucketName = mode === 'complete'
+          ? 'complete'
+          : (mode === 'partial' ? 'partial' : 'force');
+
+        results.forEach(function(r){
+          if (!r || r.ok !== true) return;
+          if (r.id) suppress[bucketName]['id:' + String(r.id)] = true;
+          if (r.ref) suppress[bucketName]['ref:' + String(r.ref)] = true;
+        });
+
+        var pbNow = afaScanPartiallyBatched();
+        var expected = afaSectionCount(/^Partially\s+Batched(\s*\(\d+\))?$/i);
+
+        afaConfirmRender(afaScanDashboard(), pbNow, expected, suppress);
+
+        /* Refresh job IDs silently in the background. There is deliberately no
+           visible loader here. */
+        try { afaRefreshJobData(); } catch(e) {}
+        return;
+      }
+    });
+  }
+
+  /* Step 2: one cart at a time, re-checked immediately before each send. */
+  function afaRun(list, opts) {
+    opts = opts || {};
+    var runMode = opts.mode || (opts.autoComplete ? 'complete' : 'force');
+    var autoComplete = runMode === 'complete' || !!opts.autoComplete;
+    var completeOnly = runMode === 'complete' || !!opts.completeOnly || autoComplete;
+    _afaRunning = true; _afaStop = false;
+    _afaDone = Object.create(null);        /* fresh claim map for this run only */
+    var partialRefs = Object.create(null);
+    list.forEach(function(it){ if (it.partial) partialRefs[it.ref] = true; });
+    var btn = document.getElementById('cbt-afa-btn');
+    /* The dashboard header behaves like a coding playground:
+       ▶ Run while idle, ⏹ Stop while an action is executing. */
+    afaSetBtn('⏹ Stop', true);
+    afaProgressView(runMode);
+    var results = [], i = 0;
+
+    function finish() {
+      _afaRunning = false;
+      afaSetBtn('▶ Run', false);
+      var stopped = _afaStop;
+      /* Re-read the dashboard: any cart still sitting under Partially
+         Batched can simply be run again next time. */
+      afaRefreshJobData().then(function(){
+        var stillThere = Object.create(null), retryable = 0;
+        try {
+          afaScanPartiallyBatched().forEach(function(x){
+            stillThere[x.ref] = true;
+            if (x.id) stillThere[x.id] = true;
+          });
+        } catch(e) {}
+        results.forEach(function(r){
+          if (partialRefs[r.ref] && stillThere[r.ref]) { r.retry = true; retryable++; }
+        });
+        _afaDone = Object.create(null);     /* nothing carries into the next run */
+        afaSummary(results, stopped, retryable, runMode);
+      });
+    }
+    function next(delay) { i++; setTimeout(step, delay); }
+
+    function step() {
+      if (_afaStop || i >= list.length) return finish();
+      var item = list[i];
+      afaProgress(i + 1, list.length, item.ref, results);
+
+      if (!item.id) { results.push({ ref: item.ref, ok: false, msg: 'task ID not found' }); return next(60); }
+      if (_afaDone[item.id]) { results.push({ ref: item.ref, skip: true, ok: false, msg: 'already handled in this run' }); return next(60); }
+
+      function doneResult(row, delay) {
+        results.push(row);
+        afaProgress(i + 1, list.length, item.ref, results);
+        next(delay == null ? AFA_DELAY_MS : delay);
+      }
+
+      function completeNow() {
+        _afaDone[item.id] = true;   /* claim before the write: never twice in one run */
+        return afaCompleteTask(item.id).then(function(r){
+          if (afaCompletedOk(r)) {
+            doneResult({ ref: item.ref, ok: true, msg: 'Completed \u2014 Complete Task enabled by site' });
+          } else {
+            var w = r.status ? ('HTTP ' + r.status) : (r.body || 'no response');
+            if (r.ok && r.body) w += ' \u2014 unexpected response: ' + String(r.body).replace(/\s+/g, ' ').slice(0, 60);
+            doneResult({ ref: item.ref, skip: !r.status, ok: false, msg: 'Complete Task failed \u2014 ' + w });
+          }
+        });
+      }
+
+      function forceNow(noteWhy) {
+        _afaDone[item.id] = true;
+        return afaForceAssign(item.id).then(function(r){
+          if (r.ok) {
+            doneResult({ ref: item.ref, id: item.id, ok: true, msg: 'Force Assigned (HTTP ' + r.status + ')' + (noteWhy ? ' \u2014 ' + noteWhy : '') });
+          } else {
+            var why = r.status ? ('HTTP ' + r.status) : 'no response';
+            if (r.body) why += ' \u2014 ' + String(r.body).replace(/\s+/g, ' ').slice(0, 90);
+            doneResult({ ref: item.ref, ok: false, msg: why });
+          }
+        });
+      }
+
+      function continueWithoutCompletion(probeReason) {
+        /* Partially Batched carries no assignability column, so preserve its
+           existing verify-before-force behavior. */
+        if (item.partial) {
+          afaVerifyForcible(item).then(function(v){
+            if (!v.eligible) {
+              doneResult({ ref: item.ref, skip: true, ok: false, msg: 'partially batched \u2014 ' + v.reason }, 120);
+              return;
+            }
+            forceNow('partially batched' + (probeReason ? '; ' + probeReason : ''));
+          });
+          return;
+        }
+
+        /* A completion-only row was added solely because Auto Complete is on.
+           If the site's own button is not enabled, never turn it into a Force
+           Assign action. */
+        if (item.completeCandidate && !item.unassignable) {
+          doneResult({ ref: item.ref, skip: true, ok: false, msg: probeReason || 'Complete Task not available' }, 80);
+          return;
+        }
+
+        /* Ordinary Force Assign rows must still be UNASSIGNABLE right now. */
+        var live = afaScanDashboard();
+        var still = live.some(function(x){ return x.id ? x.id === item.id : x.ref === item.ref; });
+        if (!still) {
+          doneResult({ ref: item.ref, skip: true, ok: false, msg: 'no longer unassignable \u2014 skipped' }, 60);
+          return;
+        }
+        forceNow(probeReason || '');
+      }
+
+      /* Independent Partially Batched mode: never let a regular
+         UNASSIGNABLE/completion candidate leak into this run. */
+      if (runMode === 'partial' && !item.partial) {
+        doneResult({ ref: item.ref, skip: true, ok: false, msg: 'Skipped \u2014 not a Partially Batched cart' }, 60);
+        return;
+      }
+
+      /* Independent Force Assign mode: never process a Partially Batched row.
+         Partial carts have their own button and their own run. */
+      if (runMode === 'force' && item.partial) {
+        doneResult({ ref: item.ref, skip: true, ok: false, msg: 'Skipped \u2014 use Partially Batched button' }, 60);
+        return;
+      }
+
+      /* Auto Complete is deliberately COMPLETE-ONLY.
+         It never calls Force Assign, even when the same cart is UNASSIGNABLE.
+         The server remains the eligibility gate: literal true means completed;
+         a normal rejection is skipped; network/auth/server errors are reported.
+         Partially Batched is excluded from this mode entirely. */
+      if (autoComplete || completeOnly) {
+        if (item.partial) {
+          doneResult({ ref: item.ref, skip: true, ok: false, msg: 'Skipped \u2014 Partially Batched is Force Assign only' }, 80);
+          return;
+        }
+
+        _afaDone[item.id] = true;
+        afaCompleteTask(item.id).then(function(r){
+          if (_afaStop) return finish();
+
+          if (afaCompletedOk(r)) {
+            doneResult({ ref: item.ref, id: item.id, ok: true, msg: 'Completed \u2014 server allowed Complete Task' });
+            return;
+          }
+
+          if (!r || !r.status || r.status === 401 || r.status === 403 || r.status >= 500) {
+            var hardWhy = (!r || !r.status)
+              ? ((r && r.body) ? String(r.body) : 'no response')
+              : ('HTTP ' + r.status + (r.body ? ' \u2014 ' + String(r.body).replace(/\s+/g, ' ').slice(0, 80) : ''));
+            doneResult({ ref: item.ref, ok: false, msg: 'Complete Task check failed \u2014 ' + hardWhy });
+            return;
+          }
+
+          var rejectWhy = 'Skipped \u2014 Complete Task not allowed';
+          if (r.status) rejectWhy += ' (HTTP ' + r.status + ')';
+          if (r.ok && r.body) rejectWhy += ' \u2014 response ' + String(r.body).replace(/\s+/g, ' ').slice(0, 50);
+          doneResult({ ref: item.ref, skip: true, ok: false, msg: rejectWhy }, 80);
+        });
+        return;
+      }
+
+      continueWithoutCompletion('');
+    }
+    step();
+  }
+
+  /* ══════════════════════════════════════
+     ASSOCIATE AUTOCOMPLETE
+
+     Types ahead inside the site's own assignment fields — the Manager
+     Action "Assign to Associate" box on COMO, and "Enter associate ID" in
+     the Outbound "Assign procurement lists" window — so there is no more
+     copying out of a side panel.
+
+     It only ever inserts a login that already exists in the saved
+     associate list (the same list the Names tab and the old search panel
+     use). Nothing is derived, transformed or invented from a typed name,
+     so an ID can never be guessed. Selecting somebody fills the field and
+     stops there: submitting stays a deliberate click on Assign / Confirm.
+  ══════════════════════════════════════ */
+  var AC_MIN_CHARS = 2;     /* start suggesting from the 2nd character */
+  var AC_MAX_ROWS  = 12;
+  var _acDrop = null, _acInput = null, _acItems = [], _acIdx = -1;
+  var _acHost = null;              /* the <kat-input> custom element, when there is one */
+  var _acWatch = null, _acRect = '';
+
+  /* Our own inputs must never get a second autocomplete on top. */
+  /* Events crossing a shadow boundary are retargeted: at document level
+     e.target is the outermost shadow HOST, not the field inside it. The
+     composed path still starts at the true element, so read it from there.
+     This is what stopped the Outbound field from ever being recognised. */
+  function acRealTarget(e) {
+    try {
+      if (typeof e.composedPath === 'function') {
+        var path = e.composedPath();
+        if (path && path.length) return path[0];
+      }
+    } catch(err) {}
+    return e.target;
+  }
+
+  /* The Outbound modal's field, reached through its nested open shadow roots:
+       kat-modal[data-testid="assign-modal"]
+         kat-input-group.assign-searchbar        -> shadowRoot
+           kat-input[data-testid="assign-searchbar-input"] -> shadowRoot
+             input[part="input"]
+     Each hop tolerates the element being in light DOM instead, so a markup
+     change on one level does not break the whole lookup. */
+  function acFindKatInput(scope) {
+    /* Confirmed structure (verified in DevTools):
+         kat-modal[data-testid="assign-modal"]
+           kat-input-group.assign-searchbar            <- light DOM
+             kat-input[data-testid="assign-searchbar-input"]   <- LIGHT DOM child
+               #shadow-root (open)
+                 input[part="input"][placeholder="Enter associate ID"]
+       The kat-input is NOT inside inputGroup.shadowRoot, so light DOM is
+       tried first at that level; the shadow lookups remain as fallbacks in
+       case a future build nests it differently. The katal-id is never used
+       because it changes between renders. */
+    var modal = scope ||
+                document.querySelector('kat-modal[data-testid="assign-modal"]') ||
+                document.querySelector('kat-modal');
+    if (!modal) return null;
+    var group = modal.querySelector('kat-input-group.assign-searchbar') ||
+                (modal.shadowRoot && modal.shadowRoot.querySelector('kat-input-group.assign-searchbar')) ||
+                modal.querySelector('kat-input-group') ||
+                (modal.shadowRoot && modal.shadowRoot.querySelector('kat-input-group'));
+    if (!group) return null;
+    var host = group.querySelector('kat-input[data-testid="assign-searchbar-input"]') ||
+               (group.shadowRoot && group.shadowRoot.querySelector('kat-input[data-testid="assign-searchbar-input"]')) ||
+               group.querySelector('kat-input') ||
+               (group.shadowRoot && group.shadowRoot.querySelector('kat-input'));
+    if (!host) return null;
+    var input = (host.shadowRoot && host.shadowRoot.querySelector('input[part="input"][placeholder="Enter associate ID"]')) ||
+                (host.shadowRoot && host.shadowRoot.querySelector('input[part="input"]')) ||
+                (host.shadowRoot && host.shadowRoot.querySelector('input')) ||
+                host.querySelector('input');
+    if (!input) return null;
+    return { host: host, input: input };
+  }
+
+  /* Last-resort sweep: walk every open shadow root looking for an
+     associate-ish input, in case the testids or class names change. */
+  function acDeepFindInput(root, depth) {
+    if (!root || depth > 6) return null;
+    var nodes;
+    try { nodes = root.querySelectorAll('*'); } catch(e) { return null; }
+    for (var i = 0; i < nodes.length; i++) {
+      var n = nodes[i];
+      if (n.tagName === 'INPUT' && acIsAssociateField(n)) return { host: n.getRootNode && n.getRootNode().host || null, input: n };
+      if (n.shadowRoot) {
+        var found = acDeepFindInput(n.shadowRoot, depth + 1);
+        if (found) return found;
+      }
+    }
+    return null;
+  }
+
+  function acIsOurs(el) {
+    if (!el || !el.id) return false;
+    return el.id.indexOf('cbt-') === 0;
+  }
+
+  /* Label text sitting near a field, used to recognise it. */
+  function acContextText(el) {
+    var bits = [];
+    try {
+      if (el.id) {
+        var lab = document.querySelector('label[for="' + (window.CSS && CSS.escape ? CSS.escape(el.id) : el.id) + '"]');
+        if (lab) bits.push(lab.textContent || '');
+      }
+      var wrapLab = el.closest ? el.closest('label') : null;
+      if (wrapLab) bits.push(wrapLab.textContent || '');
+      var p = el.parentElement;
+      for (var i = 0; i < 3 && p; i++) { bits.push(p.textContent || ''); p = p.parentElement; }
+    } catch(e) {}
+    return bits.join(' ').slice(0, 400);
+  }
+
+  /* Is this the associate / user-id box of an assignment dialog?
+     Matched on wording rather than on class names, which are generated
+     and change between deployments. */
+  /* The ONLY two places associate suggestions may appear:
+       COMO     -> the Manager Action dialog behind "Assign to Associate"
+       Outbound -> kat-modal[data-testid="assign-modal"] ("Assign
+                   procurement lists" -> "Enter associate ID")
+     Anything not inside one of those containers is rejected outright. This
+     is what previously let the dropdown attach to Search Historical, Search
+     and Resolve and other page-level search boxes: those fields merely
+     mention "associate ID" in their placeholder, and the old test looked at
+     wording alone with no container requirement. */
+  /* Search and Resolve exception
+     ----------------------------
+     This field was intentionally excluded before because generic page search
+     boxes could accidentally receive associate suggestions. The user now
+     wants the name/login popup back ONLY on Outbound -> Search and Resolve.
+
+     Detection is deliberately strict:
+       - Outbound site only
+       - the page heading/tab must identify Search and Resolve, OR the search
+         input must carry the known multi-ID Search and Resolve placeholder
+       - the field must be the page's main search input
+       - when a search-type selector is present, it must be set to Associate ID
+
+     This is checked only when the user focuses/types in a field, so it adds no
+     background polling and no continuous DOM work. */
+  function acIsSearchResolvePage() {
+    if (!isOutboundSite()) return false;
+
+    var path = (location.pathname || '').toLowerCase();
+    if (/search[^a-z0-9]*and[^a-z0-9]*resolve|search[^a-z0-9]*resolve/.test(path)) return true;
+
+    try {
+      var heads = document.querySelectorAll('h1,h2,h3,[role="heading"]');
+      for (var i = 0; i < heads.length; i++) {
+        var t = (heads[i].textContent || '').replace(/\s+/g, ' ').trim().toLowerCase();
+        if (t === 'search and resolve') return true;
+      }
+    } catch(e) {}
+
+    return false;
+  }
+
+  function acSearchResolveModeIsAssociate(input) {
+    var scope = null;
+    try {
+      scope = input.closest('form') ||
+              input.closest('[class*="search"]') ||
+              input.parentElement;
+    } catch(e) {
+      scope = input.parentElement;
+    }
+
+    /* Native select used by the current Search and Resolve page. */
+    try {
+      var selects = (scope || document).querySelectorAll('select');
+      for (var i = 0; i < selects.length; i++) {
+        var s = selects[i];
+        var txt = '';
+        try {
+          txt = ((s.options && s.selectedIndex >= 0 && s.options[s.selectedIndex])
+                   ? s.options[s.selectedIndex].textContent
+                   : s.value) || '';
+        } catch(e2) { txt = s.value || ''; }
+        txt = txt.replace(/\s+/g, ' ').trim().toLowerCase();
+        if (/associate\s*id|associate/.test(txt)) return true;
+      }
+    } catch(e3) {}
+
+    /* Katal/custom select fallback. Keep the search local first. */
+    try {
+      var root = scope || document;
+      var custom = root.querySelectorAll('kat-select,[role="combobox"],button,[aria-haspopup="listbox"]');
+      for (var j = 0; j < custom.length; j++) {
+        var ct = (custom[j].textContent || custom[j].getAttribute('value') || custom[j].getAttribute('aria-label') || '')
+          .replace(/\s+/g, ' ').trim().toLowerCase();
+        if (/^associate\s*id$|associate\s*id/.test(ct)) return true;
+      }
+    } catch(e4) {}
+
+    /* If no selector can be read, only accept the exact known Search and
+       Resolve search box when its own metadata explicitly references
+       Associate ID. This keeps Search Historical and unrelated search fields
+       excluded. */
+    var own = [
+      input.getAttribute('placeholder'),
+      input.getAttribute('aria-label'),
+      input.getAttribute('name'),
+      input.getAttribute('id')
+    ].filter(Boolean).join(' ').toLowerCase();
+
+    return /associate\s*id/.test(own) &&
+           (/procurement\s*list\s*id/.test(own) || /order\s*id/.test(own) || /status/.test(own));
+  }
+
+  function acIsSearchResolveAssociateField(el) {
+    if (!el || el.tagName !== 'INPUT' || acIsOurs(el)) return false;
+    if (!isOutboundSite()) return false;
+
+    var type = (el.getAttribute('type') || 'text').toLowerCase();
+    if (type !== 'text' && type !== 'search' && type !== '') return false;
+    if (el.disabled || el.readOnly) return false;
+
+    var own = [
+      el.getAttribute('placeholder'),
+      el.getAttribute('aria-label'),
+      el.getAttribute('name'),
+      el.getAttribute('id')
+    ].filter(Boolean).join(' ').toLowerCase();
+
+    /* The screenshot/current page uses one broad search input whose
+       placeholder mentions status, zone, order ID, procurement list ID and
+       associate ID. That signature is strong enough even if the SPA URL
+       itself is generic. */
+    var knownSearchBox =
+      /associate\s*id/.test(own) &&
+      (/procurement\s*list\s*id/.test(own) || (/status/.test(own) && /zone/.test(own)));
+
+    if (!knownSearchBox && !acIsSearchResolvePage()) return false;
+    return acSearchResolveModeIsAssociate(el);
+  }
+
+  function acInAssignmentContainer(el) {
+    var n = el, guard = 0;
+    while (n && guard++ < 200) {
+      if (n.nodeType === 1) {
+        var tag = (n.tagName || '').toLowerCase();
+        if (tag === 'kat-modal') {
+          var tid = n.getAttribute ? (n.getAttribute('data-testid') || '') : '';
+          return /assign/i.test(tid);        /* only the assign modal */
+        }
+        var role = n.getAttribute ? (n.getAttribute('role') || '') : '';
+        var cls  = (typeof n.className === 'string') ? n.className : '';
+        if (tag === 'dialog' || role === 'dialog' || role === 'alertdialog' ||
+            /(^|\s|-)(modal|dialog)(\s|-|$)/i.test(cls)) {
+          /* a dialog qualifies only if it is an assignment dialog */
+          var txt = '';
+          try { txt = (n.textContent || '').slice(0, 800); } catch(e) {}
+          return /assign/i.test(txt);
+        }
+      }
+      if (n.nodeType === 11 && n.host) { n = n.host; continue; }   /* shadow root */
+      n = n.parentNode;
+    }
+    return false;                                /* not in a dialog at all */
+  }
+
+  function acIsAssociateField(el) {
+    if (!el || el.tagName !== 'INPUT' || acIsOurs(el)) return false;
+
+    /* The one page-level exception: Outbound -> Search and Resolve with
+       Associate ID selected. All other page-level searches remain excluded. */
+    if (acIsSearchResolveAssociateField(el)) return true;
+
+    if (!acInAssignmentContainer(el)) return false;
+    var type = (el.getAttribute('type') || 'text').toLowerCase();
+    if (type !== 'text' && type !== 'search' && type !== '') return false;
+    if (el.disabled || el.readOnly) return false;
+    var own = [el.getAttribute('placeholder'), el.getAttribute('name'), el.getAttribute('id'),
+               el.getAttribute('aria-label'), el.getAttribute('ng-model'), el.getAttribute('formcontrolname')]
+              .filter(Boolean).join(' ');
+    var hay = (own + ' ' + acContextText(el)).toLowerCase();
+    if (/associate|assoc\b|\blogin\b|user\s*id|userid|employee|\bassign/.test(hay)) return true;
+    return false;
+  }
+
+  /* Rank matches: whole-word/prefix hits first, then anything containing
+     the term, alphabetical inside each group. */
+  function acSearch(term) {
+    term = (term || '').toLowerCase().trim();
+    if (term.length < AC_MIN_CHARS) return [];
+    var all = loadAllNames(), pre = [], mid = [];
+    for (var k in all) {
+      var idx = k.indexOf(term);
+      if (idx === 0) pre.push(all[k]);
+      else if (idx > 0) mid.push(all[k]);
+      if (pre.length + mid.length > 400) break;
+    }
+    function byName(a, b){ return a.toLowerCase().localeCompare(b.toLowerCase()); }
+    pre.sort(byName); mid.sort(byName);
+    return { rows: pre.concat(mid).slice(0, AC_MAX_ROWS), total: pre.length + mid.length };
+  }
+
+  function acEsc(s) {
+    return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function acHighlight(name, term) {
+    var i = name.toLowerCase().indexOf(term.toLowerCase());
+    if (i === -1 || !term) return acEsc(name);
+    return acEsc(name.slice(0, i)) + '<mark>' + acEsc(name.slice(i, i + term.length)) +
+           '</mark>' + acEsc(name.slice(i + term.length));
+  }
+
+  function acClose() {
+    if (_acDrop && _acDrop.parentNode) _acDrop.parentNode.removeChild(_acDrop);
+    _acDrop = null; _acItems = []; _acIdx = -1;
+  }
+
+  function acPlace() {
+    if (!_acDrop || !_acInput) return;
+    /* The dropdown carries the UI zoom, and zoom multiplies the used value
+       of left/top/width — so divide by it to land on the real viewport
+       pixels of the field. Without this the list drifts off the input as
+       soon as the size is changed. */
+    var z = (typeof _uiScale === 'number' && _uiScale > 0) ? _uiScale : 1;
+    var r = _acInput.getBoundingClientRect();
+    var w = Math.max(r.width, 240);
+    var left = Math.min(r.left, window.innerWidth - w - 8);
+    _acDrop.style.width = (w / z) + 'px';
+    _acDrop.style.left  = (Math.max(8, left) / z) + 'px';
+    /* flip above the field when there is no room below */
+    var below = window.innerHeight - r.bottom;
+    if (below < 180 && r.top > below) {
+      _acDrop.style.top = 'auto';
+      _acDrop.style.bottom = ((window.innerHeight - r.top + 4) / z) + 'px';
+      _acDrop.style.maxHeight = (Math.max(120, r.top - 12) / z) + 'px';
+    } else {
+      _acDrop.style.bottom = 'auto';
+      _acDrop.style.top = ((r.bottom + 4) / z) + 'px';
+      _acDrop.style.maxHeight = (Math.max(120, below - 12) / z) + 'px';
+    }
+  }
+
+  function acRender(term) {
+    if (!_acInput) return;
+    var res = acSearch(term);
+    var rows = res.rows || [], total = res.total || 0;
+    if (!_acDrop) {
+      _acDrop = document.createElement('div');
+      _acDrop.id = 'cbt-ac-drop';
+      document.body.appendChild(_acDrop);
+      try { _acDrop.style.zoom = _uiScale; } catch(e) {}
+      try { applyPopupTheme(); } catch(e) {}
+      /* mousedown, not click: fires before the field loses focus */
+      _acDrop.addEventListener('mousedown', function(e){
+        var row = e.target.closest('.cbt-ac-item');
+        if (!row) return;
+        e.preventDefault(); e.stopPropagation();
+        acPick(row.getAttribute('data-name'));
+      });
+    }
+    _acItems = rows;
+    _acIdx = rows.length ? 0 : -1;
+    var html = '<div class="cbt-ac-hd">Associates</div>';
+    if (!rows.length) {
+      html += '<div class="cbt-ac-none">No matches found</div>';
+    } else {
+      html += rows.map(function(n, i){
+        return '<div class="cbt-ac-item' + (i === 0 ? ' on' : '') + '" data-name="' + acEsc(n) + '">' +
+                 '<span class="cbt-ac-nm">' + acHighlight(n, term) + '</span>' +
+                 '<span class="cbt-ac-tag">login</span>' +
+               '</div>';
+      }).join('');
+      if (total > rows.length) {
+        html += '<div class="cbt-ac-foot">' + (total - rows.length) + ' more \u2014 keep typing to narrow</div>';
+      }
+    }
+    _acDrop.innerHTML = html;
+    acPlace();
+  }
+
+  function acMove(step) {
+    if (!_acDrop || !_acItems.length) return;
+    _acIdx = (_acIdx + step + _acItems.length) % _acItems.length;
+    var nodes = _acDrop.querySelectorAll('.cbt-ac-item');
+    for (var i = 0; i < nodes.length; i++) nodes[i].classList.toggle('on', i === _acIdx);
+    if (nodes[_acIdx] && nodes[_acIdx].scrollIntoView) nodes[_acIdx].scrollIntoView({ block: 'nearest' });
+  }
+
+  /* Write the chosen login into the site's own field.
+     Uses the native value setter plus input/change events so frameworks
+     (AngularJS on COMO, React on Outbound) register the change as if it
+     had been typed. Nothing is submitted. */
+  function acFire(el) {
+    /* composed:true so the event escapes the shadow root and the app's own
+       listeners (and any framework value tracker) actually see it */
+    try { el.dispatchEvent(new Event('input',  { bubbles: true, composed: true })); } catch(e) {}
+    try { el.dispatchEvent(new Event('change', { bubbles: true, composed: true })); } catch(e) {}
+    try { el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true, composed: true })); } catch(e) {}
+  }
+
+  function acSetValue(el, value, host) {
+    try {
+      var proto = (el instanceof HTMLTextAreaElement) ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+      var desc = Object.getOwnPropertyDescriptor(proto, 'value');
+      if (desc && desc.set) desc.set.call(el, value); else el.value = value;
+    } catch(e) { el.value = value; }
+    acFire(el);
+    /* Mirror onto the custom element itself: Katal components hold their own
+       value property, and Confirm stays disabled until that one is set. */
+    if (host && host !== el) {
+      try { host.value = value; } catch(e) {}
+      try { if (host.setAttribute) host.setAttribute('value', value); } catch(e) {}
+      acFire(host);
+    }
+  }
+
+  function acPick(name) {
+    if (!name || !_acInput) return;
+    var el = _acInput;
+    acSetValue(el, name, _acHost); /* exact stored login — never derived */
+    acClose();
+    try { el.focus(); if (el.setSelectionRange) el.setSelectionRange(name.length, name.length); } catch(e) {}
+  }
+
+  /* ── wiring: delegated, so dialogs created later are covered ── */
+  document.addEventListener('focusin', function(e){
+    var el = acRealTarget(e);
+    if (!acIsAssociateField(el)) return;
+    acBind(el, null);
+    _acInput = el;
+    if ((el.value || '').trim().length >= AC_MIN_CHARS) acRender(el.value);
+  }, true);
+
+  document.addEventListener('input', function(e){
+    var t = acRealTarget(e);
+
+    /* Search and Resolve can change its search type while the text box remains
+       focused. Bind lazily on the first keystroke once Associate ID is active. */
+    if (t !== _acInput && acIsSearchResolveAssociateField(t)) {
+      acBind(t, null);
+      _acInput = t;
+      _acHost = null;
+    }
+
+    if (t !== _acInput) return;
+    var v = t.value || '';
+    if (v.trim().length < AC_MIN_CHARS) { acClose(); return; }
+    acRender(v);
+  }, true);
+
+  document.addEventListener('keydown', function(e){
+    if (!_acDrop || acRealTarget(e) !== _acInput) return;
+    if (e.key === 'ArrowDown')      { e.preventDefault(); acMove(1); }
+    else if (e.key === 'ArrowUp')   { e.preventDefault(); acMove(-1); }
+    else if (e.key === 'Enter')     {
+      if (_acIdx >= 0 && _acItems[_acIdx]) { e.preventDefault(); e.stopPropagation(); acPick(_acItems[_acIdx]); }
+    }
+    else if (e.key === 'Escape')    { e.preventDefault(); e.stopPropagation(); acClose(); }
+    else if (e.key === 'Tab')       { acClose(); }
+  }, true);
+
+  document.addEventListener('mousedown', function(e){
+    if (!_acDrop) return;
+    var t = acRealTarget(e);
+    if (_acDrop.contains(t) || _acDrop.contains(e.target) || t === _acInput) return;
+    acClose();
+  }, true);
+
+  /* Bind directly to a native input living inside a shadow root. Delegated
+     document listeners do reach it, but binding on the element itself is
+     immune to any stopPropagation the component does internally. */
+  /* True when the field sits inside a dialog, so page-level search boxes
+     never get focus stolen on load — only fields in a popup do. */
+  function acInModal(el) {
+    var n = el, guard = 0;
+    while (n && guard++ < 200) {
+      if (n.nodeType === 1) {
+        var tag = (n.tagName || '').toLowerCase();
+        if (tag === 'kat-modal' || tag === 'dialog') return true;
+        if (n.getAttribute) {
+          var role = n.getAttribute('role');
+          if (role === 'dialog' || role === 'alertdialog') return true;
+        }
+        var cls = (typeof n.className === 'string') ? n.className : '';
+        if (/(^|\s|-)(modal|dialog|popup)(\s|-|$)/i.test(cls)) return true;
+      }
+      if (n.nodeType === 11 && n.host) { n = n.host; continue; }
+      n = n.parentNode;
+    }
+    return false;
+  }
+
+  /* Put the caret in the field as soon as its popup appears, exactly once,
+     so typing can start immediately. Waits for the input to actually be
+     laid out, and backs off if focus is already in some other field. */
+  /* document.activeElement only reports the outermost host when focus is
+     inside a shadow root — descend to find what is really focused. */
+  function acDeepActive() {
+    var a = null;
+    try { a = document.activeElement; } catch(e) { return null; }
+    var guard = 0;
+    while (a && a.shadowRoot && a.shadowRoot.activeElement && guard++ < 12) {
+      a = a.shadowRoot.activeElement;
+    }
+    return a;
+  }
+
+  /* Focus the field once its popup is really on screen, then confirm it
+     actually took — Katal builds the modal in stages and can move focus
+     after our first attempt, which is why a single focus() call did not
+     stick on the Outbound dialog. Retries only until it lands, and stops
+     immediately if the user has clicked into something else. */
+  function acAutoFocus(input) {
+    if (!input || input._cbtAcFocused) return;
+    input._cbtAcFocused = true;
+    var tries = 0, MAX = 40;              /* ~4s of settling at most */
+
+    function userIsElsewhere() {
+      var a = acDeepActive();
+      return !!(a && a !== input && a !== document.body &&
+                (a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.isContentEditable));
+    }
+
+    function again(delay) {
+      if (typeof requestAnimationFrame === 'function' && delay <= 16) requestAnimationFrame(attempt);
+      else setTimeout(attempt, delay);
+    }
+
+    function attempt(){
+      if (++tries > MAX || !input.isConnected) return;
+      var r;
+      try { r = input.getBoundingClientRect(); } catch(e) { return; }
+      if (!r || (!r.width && !r.height)) { again(100); return; }   /* not laid out yet */
+      if (acDeepActive() === input) return;          /* focus landed: stop */
+      if (userIsElsewhere()) return;                 /* user moved on: stop */
+      /* focus the native input itself — focusing the custom element does
+         nothing, which is why the attribute alone was unreliable */
+      try { input.focus({ preventScroll: true }); } catch(e) { try { input.focus(); } catch(e2) {} }
+      /* verify next frame, then again shortly after the modal animation */
+      again(tries < 6 ? 16 : 120);
+    }
+    attempt();
+  }
+
+  function acBind(input, host) {
+    if (!input || input._cbtAcBound) { if (host && input) input._cbtAcHost = host; return; }
+    input._cbtAcBound = true;
+    if (host) input._cbtAcHost = host;
+    /* Only auto-focus a field that is actually on screen. A hidden modal's
+       input would otherwise consume the single focus attempt at page load. */
+    if (acInModal(input)) {
+      var br;
+      try { br = input.getBoundingClientRect(); } catch(e) { br = null; }
+      if (br && (br.width || br.height)) acAutoFocus(input);
+    }
+    input.addEventListener('focus', function(){
+      _acInput = input; _acHost = input._cbtAcHost || null;
+      if ((input.value || '').trim().length >= AC_MIN_CHARS) acRender(input.value);
+    });
+    input.addEventListener('input', function(){
+      _acInput = input; _acHost = input._cbtAcHost || null;
+      var v = input.value || '';
+      if (v.trim().length < AC_MIN_CHARS) { acClose(); return; }
+      acRender(v);
+    });
+    input.addEventListener('keydown', function(e){
+      if (!_acDrop || _acInput !== input) return;
+      if (e.key === 'ArrowDown')    { e.preventDefault(); acMove(1); }
+      else if (e.key === 'ArrowUp') { e.preventDefault(); acMove(-1); }
+      else if (e.key === 'Enter')   { if (_acIdx >= 0 && _acItems[_acIdx]) { e.preventDefault(); e.stopPropagation(); acPick(_acItems[_acIdx]); } }
+      else if (e.key === 'Escape')  { e.preventDefault(); e.stopPropagation(); acClose(); }
+      else if (e.key === 'Tab')     { acClose(); }
+    });
+  }
+
+  /* ── Assignment modal watcher ──
+     Fires once per opening. The modal, both shadow roots and the native
+     input all appear at different moments, and the component moves focus
+     while it finishes animating — so this waits for the real input to
+     exist, focuses THAT (not the custom element), then verifies. */
+  var _acModalSeen = null;
+
+  /* "Open" means the modal is really on screen — not merely present in the
+     DOM. Katal keeps the modal mounted and toggles visible, so matching it
+     while hidden made the watcher mark the opening as handled at page load
+     and skip the real one. That single fallback selector is what defeated
+     every earlier focus attempt. */
+  function acModalIsOpen(m) {
+    if (!m) return false;
+    var v = m.getAttribute && m.getAttribute('visible');
+    if (v === 'false') return false;
+    var r;
+    try { r = m.getBoundingClientRect(); } catch(e) { return false; }
+    return !!(r && (r.width || r.height));
+  }
+
+  function acAssignModalEl() {
+    var all;
+    try { all = document.querySelectorAll('kat-modal'); } catch(e) { return null; }
+    var fallback = null;
+    for (var i = 0; i < all.length; i++) {
+      if (!acModalIsOpen(all[i])) continue;
+      if (all[i].getAttribute('data-testid') === 'assign-modal') return all[i];
+      if (!fallback) fallback = all[i];
+    }
+    return fallback;
+  }
+
+  /* Any other dialog holding an associate field (COMO's Manager Action). */
+  function acGenericModalEl() {
+    var sels = ['[role="dialog"]', '[role="alertdialog"]', 'dialog[open]', '.modal.in', '.modal'];
+    for (var s = 0; s < sels.length; s++) {
+      var nodes;
+      try { nodes = document.querySelectorAll(sels[s]); } catch(e) { continue; }
+      for (var i = 0; i < nodes.length; i++) {
+        var n = nodes[i];
+        var r;
+        try { r = n.getBoundingClientRect(); } catch(e) { continue; }
+        if (!r.width && !r.height) continue;                 /* not visible */
+        try {
+          var ins = n.querySelectorAll('input');
+          for (var k = 0; k < ins.length; k++) if (acIsAssociateField(ins[k])) return n;
+        } catch(e) {}
+      }
+    }
+    return null;
+  }
+
+  function acWatchAssignModal() {
+    var modal = acAssignModalEl() || acGenericModalEl();
+    if (!modal) { _acModalSeen = null; return; }   /* closed: arm for next time */
+    if (_acModalSeen === modal) return;            /* this opening already handled */
+
+    /* find the REAL native input; if the shadow roots are not built yet,
+       bail out and let the next tick try again */
+    var found = acFindKatInput(modal) || acFindKatInput();
+    if (!found) {
+      var deep = acDeepFindInput(modal.shadowRoot || modal, 0);
+      if (!deep) return;
+      found = deep;
+    }
+    /* the input must be laid out before focusing is meaningful */
+    var rr;
+    try { rr = found.input.getBoundingClientRect(); } catch(e) { rr = null; }
+    if (!rr || (!rr.width && !rr.height)) return;   /* still animating: try next tick */
+    _acModalSeen = modal;
+    acBind(found.input, found.host);
+    found.input._cbtAcFocused = false;             /* allow one focus per opening */
+    acAutoFocus(found.input);
+  }
+
+  /* The assign modal is created on demand and its shadow roots appear with
+     it, so poll for the field rather than assuming it exists at load. */
+  function acScanForFields() {
+    try { acWatchAssignModal(); } catch(e) {}
+    var found = acFindKatInput();
+    if (found) { acBind(found.input, found.host); return; }
+    /* light-DOM assignment fields (COMO's Manager Action dialog) */
+    try {
+      var plain = document.querySelectorAll('input');
+      for (var i = 0; i < plain.length; i++) {
+        if (!plain[i]._cbtAcBound && acIsAssociateField(plain[i])) acBind(plain[i], null);
+      }
+    } catch(e) {}
+    /* Last resort is scoped to the visible modal only. Never querySelectorAll('*')
+       across the full COMO document. */
+    var fallbackModal = acAssignModalEl() || acGenericModalEl();
+    if (fallbackModal) {
+      var deep = acDeepFindInput(fallbackModal.shadowRoot || fallbackModal, 0);
+      if (deep) acBind(deep.input, deep.host);
+    }
+  }
+
+  /* Keep the portal glued to the field: the modal body scrolls, and scroll
+     events inside a shadow root do not reach document listeners. Also
+     closes the dropdown the moment the field goes away with the modal. */
+  function acTick() {
+    if (!_acDrop) return;
+    if (!_acInput || !_acInput.isConnected) { acClose(); return; }
+    var r = _acInput.getBoundingClientRect();
+    if (!r.width && !r.height) { acClose(); return; }   /* modal closed / field hidden */
+    var sig = Math.round(r.left) + ':' + Math.round(r.top) + ':' + Math.round(r.width);
+    if (sig !== _acRect) { _acRect = sig; acPlace(); }
+  }
+
+  window.addEventListener('resize', function(){ try { applyUiScale(); } catch(e) {} });
+  window.addEventListener('resize', function(){ if (_acDrop) acPlace(); });
+  window.addEventListener('scroll', function(){ if (_acDrop) acPlace(); }, true);
+  var _acObserver = null;
+
+  function acWatchRelevant() {
+    if (isOutboundSite() || isTaskDetailPage()) return true;
+    return !!document.querySelector('kat-modal, [role="dialog"], .modal');
+  }
+
+  function startAutocompleteWatch() {
+    if (_acObserver || _acWatch) return;
+
+    try {
+      var acMutationRun = coalesced(function(){
+        if (!acWatchRelevant() && !_acDrop) return;
+        acScanForFields();
+      }, 140);
+
+      _acObserver = new MutationObserver(function(mutations){
+        /* Normal dashboard mutations cannot create an associate input unless an
+           assignment modal is open. Avoid even walking the mutation list then. */
+        if (!acWatchRelevant() && !_acDrop) return;
+        for (var i = 0; i < mutations.length; i++) {
+          if (!cbtMutationIsOnlyOwnUi(mutations[i])) {
+            acMutationRun();
+            return;
+          }
+        }
+      });
+      _acObserver.observe(document.documentElement, {
+        childList: true, subtree: true,
+        attributes: true, attributeFilter: ['visible', 'aria-hidden', 'open', 'class', 'style']
+      });
+    } catch(e) {}
+
+    _acWatch = setInterval(function(){
+      try {
+        if (_acDrop) acTick();
+        if (!document.hidden && acWatchRelevant()) acScanForFields();
+      } catch(e2) {}
+    }, 1200);
+
+    try { if (acWatchRelevant()) acScanForFields(); } catch(e3) {}
+  }
+
+  var _cbtStartupDone = false;
+
+  function cbtResetTodayWeeklyV2() {
+    var RESET_KEY = 'cbt_today_weekly_reset_v23948';
+    try {
+      if (gmGet(RESET_KEY, null) || localStorage.getItem(RESET_KEY)) return;
+    } catch(e0) {}
+
+    var today = todayStr();
+    var week = currentWeekStartStr();
+    var empty = '{}';
+
+    /* Reset TODAY on this computer. */
+    try { gmSet(STORAGE_KEY, empty); } catch(e1) {}
+    try { gmSet(DATE_KEY, today); } catch(e2) {}
+    try { localStorage.setItem(STORAGE_KEY, empty); } catch(e3) {}
+    try { localStorage.setItem(DATE_KEY, today); } catch(e4) {}
+
+    /* Reset TODAY remote-display cache. */
+    try { gmSet(REMOTE_HISTORY_KEY, empty); } catch(e5) {}
+    try { gmSet(REMOTE_HISTORY_DATE_KEY, today); } catch(e6) {}
+    try { localStorage.setItem(REMOTE_HISTORY_KEY, empty); } catch(e7) {}
+    try { localStorage.setItem(REMOTE_HISTORY_DATE_KEY, today); } catch(e8) {}
+
+    /* Reset WEEKLY on this computer, including the legacy fallback key so it
+       cannot be re-imported by loadWeekly(). */
+    try { gmSet(OWN_WEEKLY_KEY, empty); } catch(e9) {}
+    try { gmSet(WEEKLY_KEY, empty); } catch(e10) {}
+    try { gmSet(WEEKLY_PERIOD_KEY, week); } catch(e11) {}
+    try { localStorage.setItem(OWN_WEEKLY_KEY, empty); } catch(e12) {}
+    try { localStorage.setItem(WEEKLY_KEY, empty); } catch(e13) {}
+    try { localStorage.setItem(WEEKLY_PERIOD_KEY, week); } catch(e14) {}
+
+    /* Reset WEEKLY remote-display cache. */
+    try { gmSet(REMOTE_WEEKLY_KEY, empty); } catch(e15) {}
+    try { gmSet(REMOTE_WEEKLY_PERIOD_KEY, week); } catch(e16) {}
+    try { localStorage.setItem(REMOTE_WEEKLY_KEY, empty); } catch(e17) {}
+    try { localStorage.setItem(REMOTE_WEEKLY_PERIOD_KEY, week); } catch(e18) {}
+
+    _dispHistCache = null;
+    _dispWeekCache = null;
+
+    gmSet(RESET_KEY, '1');
+    try { localStorage.setItem(RESET_KEY, '1'); } catch(e19) {}
+  }
+
+  function cbtTrustedRateMigration() {
+    var KEY = 'cbt_trusted_rate_migration_v23940';
+    try {
+      if (gmGet(KEY, null) || localStorage.getItem(KEY)) return;
+    } catch(e0) {}
+
+    /* Re-save local Today through the new sanitizer. */
+    try {
+      var h = null;
+      var gh = gmGet(STORAGE_KEY, null);
+      if (gh) h = typeof gh === 'string' ? JSON.parse(gh) : gh;
+      if (!h) h = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
+      if (h && typeof h === 'object') {
+        var cleanH = sanitizeHistory(h);
+        var hJson = JSON.stringify(cleanH);
+        gmSet(STORAGE_KEY, hJson);
+        localStorage.setItem(STORAGE_KEY, hJson);
+      }
+    } catch(e1) {}
+
+    /* Re-save local Weekly through the new sanitizer. */
+    try {
+      var wk = null;
+      var gw = gmGet(OWN_WEEKLY_KEY, null);
+      if (gw) wk = typeof gw === 'string' ? JSON.parse(gw) : gw;
+      if (!wk) wk = JSON.parse(localStorage.getItem(OWN_WEEKLY_KEY) || '{}');
+      if (wk && typeof wk === 'object') {
+        var cleanW = sanitizeWeekly(wk);
+        var wJson = JSON.stringify(cleanW);
+        gmSet(OWN_WEEKLY_KEY, wJson);
+        localStorage.setItem(OWN_WEEKLY_KEY, wJson);
+      }
+    } catch(e2) {}
+
+    /* Legacy Fastest cleanup is retained only for backward compatibility.
+       v23.9.87 reads the clean v2 Fastest namespace instead. */
+    try {
+      var peaks = hofLoadPeaks(), cleanP = {};
+      for (var pk in peaks) {
+        if (Number(peaks[pk] && peaks[pk].rate) > 0 &&
+            Number(peaks[pk].rate) <= CBT_MAX_VALID_RATE) cleanP[pk] = peaks[pk];
+      }
+      hofSavePeaks(cleanP);
+
+      var latest = hofLoadLatest(), cleanL = {};
+      for (var lk in latest) {
+        if (Number(latest[lk] && latest[lk].rate) > 0 &&
+            Number(latest[lk].rate) <= CBT_MAX_VALID_RATE) cleanL[lk] = latest[lk];
+      }
+      hofSaveLatest(cleanL);
+    } catch(e3) {}
+
+    _dispHistCache = null;
+    _dispWeekCache = null;
+
+    gmSet(KEY, '1');
+    try { localStorage.setItem(KEY, '1'); } catch(e4) {}
+  }
+
+  function runLegacyDataMigration() {
+    /* v23.9.87 intentionally starts Today + Weekly clean. Do not import any
+       pre-reset local history into the new shared generation. */
+    if (gmGet('cbt_today_weekly_reset_v23948', null)) return;
+
+    /* One-time migration kept exactly for compatibility with older installs. */
+    var CLEAN_KEY = 'cbt_cleaned_v21_9';
+    if (gmGet(CLEAN_KEY, null)) return;
+
+    try {
+      var oldWeekly = null;
+      try {
+        var gv = gmGet(WEEKLY_KEY, null);
+        if (gv) oldWeekly = (typeof gv === 'string') ? JSON.parse(gv) : gv;
+      } catch(e) {}
+      if (!oldWeekly) {
+        try { oldWeekly = JSON.parse(localStorage.getItem(WEEKLY_KEY) || '{}'); } catch(e2) {}
+      }
+      if (oldWeekly && Object.keys(oldWeekly).length > 0) {
+        var cleanedOld = sanitizeWeekly(oldWeekly);
+        if (Object.keys(cleanedOld).length > 0) {
+          var json = JSON.stringify(cleanedOld);
+          gmSet(OWN_WEEKLY_KEY, json);
+          gmSet(WEEKLY_PERIOD_KEY, currentWeekStartStr());
+          try {
+            localStorage.setItem(OWN_WEEKLY_KEY, json);
+            localStorage.setItem(WEEKLY_PERIOD_KEY, currentWeekStartStr());
+          } catch(e3) {}
+        }
+      }
+    } catch(e4) {}
+
+    try {
+      var oldHistory = null;
+      try {
+        var ghv = gmGet(STORAGE_KEY, null);
+        if (ghv) oldHistory = (typeof ghv === 'string') ? JSON.parse(ghv) : ghv;
+      } catch(e5) {}
+      if (!oldHistory) {
+        try { oldHistory = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}'); } catch(e6) {}
+      }
+      if (oldHistory && Object.keys(oldHistory).length > 0) {
+        var cleanedHist = sanitizeHistory(oldHistory);
+        if (Object.keys(cleanedHist).length > 0) {
+          var hjson = JSON.stringify(cleanedHist);
+          gmSet(STORAGE_KEY, hjson);
+          try { localStorage.setItem(STORAGE_KEY, hjson); } catch(e7) {}
+        }
+      }
+    } catch(e8) {}
+
+    saveRemoteHistory({}, todayStr());
+    saveRemoteWeekly({});
+    gmSet(CLEAN_KEY, '1');
+  }
+
+  function installRouteHealth() {
+    /* React immediately to real SPA route changes. Polling below is only a
+       slower safety net for unusual route transitions the History patch misses. */
+    function onRoute() {
+      if (!isDashboardView()) detachMainPanel();
+      _fastMountUntil = Date.now() + 15000;
+      try { ensureSortAttachment(); } catch(e0) {}
+      panelHealthCheck();
+      taskPanelHealthCheck();
+
+      /* Angular can publish the route before the replacement Tasks container
+         exists. One next-frame retry catches that handoff immediately; if the
+         container is still absent, ensureSortAttachment's temporary body
+         watcher takes over until it appears. */
+      if (isDashboardView()) {
+        var raf = (typeof requestAnimationFrame === 'function')
+          ? requestAnimationFrame
+          : function(cb){ return setTimeout(cb, 16); };
+        raf(function(){
+          try { ensureSortAttachment(); } catch(e1) {}
+          try {
+            var c = getContainer();
+            if (c && timerWatcher && timerWatcher.__cbtStarted) {
+              ensureTimerWatcherAttachment(c);
+              restoreTimersForContainer(c);
+            }
+          } catch(e2) {}
+        });
+      }
+    }
+
+    var _push = history.pushState, _repl = history.replaceState;
+    history.pushState = function () {
+      var r = _push.apply(this, arguments);
+      onRoute();
+      return r;
+    };
+    history.replaceState = function () {
+      var r = _repl.apply(this, arguments);
+      onRoute();
+      return r;
+    };
+
+    window.addEventListener('popstate', onRoute);
+    window.addEventListener('hashchange', onRoute);
+
+    var lastPath = location.pathname + location.hash;
+    setInterval(function () {
+      var now = location.pathname + location.hash;
+      if (now !== lastPath) {
+        lastPath = now;
+        onRoute();
+      }
+    }, 2000);
+
+    setInterval(function () {
+      if (document.hidden) return;
+      if (boardIsMisplaced()) detachMainPanel();
+    }, 5000);
+  }
+
+  function startCoreFeatures() {
+    /* Style + visible UI mount happen together AFTER COMO has had a chance to
+       paint its own page, so there is no unstyled flash and less competition
+       with Angular's initial render. */
+    try {
+      if (!style.isConnected) document.head.appendChild(style);
+    } catch(e) {}
+
+    try {
+      _uiScale = loadUiScale();
+      _uiScaleLoaded = true;
+    } catch(e2) {
+      _uiScale = UI_SCALE_DEFAULT;
+    }
+
+    setInterval(panelHealthCheck, PANEL_HEALTH_MS);
+    setInterval(taskPanelHealthCheck, PANEL_HEALTH_MS);
+
+    _fastMountUntil = Date.now() + 15000;
+    setInterval(function(){
+      if (Date.now() > _fastMountUntil || document.hidden) return;
+
+      /* Once the correct UI for the current page is mounted, the normal
+         observers/2s health check are enough. Avoid duplicate 500ms scans. */
+      if (isDashboardView()) {
+        var mp = document.getElementById('cbt-panel');
+        if (mp && mp.isConnected) return;
+      } else if (shouldShowSearchPanel()) {
+        var tp = document.getElementById('cbt-tp');
+        if (tp && tp.isConnected) return;
+      }
+
+      try { panelHealthCheck(); taskPanelHealthCheck(); } catch(e3) {}
+    }, 750);
+
+    function cbtWindowReadyRefresh() {
+      try { panelHealthCheck(); taskPanelHealthCheck(); } catch(e4) {}
+      /* v23.9.91: window.load is not a data-readiness signal for this Angular
+         page. It can fire while the Tasks cards are still being inserted. Kick
+         the short readiness watcher instead; it will fetch one final fresh
+         snapshot the instant the real Tasks list settles. */
+      try { cbtScheduleFirstStatsReveal(); } catch(e4b) {}
+    }
+    if (document.readyState === 'complete') cbtWindowReadyRefresh();
+    else window.addEventListener('load', cbtWindowReadyRefresh, { once: true });
+
+    try { ensureSortAttachment(); } catch(e6) {}
+    try { if (isDashboardView()) injectPanel(); } catch(e7) {}
+    try { injectTaskPanel(); } catch(e8) {}
+    installRouteHealth();
+
+    /* Whole-document watchers are useful for self-heal/autocomplete, but they
+       should not compete with Angular's first render. Start them after the
+       visible board and first data request have had priority. */
+    setTimeout(function(){
+      cbtIdle(function(){
+        try {
+          if (!panelWatcher.__cbtStarted) {
+            panelWatcher.observe(document.documentElement, { childList: true, subtree: true });
+            panelWatcher.__cbtStarted = true;
+          }
+        } catch(e5) {}
+        try { startAutocompleteWatch(); } catch(e9) {}
+      }, 900);
+    }, 650);
+
+    /* Store-midnight Today reset is one scheduled timer, not a polling loop. */
+    try { cbtStartTodayBoundaryClock(); } catch(e10) {}
+
+    if (isComoSite()) {
+      /* The accurate Live/stats requests were primed from start() before the
+         board mounted. Do not duplicate those requests here. Only schedule the
+         steady-state refresh loops. */
+      setInterval(pollActiveTasks, POLL_MS);
+      setInterval(tickLive, TICK_MS);
+      setInterval(fetchAndUpdate, STATS_POLL_MS);
+
+      /* Time Left's first full DOM scan and document-wide mutation observer are
+         intentionally delayed. They are useful, but doing them during Angular's
+         initial render was a major source of the small reload hitch. */
+      setTimeout(function(){
+        cbtIdle(function(){
+          try {
+            /* Watch only the actual Tasks card container, not documentElement. */
+            var timerRoot = ensureTimerWatcherAttachment();
+            injectAllTimers();
+            try { _timerSafetyCardCount = timerRoot ? timerRoot.querySelectorAll('job-card').length : -1; } catch(eCount0) {}
+
+            setInterval(function(){ try { tickTimers(); } catch(e10) {} }, 1000);
+            /* Slow safety net: a full reinjection is needed only if Angular
+               replaced/changed the card set without our local observer seeing it. */
+            setInterval(function(){
+              if (document.hidden || !isDashboardView()) return;
+              try {
+                var root = ensureTimerWatcherAttachment();
+                if (!root) return;
+                var count = root.querySelectorAll('job-card').length;
+                if (count !== _timerSafetyCardCount) {
+                  _timerSafetyCardCount = count;
+                  injectAllTimers();
+                }
+              } catch(e11) {}
+            }, 15000);
+          } catch(e12) {}
+        }, 900);
+      }, 550);
+    }
+  }
+
+  function startBackgroundFeatures() {
+    /* These are important, but none of them needs to compete with the website's
+       first paint. They are started after the visible board is already usable. */
+    try { cbtResetTodayWeeklyV2(); } catch(eReset) {}
+    try { cbtTrustedRateMigration(); } catch(e0) {}
+    try { runLegacyDataMigration(); } catch(e) {}
+
+    /* Stagger shared-data pulls so their JSON parsing/merges do not all land in
+       the same reload frame. Names are lowest priority because the built-in
+       roster is already available immediately. */
+    try { syncPull(function(){ syncPush(); }); } catch(e2) {}
+    setTimeout(function(){ try { syncHistoryPull(function(){ syncHistoryPush(); }); } catch(e5) {} }, 120);
+    setTimeout(function(){ try { syncWeeklyPull(function(){ syncWeeklyPush(); }); } catch(e6) {} }, 260);
+    setTimeout(function(){ try { hofPull(); } catch(e7) {} }, 420);
+
+    setTimeout(function(){
+      cbtIdle(function(){ try { syncNamesFromAllTabs(); } catch(e3) {} }, 900);
+    }, 700);
+    setTimeout(function(){
+      try { scanLocalStorageForNames(); } catch(e4) {}
+    }, 1600);
+
+    setInterval(function(){
+      if (document.hidden) return;
+      cbtIdle(function(){
+        if (document.hidden) return;
+        if (syncNamesFromAllTabs() && activeTab === 'names') renderNames();
+      }, 700);
+    }, 5000);
+
+    setInterval(function(){ if (!document.hidden) syncPull(); }, 30000);
+    setInterval(function(){ if (!document.hidden) syncHistoryPull(); }, 10000);
+    setInterval(function(){ if (!document.hidden) syncWeeklyPull(); }, 10000);
+    setInterval(function(){ if (!document.hidden) { try { hofPull(); } catch(e8) {} } }, 15000);
+
+    /* When returning to the tab, refresh shared Today/Weekly immediately.
+       Network work is asynchronous and the pull functions only touch the DOM
+       when data actually changed. */
+    document.addEventListener('visibilitychange', function(){
+      if (document.hidden) return;
+      try { panelHealthCheck(); taskPanelHealthCheck(); } catch(e9p) {}
+      try { syncHistoryPull(); } catch(e9a) {}
+      try { syncWeeklyPull(); } catch(e9b) {}
+      try { syncPull(); } catch(e9c) {}
+    });
+
+    /* v23.9.90: removed the legacy Drive batch-rate startup request. The
+       downloaded value was no longer read by the recommendation algorithm, so
+       it only added network/JSON work and triggered an unnecessary extra stats
+       refresh during reload. */
+  }
+
+  var _cbtReloadPrimeStarted = false;
+  function cbtPrimeReloadData() {
+    if (_cbtReloadPrimeStarted || !isComoSite()) return;
+    _cbtReloadPrimeStarted = true;
+    _statsStartupAt = Date.now();
+    /* Completion/history code may consult the device id while Live data is
+       being ingested, so initialize it before the document-start prefetch. */
+    if (!MY_DEVICE_ID) { try { MY_DEVICE_ID = getDeviceId(); } catch(eId) {} }
+
+    /* v23.9.91: these two read-only requests are safe at document-start. Start
+       them before DOMContentLoaded so network latency overlaps Amazon's own
+       page boot instead of being added after it. They only fill memory until
+       the accurate first-paint gate opens. */
+    try { pollActiveTasks(); } catch(ePrimeLive) {}
+    try { fetchAndUpdate(false); } catch(ePrimeStats) {}
+  }
+
+  function start() {
+    if (_cbtStartupDone) return;
+    _cbtStartupDone = true;
+    MY_DEVICE_ID = getDeviceId();
+    cbtPrimeReloadData();
+
+    /* Core UI comes in just after the first two browser paints. */
+    cbtAfterFirstPaint(startCoreFeatures, 90);
+
+    /* Remote sync/storage scans are deliberately later and idle-scheduled. */
+    cbtAfterFirstPaint(function(){
+      cbtIdle(startBackgroundFeatures, 900);
+    }, 650);
+  }
+
+  /* Prime authoritative data immediately at document-start, but keep DOM UI
+     work behind DOMContentLoaded/first paint. */
+  cbtPrimeReloadData();
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', start);
+  } else {
+    start();
+  }
+
 })();
