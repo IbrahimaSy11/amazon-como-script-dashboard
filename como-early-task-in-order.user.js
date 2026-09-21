@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.213
+// @version      23.9.214
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -114,12 +114,12 @@ style.textContent = `
       background: var(--cb-blue); border-radius: 2px;
     }
     #cbt-controls { display: flex; gap: 10px; align-items: center; }
-    #cbt-controls span {
+    #cbt-controls > button {
       cursor: pointer; color: var(--cb-text2); font-size: 13px; font-weight: 700;
       padding: 3px 7px; border-radius: 5px; transition: all 0.15s;
       border: 1px solid var(--cb-border);
     }
-    #cbt-controls span:hover { background: var(--cb-blue); color: #fff; border-color: var(--cb-blue); }
+    #cbt-controls > button:hover { background: var(--cb-blue); color: #fff; border-color: var(--cb-blue); }
 
     /* ── Stats bar ── */
     #cbt-stats-bar {
@@ -566,8 +566,8 @@ style.textContent = `
     /* header contents stay dark-on-white whichever theme is active */
     #cbt-panel.dark #cbt-title { color: var(--cb-navy) !important; }
     #cbt-panel.dark #cbt-title::before { background: var(--cb-blue) !important; }
-    #cbt-panel.dark #cbt-controls span { color: var(--cb-text2) !important; border-color: #dbe2ea !important; }
-    #cbt-panel.dark #cbt-controls span:hover {
+    #cbt-panel.dark #cbt-controls > button { color: var(--cb-text2) !important; border-color: #dbe2ea !important; }
+    #cbt-panel.dark #cbt-controls > button:hover {
       background: var(--cb-blue) !important; color: #fff !important; border-color: var(--cb-blue) !important;
     }
 
@@ -756,8 +756,8 @@ style.textContent = `
     }
     #cbt-panel.dark #cbt-title { color: #e6edf3 !important; }
     #cbt-panel.dark #cbt-title::before { background: #58a6ff !important; }
-    #cbt-panel.dark #cbt-controls span { color: #6e7b8d !important; border-color: rgba(110,123,141,0.2) !important; }
-    #cbt-panel.dark #cbt-controls span:hover { background: #58a6ff !important; color: #fff !important; border-color: #58a6ff !important; }
+    #cbt-panel.dark #cbt-controls > button { color: #6e7b8d !important; border-color: rgba(110,123,141,0.2) !important; }
+    #cbt-panel.dark #cbt-controls > button:hover { background: #58a6ff !important; color: #fff !important; border-color: #58a6ff !important; }
     #cbt-panel.dark #cbt-stats-bar { background: #161b22 !important; border-bottom-color: #21262d !important; }
     #cbt-panel.dark .cbt-stat-card { border-right-color: #21262d !important; }
     #cbt-panel.dark .cbt-stat-label { color: #c8d8ea !important; }
@@ -1649,7 +1649,7 @@ style.textContent = `
       display: flex !important;
       align-items: center !important;
     }
-    #cbt-controls > span {
+    #cbt-controls > button {
       height: 26px !important;
       min-height: 26px !important;
       max-height: 26px !important;
@@ -1674,6 +1674,44 @@ style.textContent = `
       border: 0 !important; border-radius: 0 !important;
       background: transparent !important; box-shadow: none !important;
       line-height: 1 !important;
+    }
+
+    /* v23.9.214: one geometry, native buttons, solid action fills. */
+    #cbt-panel #cbt-controls > button {
+      appearance: none !important;
+      height: 28px !important; min-height: 28px !important; max-height: 28px !important;
+      min-width: 32px; margin: 0 !important; padding: 0 9px !important;
+      border: 1px solid var(--cb-border); border-radius: 5px !important;
+      background: transparent; font-family: var(--cb-sans) !important;
+      font-size: 13px !important; font-weight: 700 !important;
+      line-height: 1 !important; transform: none !important;
+      cursor: pointer; user-select: none;
+    }
+    #cbt-panel #cbt-controls > button:focus-visible {
+      outline: 2px solid #58a6ff; outline-offset: 3px;
+    }
+    #cbt-panel #cbt-controls > #cbt-afa-btn,
+    #cbt-panel #cbt-controls > #cbt-collapse-btn {
+      background: #2979ff !important; border-color: #2979ff !important;
+      color: #fff !important; -webkit-text-fill-color: #fff !important;
+      box-shadow: none !important;
+    }
+    #cbt-panel #cbt-controls > #cbt-afa-btn:hover,
+    #cbt-panel #cbt-controls > #cbt-collapse-btn:hover {
+      background: #1a56cc !important; border-color: #1a56cc !important;
+    }
+    #cbt-panel #cbt-controls > #cbt-afa-btn.busy {
+      background: #a35c00 !important; border-color: #a35c00 !important;
+    }
+    #cbt-panel #cbt-controls > #cbt-afa-btn.ok {
+      background: #16713a !important; border-color: #16713a !important;
+    }
+    #cbt-panel #cbt-controls > #cbt-afa-btn.off {
+      background: #6f7d8c !important; border-color: #6f7d8c !important;
+    }
+    #cbt-panel #cbt-controls > #cbt-afa-btn > .cbt-afa-lbl {
+      color: inherit !important; border: 0 !important; padding: 0 !important;
+      background: transparent !important; pointer-events: none;
     }
 
   `
@@ -5845,14 +5883,14 @@ panel2.innerHTML =
 '<div id="cbt-header">' +
 '<span id="cbt-title">Batcher Timers</span>' +
 '<div id="cbt-controls">' +
-'<span id="cbt-font-dec" title="Smaller (A−)">A−</span>' +
-'<span id="cbt-scale-reset" title="Reset size to 100%">100%</span>' +
-'<span id="cbt-font-inc" title="Larger (A+)">A+</span>' +
-'<span id="cbt-theme-btn" title="Toggle Dark/Light">🌙</span>' +
-'<span id="cbt-afa-btn" title="Open cart actions">' +
+'<button type="button" id="cbt-font-dec" title="Smaller (A−)">A−</button>' +
+'<button type="button" id="cbt-scale-reset" title="Reset size to 100%">100%</button>' +
+'<button type="button" id="cbt-font-inc" title="Larger (A+)">A+</button>' +
+'<button type="button" id="cbt-theme-btn" title="Toggle Dark/Light">🌙</button>' +
+'<button type="button" id="cbt-afa-btn" title="Open cart actions">' +
 '<span class="cbt-afa-lbl">▶ Run</span>' +
-'</span>' +
-'<span id="cbt-collapse-btn" title="Collapse/Expand">🔼</span>' +
+'</button>' +
+'<button type="button" id="cbt-collapse-btn" title="Collapse/Expand">▲</button>' +
 '</div>' +
 '</div>' +
 '<div id="cbt-stats-bar">' +
@@ -6054,13 +6092,13 @@ if (body0) { body0.style.display = 'none'; body0.style.minHeight = '0'; }
 if (tabs0) tabs0.style.display = 'none';
 if (search0) search0.style.display = 'none';
 if (drag0) drag0.style.display = 'none';
-if (collapse0) collapse0.textContent = '🔽';
+if (collapse0) { collapse0.textContent = '▼'; collapse0.setAttribute('aria-expanded', 'false'); collapse0.setAttribute('aria-label', 'Expand dashboard'); }
 } else {
 if (body0) { body0.style.display = ''; if (!body0.style.minHeight || body0.style.minHeight === '0px') body0.style.minHeight = (parseFloat(savedH) || 350) + 'px'; }
 if (tabs0) tabs0.style.display = '';
 if (search0) search0.style.display = '';
 if (drag0) drag0.style.display = '';
-if (collapse0) collapse0.textContent = '🔼';
+if (collapse0) { collapse0.textContent = '▲'; collapse0.setAttribute('aria-expanded', 'true'); collapse0.setAttribute('aria-label', 'Collapse dashboard'); }
 }
 } catch(ex) {}
 mount.el.parentNode.insertBefore(_panel2Ref, mount.el);
@@ -6238,6 +6276,11 @@ try { renderActiveSearchTab(); } catch(e) {}
 _dashboardSearchRenderRAF = true;
 runDashboardSearchRender();
 }
+function cbtReadBodyHeight() {
+var height = 350;
+try { height = parseFloat(localStorage.getItem('cbt_body_h') || '350'); } catch(eHeightRead) {}
+return isFinite(height) && height >= 350 ? height : 350;
+}
 function attachPanelEvents(panel2) {
 if (!panel2) return;
 if (panel2.getAttribute('data-cbt-events-bound') === '1') {
@@ -6297,7 +6340,7 @@ try { afaConfirm(); } catch(err) {}
 try {
 var restoreHeightKey = 'cbt_body_h_restore_v23944';
 if (!localStorage.getItem(restoreHeightKey)) {
-var savedBodyH = parseFloat(localStorage.getItem('cbt_body_h') || '350');
+var savedBodyH = cbtReadBodyHeight();
 if (!isFinite(savedBodyH) || savedBodyH <= 350) {
 localStorage.setItem('cbt_body_h', '350');
 }
@@ -6312,14 +6355,14 @@ var body = panel2.querySelector('#cbt-body');
 var tabs = panel2.querySelector('#cbt-tabs');
 var searchBar = panel2.querySelector('#cbt-unified-search');
 var drag = panel2.querySelector('#cbt-drag-bottom');
-var savedH = parseFloat(localStorage.getItem('cbt_body_h') || '350');
+var savedH = cbtReadBodyHeight();
 if (!isFinite(savedH) || savedH < 350) savedH = 350;
 if (isCollapsed) {
 if (body) { body.style.display = 'none'; body.style.minHeight = '0'; }
 if (tabs) tabs.style.display = 'none';
 if (searchBar) searchBar.style.display = 'none';
 if (drag) drag.style.display = 'none';
-if (collapseBtn) collapseBtn.textContent = '🔽';
+if (collapseBtn) { collapseBtn.textContent = '▼'; collapseBtn.setAttribute('aria-expanded', 'false'); collapseBtn.setAttribute('aria-label', 'Expand dashboard'); }
 } else {
 if (body) {
 body.style.display = '';
@@ -6330,12 +6373,12 @@ body.style.minHeight = savedH + 'px';
 if (tabs) tabs.style.display = '';
 if (searchBar) searchBar.style.display = '';
 if (drag) drag.style.display = '';
-if (collapseBtn) collapseBtn.textContent = '🔼';
+if (collapseBtn) { collapseBtn.textContent = '▲'; collapseBtn.setAttribute('aria-expanded', 'true'); collapseBtn.setAttribute('aria-label', 'Collapse dashboard'); }
 }
 }
 applyMainCollapseState();
 collapseBtn.addEventListener('click', function() {
-var savedH = parseFloat(localStorage.getItem('cbt_body_h') || '350');
+var savedH = cbtReadBodyHeight();
 if (isCollapsed) {
 isCollapsed = false;
 try { localStorage.setItem('cbt_panel_collapsed', '0'); } catch(ex) {}
@@ -6349,7 +6392,8 @@ try { localStorage.setItem('cbt_panel_collapsed', '1'); } catch(ex) {}
 applyMainCollapseState();
 }
 });
-var isDark = localStorage.getItem('cbt_dark') !== 'false';
+var isDark = true;
+try { isDark = localStorage.getItem('cbt_dark') !== 'false'; } catch(eThemeLoad) {}
 var themeBtn = panel2.querySelector('#cbt-theme-btn');
 function applyTheme() {
 if (isDark) { panel2.classList.add('dark'); themeBtn.textContent = '☀️'; }
