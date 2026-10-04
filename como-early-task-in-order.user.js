@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.85
+// @version      23.9.87
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -10,6 +10,7 @@
 // @grant        GM_xmlhttpRequest
 // @grant        GM_setValue
 // @grant        GM_getValue
+// @grant        unsafeWindow
 // @connect      drive.corp.amazon.com
 // @connect      como-sync-default-rtdb.firebaseio.com
 // ==/UserScript==
@@ -1890,6 +1891,107 @@
     }
 
   `
+
+  /* Package display only: use UI Grid's own column auto-size handler.
+     No package values, filters, links, selection or API requests are changed. */
+  var _cbtPackageFitPending = null;
+  var _cbtPackageFitState = new WeakMap();
+  var _cbtPackageMeasureCanvas = null;
+
+  function cbtPackagePage() {
+    return isComoSite() && /\/packages?(?:\/|$)/i.test(location.pathname) && !cbtAuthPage();
+  }
+
+  function cbtPackageColumnToken(header) {
+    var classes = (header.className || '').split(/\s+/);
+    for (var i = 0; i < classes.length; i++) {
+      if (/^ui-grid-coluiGrid-[A-Za-z0-9_-]+$/.test(classes[i])) return classes[i];
+    }
+    return null;
+  }
+
+  function cbtPackageTextWidth(text, font) {
+    try {
+      if (!_cbtPackageMeasureCanvas) _cbtPackageMeasureCanvas = document.createElement('canvas');
+      var ctx = _cbtPackageMeasureCanvas.getContext('2d');
+      if (ctx) { ctx.font = font; return ctx.measureText(text).width; }
+    } catch(e) {}
+    // Conservative fallback when canvas is unavailable; IDs use ordinary ASCII.
+    return text.length * Math.max(8, (parseFloat(font) || 12) * 0.8);
+  }
+
+  function cbtPackageNativeWidth(gridEl, header, width) {
+    try {
+      var pageWindow = typeof unsafeWindow !== 'undefined' ? unsafeWindow : window;
+      var angularApi = pageWindow.angular;
+      if (!angularApi || !angularApi.element) throw new Error('Grid controller unavailable');
+      var element = angularApi.element(gridEl);
+      var ctrl = element.controller && element.controller('uiGrid');
+      var grid = ctrl && ctrl.grid;
+      if (!grid || !Array.isArray(grid.columns)) throw new Error('Grid model unavailable');
+      var token = cbtPackageColumnToken(header);
+      var column = grid.columns.find(function(col) { return token === 'ui-grid-col' + col.uid || /^scannableid$/i.test(String(col.name || '').replace(/\s+/g, '')); });
+      if (!column || Number(column.width) >= width) return;
+      var update = function() {
+        // Only the Scannable ID column is adjusted. Never reduce a manual width.
+        column.width = Math.max(width, Number(column.width) || 0, Number(column.drawnWidth) || 0);
+        column.hasCustomWidth = true;
+        if (column.colDef) column.colDef.width = column.width;
+        if (typeof grid.refresh === 'function') {
+          var refreshed = grid.refresh();
+          if (refreshed && refreshed.catch) refreshed.catch(function(){});
+        } else if (typeof grid.queueGridRefresh === 'function') grid.queueGridRefresh();
+      };
+      var scope = element.scope && element.scope();
+      if (scope && scope.$evalAsync) scope.$evalAsync(update);
+      else update();
+    } catch(e) {
+      var handle = header.querySelector('.ui-grid-column-resizer.right, [ui-grid-column-resizer]');
+      if (handle) handle.dispatchEvent(new MouseEvent('dblclick', { bubbles: true, cancelable: true, view: window }));
+    }
+  }
+
+  function cbtFitPackageIds() {
+    if (!cbtPackagePage() || document.hidden) return;
+    var headers = document.querySelectorAll('.ui-grid-header-cell');
+    for (var i = 0; i < headers.length; i++) {
+      var header = headers[i];
+      var label = header.querySelector('.ui-grid-header-cell-label');
+      var text = (label ? label.textContent : header.textContent || '').replace(/\s+/g, ' ').trim();
+      if (!/^scannable\s*id$/i.test(text)) continue;
+      var gridEl = header.closest('.ui-grid, [ui-grid]');
+      var token = cbtPackageColumnToken(header);
+      if (!gridEl || !token) continue;
+      var nodes = gridEl.querySelectorAll('.ui-grid-cell.' + token + ' .ui-grid-cell-contents');
+      var needed = 420, signature = 'minimum420';
+      for (var j = 0; j < nodes.length; j++) {
+        var value = (nodes[j].textContent || '').trim();
+        if (!value) continue;
+        var computed = getComputedStyle(nodes[j]);
+        var font = computed.font || ((computed.fontSize || '12px') + ' ' + (computed.fontFamily || 'Arial'));
+        var spacing = parseFloat(computed.letterSpacing) || 0;
+        // Padding and a spare character keep the final digit safely visible.
+        var pixels = Math.ceil(cbtPackageTextWidth(value, font) + Math.max(0, value.length - 1) * spacing +
+          (parseFloat(computed.paddingLeft) || 5) + (parseFloat(computed.paddingRight) || 5) + 16);
+        if (pixels > needed) { needed = pixels; signature = value + '|' + font + '|' + spacing; }
+      }
+      // CSS pixels match UI Grid widths even when browser zoom changes screen geometry.
+      var current = parseFloat(getComputedStyle(header).width) || header.getBoundingClientRect().width || 0;
+      if (current >= needed - 16) continue;
+      var previous = _cbtPackageFitState.get(header);
+      if (previous && previous.signature === signature && Date.now() - previous.at < 2000) continue;
+      _cbtPackageFitState.set(header, { signature: signature, at: Date.now() });
+      cbtPackageNativeWidth(gridEl, header, needed);
+    }
+  }
+
+  function cbtSchedulePackageFit() {
+    if (!cbtPackagePage() || _cbtPackageFitPending !== null) return;
+    _cbtPackageFitPending = setTimeout(function() {
+      _cbtPackageFitPending = null;
+      try { cbtFitPackageIds(); } catch(e) {}
+    }, 100);
+  }
 
   /* ══════════════════════════════════════════
      PART 1 — EARLIEST TASK SORTING
@@ -6168,6 +6270,7 @@
   /* Runs on an interval: if the panel is gone or was detached by an
      Angular re-render, rebuild and re-mount it automatically. */
   function panelHealthCheck() {
+    cbtSchedulePackageFit();
     /* Anywhere but the dashboard view, the board stays hidden. */
     if (!isDashboardView()) { detachMainPanel(); _mountFails = 0; return; }
 
@@ -7374,6 +7477,7 @@
     for (var i = 0; i < mutations.length; i++) {
       if (!cbtMutationIsOnlyOwnUi(mutations[i])) {
         _panelMutationRun();
+        cbtSchedulePackageFit();
         return;
       }
     }
@@ -10801,6 +10905,7 @@
       }
       if (!isDashboardView()) detachMainPanel();
       _fastMountUntil = Date.now() + 15000;
+      cbtSchedulePackageFit();
       try { ensureSortAttachment(); } catch(e0) {}
       panelHealthCheck();
       taskPanelHealthCheck();
@@ -10876,7 +10981,7 @@
     });
 
     try {
-      panelWatcher.observe(document.documentElement, { childList: true, subtree: true });
+      panelWatcher.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
     } catch(e5) {}
 
     try { ensureSortAttachment(); } catch(e6) {}
