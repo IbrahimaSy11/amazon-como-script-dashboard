@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.87
+// @version      23.9.93
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -46,7 +46,6 @@
   }
 
   var STORE_ID  = (window.location.href.split('store/')[1] || '').split('/')[0];
-  var DRIVE_URL = 'https://drive.corp.amazon.com/view/jsermar@/COMO_Dashboard_BatchRate_NA.json?download=true';
   var COMO_BASE = 'https://como-operations-dashboard-iad.iad.proxy.amazon.com';
 
   var style = document.createElement('style');
@@ -125,12 +124,12 @@
       background: var(--cb-blue); border-radius: 2px;
     }
     #cbt-controls { display: flex; gap: 10px; align-items: center; }
-    #cbt-controls span {
+    #cbt-controls > span {
       cursor: pointer; color: var(--cb-text2); font-size: 13px; font-weight: 700;
       padding: 3px 7px; border-radius: 5px; transition: all 0.15s;
       border: 1px solid var(--cb-border);
     }
-    #cbt-controls span:hover { background: var(--cb-blue); color: #fff; border-color: var(--cb-blue); }
+    #cbt-controls > span:hover { background: var(--cb-blue); color: #fff; border-color: var(--cb-blue); }
 
     /* ── Stats bar ── */
     #cbt-stats-bar {
@@ -577,8 +576,8 @@
     /* header contents stay dark-on-white whichever theme is active */
     #cbt-panel.dark #cbt-title { color: var(--cb-navy) !important; }
     #cbt-panel.dark #cbt-title::before { background: var(--cb-blue) !important; }
-    #cbt-panel.dark #cbt-controls span { color: var(--cb-text2) !important; border-color: #dbe2ea !important; }
-    #cbt-panel.dark #cbt-controls span:hover {
+    #cbt-panel.dark #cbt-controls > span { color: var(--cb-text2) !important; border-color: #dbe2ea !important; }
+    #cbt-panel.dark #cbt-controls > span:hover {
       background: var(--cb-blue) !important; color: #fff !important; border-color: var(--cb-blue) !important;
     }
 
@@ -798,8 +797,8 @@
     }
     #cbt-panel.dark #cbt-title { color: #e6edf3 !important; }
     #cbt-panel.dark #cbt-title::before { background: #58a6ff !important; }
-    #cbt-panel.dark #cbt-controls span { color: #6e7b8d !important; border-color: rgba(110,123,141,0.2) !important; }
-    #cbt-panel.dark #cbt-controls span:hover { background: #58a6ff !important; color: #fff !important; border-color: #58a6ff !important; }
+    #cbt-panel.dark #cbt-controls > span { color: #6e7b8d !important; border-color: rgba(110,123,141,0.2) !important; }
+    #cbt-panel.dark #cbt-controls > span:hover { background: #58a6ff !important; color: #fff !important; border-color: #58a6ff !important; }
     #cbt-panel.dark #cbt-stats-bar { background: #161b22 !important; border-bottom-color: #21262d !important; }
     #cbt-panel.dark .cbt-stat-card { border-right-color: #21262d !important; }
     #cbt-panel.dark .cbt-stat-label { color: #c8d8ea !important; }
@@ -1890,6 +1889,43 @@
       background: #f8fafc; border-top: 1px solid var(--cb-border); text-align: center;
     }
 
+    /* Navbar: shared outer-control metrics; Run's label is never a second button. */
+    #cbt-header { gap: 16px; flex-wrap: wrap; padding: 14px 18px; }
+    #cbt-controls { gap: 8px; flex-wrap: wrap; justify-content: flex-end; margin-left: auto; }
+    #cbt-panel #cbt-controls > span {
+      display: inline-flex !important; align-items: center; justify-content: center;
+      box-sizing: border-box; height: 32px !important; min-height: 32px;
+      min-width: 34px; padding: 0 10px !important; border-radius: 6px !important;
+      font-size: 13px !important; line-height: 1 !important; font-weight: 700;
+      white-space: nowrap; flex-shrink: 0;
+      transition: background-color .15s, border-color .15s, box-shadow .15s;
+    }
+    #cbt-panel #cbt-controls > #cbt-scale-reset { min-width: 54px; font-variant-numeric: tabular-nums; }
+    #cbt-panel #cbt-controls > #cbt-afa-btn { min-width: 78px; transform: none !important; }
+    #cbt-panel #cbt-controls #cbt-afa-btn > .cbt-afa-lbl,
+    #cbt-panel.dark #cbt-controls #cbt-afa-btn > .cbt-afa-lbl {
+      display: inline; border: 0 !important; padding: 0 !important; margin: 0;
+      background: transparent !important; box-shadow: none !important; border-radius: 0 !important;
+      font-size: inherit; line-height: inherit; color: inherit !important; cursor: inherit;
+    }
+    #cbt-panel #cbt-controls > #cbt-collapse-btn,
+    #cbt-panel.dark #cbt-controls > #cbt-collapse-btn {
+      background: #2979ff !important; border-color: #1f63d6 !important;
+      color: #fff !important; -webkit-text-fill-color: #fff;
+      box-shadow: 0 1px 2px rgba(13,27,42,.12);
+    }
+    #cbt-panel #cbt-controls > #cbt-collapse-btn:hover,
+    #cbt-panel.dark #cbt-controls > #cbt-collapse-btn:hover {
+      background: #1f63d6 !important; border-color: #1a54b8 !important;
+    }
+    #cbt-panel #cbt-controls > #cbt-collapse-btn:active { background: #1c58bd !important; }
+    #cbt-panel #cbt-controls > span:focus-visible { outline: 2px solid #2979ff; outline-offset: 3px; }
+
+    /* Sort visually so Angular can retain ownership of its repeated DOM nodes. */
+    .cbt-task-sort-layout { display: flex !important; flex-direction: column !important; }
+    .cbt-task-sort-layout > job-card { flex: 0 0 auto; width: 100%; min-width: 0; }
+    .cbt-task-sort-layout > :not(job-card) { order: -1; }
+
   `
 
   /* Package display only: use UI Grid's own column auto-size handler.
@@ -1996,7 +2032,7 @@
   /* ══════════════════════════════════════════
      PART 1 — EARLIEST TASK SORTING
   ══════════════════════════════════════════ */
-  var _sorting = false, _sortObserver = null, _attached = null;
+  var _sortObserver = null, _attached = null;
 
   /* Collapses a burst of MutationObserver callbacks into one call.
      Four observers watch the whole document; on this dashboard a single
@@ -2207,7 +2243,21 @@
     return result;
   }
 
-  function getBatchTarget(card) {
+  var _cbtSortOrder = new WeakMap(), _cbtSortNext = 0;
+
+  function getBatchTarget(card, heading) {
+    // Prefer the named Batch Target column; other card times can change during refresh.
+    var row = card.querySelector('div.row');
+    if (heading === undefined) heading = document.querySelector('div.row.job-card-header');
+    if (row && heading) {
+      var labels = Array.from(heading.querySelectorAll(':scope > div[class*="col-"]')).filter(function(col){ return !col.classList.contains('etf-col-cell'); });
+      var columns = Array.from(row.querySelectorAll(':scope > div[class*="col-"]')).filter(function(col){ return !col.classList.contains('etf-col-cell'); });
+      var targetIndex = labels.findIndex(function(col){ return /batch\s*target/i.test(col.textContent || ''); });
+      if (targetIndex >= 0 && columns[targetIndex]) {
+        var targetMatch = (columns[targetIndex].textContent || '').match(/\b(\d{1,2}:\d{2}\s*(?:AM|PM))\b/i);
+        return targetMatch ? parseTime(targetMatch[1]) : null;
+      }
+    }
     /* textContent does not force a layout flush; innerText can. */
     var pieces = [], walker = document.createTreeWalker(card, 4), textNode;
     while ((textNode = walker.nextNode())) {
@@ -2221,28 +2271,24 @@
   }
 
   function sortNow(container) {
-    if (_sorting) return;
     var cards = Array.from(container.querySelectorAll(':scope > job-card'));
-    if (cards.length < 2) return;
-    var data = cards.map(function (card) { return { card: card, btMs: getBatchTarget(card) }; });
+    if (!cards.length) return;
+    var heading = document.querySelector('div.row.job-card-header');
+    var data = cards.map(function (card) {
+      if (!_cbtSortOrder.has(card)) _cbtSortOrder.set(card, _cbtSortNext++);
+      return { card: card, btMs: getBatchTarget(card, heading), order: _cbtSortOrder.get(card) };
+    });
     data.sort(function (a, b) {
       var hasA = a.btMs != null, hasB = b.btMs != null;
-      if (hasA && hasB) return a.btMs - b.btMs;
-      if (hasA) return -1; if (hasB) return 1; return 0;
+      if (hasA && hasB && a.btMs !== b.btMs) return a.btMs - b.btMs;
+      if (hasA && !hasB) return -1; if (hasB && !hasA) return 1;
+      return a.order - b.order;
     });
-    var current = Array.from(container.querySelectorAll(':scope > job-card'));
-    if (data.every(function (item, i) { return item.card === current[i]; })) return;
-    _sorting = true;
-    if (_sortObserver) _sortObserver.disconnect();
-    try {
-      var frag = document.createDocumentFragment();
-      data.forEach(function (item) { frag.appendChild(item.card); });
-      container.appendChild(frag);
-    } finally {
-      _sorting = false;
-      if (_sortObserver && _attached === container && container.isConnected)
-        _sortObserver.observe(container, { childList: true, subtree: true, characterData: true });
-    }
+    if (!container.classList.contains('cbt-task-sort-layout')) container.classList.add('cbt-task-sort-layout');
+    data.forEach(function(item, i) {
+      var order = String(i);
+      if (item.card.style.order !== order) item.card.style.order = order;
+    });
   }
 
   function attach(container) {
@@ -2250,10 +2296,10 @@
     if (_sortObserver) _sortObserver.disconnect();
     _attached = container;
     sortNow(container);
-    var sortRun = coalesced(function(){ if (container.isConnected) sortNow(container); }, 80);
+    // MutationObserver runs before paint: apply visual ordering without an 80ms unsorted frame.
+    var sortRun = function(){ if (container.isConnected) sortNow(container); };
     _sortObserver = new MutationObserver(function (mutations) {
-      if (_sorting) return;
-      for (var i = 0; i < mutations.length; i++) {
+        for (var i = 0; i < mutations.length; i++) {
         if (!cbtMutationIsOnlyOwnUi(mutations[i])) {
           sortRun();
           return;
@@ -2558,7 +2604,6 @@
 
   /* Kept only because an older background Drive pull still assigns it.
      Recommendation no longer reads this value. */
-  var batchRateCache = 120;
 
   function cbtRecStoreKey() {
     return String(STORE_ID || 'unknown').replace(/[.$#\[\]\/]/g, '_');
@@ -2901,15 +2946,7 @@
     return parts.join(' · ');
   }
 
-  var _statsDomCache = {
-    inProgress: null,
-    remaining: null,
-    recommended: null,
-    deltaText: null,
-    deltaClass: null,
-    dotColor: null,
-    recTitle: null
-  };
+  var _statsDomCache = { dotColor: null };
 
   function updateStats(inProgress, remaining, recommended, dotColor, recTitle) {
     var elIP    = document.getElementById('cbt-stat-ip');
@@ -2941,31 +2978,25 @@
       }
     }
 
-    if (elIP && _statsDomCache.inProgress !== inProgress) {
+    if (elIP && elIP.textContent !== String(inProgress)) {
       elIP.textContent = inProgress;
-      _statsDomCache.inProgress = inProgress;
     }
-    if (elRem && _statsDomCache.remaining !== remaining) {
+    if (elRem && elRem.textContent !== String(remaining)) {
       elRem.textContent = remaining;
-      _statsDomCache.remaining = remaining;
     }
-    if (elRec && _statsDomCache.recommended !== recText) {
+    if (elRec && elRec.textContent !== recText) {
       elRec.textContent = recText;
-      _statsDomCache.recommended = recText;
     }
     if (elDelta &&
-        (_statsDomCache.deltaText !== deltaText || _statsDomCache.deltaClass !== deltaClass)) {
+        (elDelta.textContent !== deltaText || elDelta.className !== deltaClass)) {
       elDelta.textContent = deltaText;
       elDelta.className = deltaClass;
       elDelta.title = deltaTitle;
-      _statsDomCache.deltaText = deltaText;
-      _statsDomCache.deltaClass = deltaClass;
     }
-    if (elRec && recTitle && _statsDomCache.recTitle !== recTitle) {
+    if (elRec && recTitle && elRec.title !== recTitle) {
       elRec.title = recTitle;
-      _statsDomCache.recTitle = recTitle;
     }
-    if (elDot && dotColor && _statsDomCache.dotColor !== dotColor) {
+    if (elDot && dotColor && (_statsDomCache.dotColor !== dotColor || !elDot.style.background)) {
       elDot.style.background = dotColor;
       elDot.style.boxShadow = '0 0 6px ' + dotColor;
       _statsDomCache.dotColor = dotColor;
@@ -3085,7 +3116,6 @@
        - when the response exposes an HTTP Date header, elapsed time runs from
          a monotonic server-calibrated clock, so a bad/changing workstation
          clock cannot make the timer jump or show the wrong duration. */
-  var _cbtBackendLastOk = 0;
   var _cbtLiveStartByRef = Object.create(null);
   var _cbtMissingPollsByRef = Object.create(null);
   var CBT_MISSING_POLL_GRACE = 3;                 // ~6s at the 2s poll rate
@@ -3496,7 +3526,7 @@
        The Live table body is #cbt-tbody. v23.9.24 accidentally checked a
        different/nonexistent ID, so taskCache filled but the first Live render
        was skipped until the user switched tabs. */
-    if (activeTab !== 'live') return;
+    if (document.hidden || activeTab !== 'live') return;
     if (!document.getElementById('cbt-tbody')) return;
     if (_liveRenderPending) return;
 
@@ -4706,7 +4736,6 @@
   }
 
   var _todayBoundaryTimer = null;
-  var _lastStoreDay = null;
 
   function cbtStoreClockParts() {
     try {
@@ -4740,7 +4769,6 @@
     try { savedDay = gmGet(DATE_KEY, null) || localStorage.getItem(DATE_KEY); } catch(e0) {}
 
     if (savedDay === currentDay) {
-      _lastStoreDay = currentDay;
 
       /* Upgrade/migration safety: even without a day change, force local
          Weekly storage to the current Sunday period. */
@@ -4787,7 +4815,6 @@
 
     _dispHistCache = null;
     _dispWeekCache = null;
-    _lastStoreDay = currentDay;
 
     /* Publish an empty current-day slice immediately. */
     try { if (_histPulled) syncHistoryPush(); else _histPushQueued = true; } catch(e7) {}
@@ -4829,7 +4856,6 @@
   }
 
   function cbtStartTodayBoundaryClock() {
-    _lastStoreDay = todayStr();
     try { cbtResetTodayForNewDay(); } catch(e0) {}
     cbtScheduleTodayBoundary();
 
@@ -5210,12 +5236,11 @@
           try {
             if (res.status >= 200 && res.status < 300 && res.responseText && res.responseText !== 'null') {
               var data = JSON.parse(res.responseText) || {};
-              var changed = false;
               var peaks = data.peaks || {};
-              for (var k in peaks) { if (hofMergePeak(k, peaks[k])) changed = true; }
+              for (var k in peaks) { hofMergePeak(k, peaks[k]); }
 
               var latest = data.latest || {};
-              for (var lk in latest) { if (hofMergeLatest(lk, latest[lk])) changed = true; }
+              for (var lk in latest) { hofMergeLatest(lk, latest[lk]); }
 
               /* remote totals = every device except this one */
               var devId = MY_DEVICE_ID || getDeviceId();
@@ -5348,7 +5373,6 @@
       }
       return a.assoc.toLowerCase().localeCompare(b.assoc.toLowerCase());
     });
-    var total = rows.length;
     /* Rank is stamped from the FULL ordering before any filtering, so a
        searched associate keeps the position they actually hold on the board
        rather than being renumbered 1, 2, 3 within the results. */
@@ -5904,7 +5928,6 @@
 
         var freshData = result.data;
 
-        _cbtBackendLastOk = Date.now();
         var activeRefs = new Set();
         var items = Array.isArray(freshData) ? freshData.slice() : [];
         ['summaries','tasks','results','items','jobs','data'].forEach(function(k) {
@@ -5998,7 +6021,7 @@
           '<span id="cbt-afa-btn" title="Open cart actions">' +
             '<span class="cbt-afa-lbl">▶ Run</span>' +
           '</span>' +
-          '<span id="cbt-collapse-btn" title="Collapse/Expand">🔼</span>' +
+          '<span id="cbt-collapse-btn" title="Collapse/Expand">▲</span>' +
         '</div>' +
       '</div>' +
       '<div id="cbt-stats-bar">' +
@@ -6242,13 +6265,13 @@
         if (tabs0) tabs0.style.display = 'none';
         if (search0) search0.style.display = 'none';
         if (drag0) drag0.style.display = 'none';
-        if (collapse0) collapse0.textContent = '🔽';
+        if (collapse0) collapse0.textContent = '▼';
       } else {
         if (body0) { body0.style.display = ''; if (!body0.style.minHeight || body0.style.minHeight === '0px') body0.style.minHeight = (parseFloat(savedH) || 350) + 'px'; }
         if (tabs0) tabs0.style.display = '';
         if (search0) search0.style.display = '';
         if (drag0) drag0.style.display = '';
-        if (collapse0) collapse0.textContent = '🔼';
+        if (collapse0) collapse0.textContent = '▲';
       }
     } catch(ex) {}
 
@@ -6442,7 +6465,7 @@
         if (tabs) tabs.style.display = 'none';
         if (searchBar) searchBar.style.display = 'none';
         if (drag) drag.style.display = 'none';
-        if (collapseBtn) collapseBtn.textContent = '🔽';
+        if (collapseBtn) collapseBtn.textContent = '▼';
       } else {
         if (body) {
           body.style.display = '';
@@ -6453,7 +6476,7 @@
         if (tabs) tabs.style.display = '';
         if (searchBar) searchBar.style.display = '';
         if (drag) drag.style.display = '';
-        if (collapseBtn) collapseBtn.textContent = '🔼';
+        if (collapseBtn) collapseBtn.textContent = '▲';
       }
     }
 
@@ -6793,7 +6816,7 @@
       return liveSortAsc?va-vb:vb-va;
     });
     updateLiveSortHeaders();
-    if(rows.length===0){setHTML(tbody,'');empty.style.display='block';
+    if(rows.length===0){tbody._cbtLiveStructure = null;setHTML(tbody,'');empty.style.display='block';
       var body2=document.querySelector('#cbt-body');
       if(body2&&!body2.style.height){body2.style.height='350px';body2.style.maxHeight='350px';}
       return;}
@@ -6817,8 +6840,12 @@
       html+='<td><span class="cbt-elapsed '+elCls+'" data-start="'+(r.startMs||'')+'" data-live="'+(r.inProgress?'1':'0')+'">'+elTxt+'</span></td>';
       html+='<td><span class="cbt-rate '+rateCls+'" title="'+rateTitle+'">'+rateTxt+'</span></td></tr>';
     }
-    setHTML(tbody, html);
-    lockLiveRowGeometry();
+    var structure = html.replace(/(<span class="cbt-elapsed [^"]*" data-start="[^"]*" data-live="[^"]*">)[^<]*(<\/span>)/g, '$1$2');
+    if (tbody._cbtLiveStructure !== structure) {
+      tbody._cbtLiveStructure = structure;
+      setHTML(tbody, html);
+      lockLiveRowGeometry();
+    } else tickLive();
     requestUnifiedSearchCount();
   }
 
@@ -7255,7 +7282,6 @@
      park it literally anywhere and still drag it back. */
   function clampTpPos(tp, left, top) {
     var w = tp.offsetWidth  || 420;
-    var h = tp.offsetHeight || 300;
     var KEEP = 90;                                  /* visible strip, px */
     var minLeft = -(w - KEEP);
     var maxLeft = window.innerWidth - KEEP;
@@ -7469,7 +7495,17 @@
     if (!mp || !mp.isConnected) injectPanel();
   }, 50);
 
+  function cbtQuickDashboardMount() {
+    if (document.hidden || !isDashboardView()) return;
+    var panel = document.getElementById('cbt-panel');
+    if (panel && panel.isConnected) return;
+    // Reuse the saved panel as soon as Angular inserts its legitimate anchor.
+    // This uses the existing observer, without waiting for a health-check timer.
+    if (findMountPoint()) injectPanel();
+  }
+
   var panelWatcher = new MutationObserver(function(mutations) {
+    try { cbtQuickDashboardMount(); } catch(e) {}
     /* Mount outside observer delivery so framework rebuilding can settle. */
     /* Our own Live clock, stats, QR, autocomplete, Time Left and modal updates
        must not cause a whole-page health/mount pass. The heavier attachment
@@ -9846,7 +9882,6 @@
     _afaDone = Object.create(null);        /* fresh claim map for this run only */
     var partialRefs = Object.create(null);
     list.forEach(function(it){ if (it.partial) partialRefs[it.ref] = true; });
-    var btn = document.getElementById('cbt-afa-btn');
     /* The dashboard header behaves like a coding playground:
        ▶ Run while idle, ⏹ Stop while an action is executing. */
     afaSetBtn('⏹ Stop', true);
@@ -10652,7 +10687,9 @@
 
   /* The assign modal is created on demand and its shadow roots appear with
      it, so poll for the field rather than assuming it exists at load. */
+  var _cbtAcLastScan = 0;
   function acScanForFields() {
+    _cbtAcLastScan = Date.now();
     try { acWatchAssignModal(); } catch(e) {}
     var found = acFindKatInput();
     if (found) { acBind(found.input, found.host); return; }
@@ -10704,6 +10741,7 @@
       }, 140);
 
       _acObserver = new MutationObserver(function(mutations){
+        if (document.hidden) return;
         for (var i = 0; i < mutations.length; i++) {
           if (!cbtMutationIsOnlyOwnUi(mutations[i])) {
             acMutationRun();
@@ -10720,7 +10758,7 @@
     _acWatch = setInterval(function(){
       try {
         if (_acDrop) acTick();
-        if (!document.hidden && acWatchRelevant()) acScanForFields();
+        if (!document.hidden && acWatchRelevant() && Date.now() - _cbtAcLastScan >= 900) acScanForFields();
       } catch(e2) {}
     }, 450);
 
@@ -10925,6 +10963,8 @@
 
     window.addEventListener('popstate', onRoute);
     window.addEventListener('hashchange', onRoute);
+    // Back/Forward cache restores can happen without another DOMContentLoaded.
+    window.addEventListener('pageshow', onRoute);
 
     var lastPath = location.pathname + location.hash;
     setInterval(function () {
@@ -11019,17 +11059,30 @@
     }
   }
 
+  function cbtRunStartupJobs(jobs) {
+    var index = 0;
+    function next() {
+      if (index >= jobs.length) return;
+      cbtIdle(function(){
+        try { jobs[index++](); } catch(e) {}
+        if (index < jobs.length) setTimeout(next, 180);
+      }, 700);
+    }
+    next();
+  }
+
   function startBackgroundFeatures() {
     /* These are important, but none of them needs to compete with the website's
        first paint. They are started after the visible board is already usable. */
-    try { cbtResetTodayWeeklyV2(); } catch(eReset) {}
-    try { cbtTrustedRateMigration(); } catch(e0) {}
-    try { runLegacyDataMigration(); } catch(e) {}
-
-    try { syncPull(function(){ syncPush(); }); } catch(e2) {}
-
-    try { syncNamesFromAllTabs(); } catch(e3) {}
-    try { scanLocalStorageForNames(); } catch(e4) {}
+    cbtRunStartupJobs([
+      function(){ runLegacyDataMigration(); },
+      function(){ syncPull(function(){ syncPush(); }); },
+      function(){ syncNamesFromAllTabs(); },
+      function(){ scanLocalStorageForNames(); },
+      function(){ syncHistoryPull(function(){ syncHistoryPush(); }); },
+      function(){ syncWeeklyPull(function(){ syncWeeklyPush(); }); },
+      function(){ hofPull(); }
+    ]);
 
     setInterval(function(){
       if (document.hidden) return;
@@ -11039,9 +11092,6 @@
       }, 700);
     }, 5000);
 
-    try { syncHistoryPull(function(){ syncHistoryPush(); }); } catch(e5) {}
-    try { syncWeeklyPull(function(){ syncWeeklyPush(); }); } catch(e6) {}
-    try { hofPull(); } catch(e7) {}
 
     setInterval(function(){ if (!document.hidden) syncPull(); }, 30000);
     setInterval(function(){ if (!document.hidden) syncHistoryPull(); }, 10000);
@@ -11059,22 +11109,6 @@
       try { syncPull(); } catch(e9c) {}
     });
 
-    if (isComoSite()) {
-      try {
-        cbtGmRequest({
-          method: 'GET',
-          url: DRIVE_URL + '&_=' + Date.now(),
-          responseType: 'json',
-          onload: function(res) {
-            if (res.status >= 200 && res.status < 300 && res.response) {
-              batchRateCache = res.response[STORE_ID] || 200;
-            }
-            fetchAndUpdate();
-          },
-          onerror: function(){}
-        });
-      } catch(e9) {}
-    }
   }
 
   function start() {
@@ -11085,16 +11119,18 @@
     }
     _cbtStartupDone = true;
     MY_DEVICE_ID = getDeviceId();
-    try { cbtResetTodayWeeklyV2(); } catch(eReset) {}
-    try { cbtTrustedRateMigration(); } catch(eMigration) {}
-
-    /* Core UI comes in just after the first two browser paints. */
-    cbtAfterFirstPaint(startCoreFeatures, 120);
-
-    /* Remote sync/storage scans are deliberately later and idle-scheduled. */
+    /* Mount visible UI first. Background initialization must not hold up the
+       dashboard; preserve migration ordering before starting shared sync. */
     cbtAfterFirstPaint(function(){
-      cbtIdle(startBackgroundFeatures, 900);
-    }, 650);
+      startCoreFeatures();
+      cbtRunStartupJobs([
+        function(){ cbtResetTodayWeeklyV2(); },
+        function(){ cbtTrustedRateMigration(); },
+        function(){
+          setTimeout(function(){ cbtIdle(startBackgroundFeatures, 900); }, 2500);
+        }
+      ]);
+    }, 0);
   }
 
   if (document.readyState === 'loading') {
