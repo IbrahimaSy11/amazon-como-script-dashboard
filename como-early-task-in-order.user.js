@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.93
+// @version      23.9.94
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -28,6 +28,7 @@
   /* A second installation must not stack network hooks and observers. */
   if (document.documentElement.hasAttribute('data-cbt-runtime-v23985')) return;
   document.documentElement.setAttribute('data-cbt-runtime-v23985', '1');
+  document.documentElement.setAttribute('data-cbt-version', '23.9.94');
 
   var _cbtAuthCache = {route: '', until: 0, value: false};
   function cbtAuthPage() {
@@ -1925,6 +1926,7 @@
     .cbt-task-sort-layout { display: flex !important; flex-direction: column !important; }
     .cbt-task-sort-layout > job-card { flex: 0 0 auto; width: 100%; min-width: 0; }
     .cbt-task-sort-layout > :not(job-card) { order: -1; }
+    .cbt-task-sort-layout > .job-card-header { order: -1 !important; }
 
   `
 
@@ -3015,7 +3017,7 @@
 
   var _statsFetchInFlight = false;
   function fetchAndUpdate() {
-    if (_statsFetchInFlight || document.hidden || !cbtApplicationReady() || !STORE_ID) return;
+    if (_statsFetchInFlight || document.hidden || !isDashboardView() || !cbtApplicationReady() || !STORE_ID) return;
     _statsFetchInFlight = true;
     removeFromHeader();
     var requestStore = STORE_ID;
@@ -5036,14 +5038,14 @@
 
   /* Latest is different from Peak: it ALWAYS follows the newest completed
      batch, even if that rate is lower than the associate's personal best. */
-  function hofMergeLatest(key, rec) {
+  function hofMergeLatest(key, rec, batch) {
     if (!key || !rec) return false;
     var rate = Number(rec.rate), at = Number(rec.at) || 0;
     if (Number(rec.schema) !== HOF_SCHEMA) return false;
     if (!(Number(rec.pkgs) > 0) || Number(rec.elapsedSec) < 30) return false;
     if (!(rate > 0) || !isFinite(rate) || rate > CBT_MAX_VALID_RATE) return false;
 
-    var latest = hofLoadLatest();
+    var latest = batch || hofLoadLatest();
     var cur = latest[key];
     var curAt = cur ? (Number(cur.at) || 0) : -1;
 
@@ -5059,7 +5061,7 @@
       schema: Number(rec.schema) || HOF_SCHEMA,
       calc: rec.calc || 'packagesBatched/fullBatchingSpan'
     };
-    hofSaveLatest(latest);
+    if (!batch) hofSaveLatest(latest);
     return true;
   }
 
@@ -5128,12 +5130,12 @@
   }
 
   /* Local cache only ever moves a peak upward. */
-  function hofMergePeak(key, rec) {
+  function hofMergePeak(key, rec, batch) {
     if (!key || !rec || typeof rec.rate !== 'number' || !(rec.rate > 0)) return false;
     if (Number(rec.schema) !== HOF_SCHEMA) return false;
     if (Number(rec.rate) > HOF_MAX_RATE) return false;
     if (Number(rec.pkgs) < HOF_MIN_PKGS || Number(rec.elapsedSec) < HOF_MIN_SEC) return false;
-    var peaks = hofLoadPeaks();
+    var peaks = batch || hofLoadPeaks();
     var cur = peaks[key];
     if (cur && typeof cur.rate === 'number' && cur.rate >= rec.rate) return false;
     peaks[key] = {
@@ -5145,7 +5147,7 @@
       schema: Number(rec.schema) || HOF_SCHEMA,
       calc: rec.calc || 'packagesBatched/fullBatchingSpan'
     };
-    hofSavePeaks(peaks);
+    if (!batch) hofSavePeaks(peaks);
     return true;
   }
 
@@ -5236,11 +5238,15 @@
           try {
             if (res.status >= 200 && res.status < 300 && res.responseText && res.responseText !== 'null') {
               var data = JSON.parse(res.responseText) || {};
-              var peaks = data.peaks || {};
-              for (var k in peaks) { hofMergePeak(k, peaks[k]); }
+              // Parse local stores once, merge all records, then persist once.
+              // Previously each record parsed and potentially rewrote the entire blob.
+              var peaks = data.peaks || {}, localPeaks = hofLoadPeaks(), peaksChanged = false;
+              for (var k in peaks) { if (hofMergePeak(k, peaks[k], localPeaks)) peaksChanged = true; }
+              if (peaksChanged) hofSavePeaks(localPeaks);
 
-              var latest = data.latest || {};
-              for (var lk in latest) { hofMergeLatest(lk, latest[lk]); }
+              var latest = data.latest || {}, localLatest = hofLoadLatest(), latestChanged = false;
+              for (var lk in latest) { if (hofMergeLatest(lk, latest[lk], localLatest)) latestChanged = true; }
+              if (latestChanged) hofSaveLatest(localLatest);
 
               /* remote totals = every device except this one */
               var devId = MY_DEVICE_ID || getDeviceId();
@@ -6288,6 +6294,8 @@
     /* If the backend answered during the short mount window, make sure the
        freshly mounted Live table receives that cached data immediately. */
     if (activeTab === 'live' && taskCache.size) requestLiveRender();
+    // Returning to the dashboard refreshes stats promptly after off-page polling pauses.
+    fetchAndUpdate();
   }
 
   /* Runs on an interval: if the panel is gone or was detached by an
@@ -11096,7 +11104,7 @@
     setInterval(function(){ if (!document.hidden) syncPull(); }, 30000);
     setInterval(function(){ if (!document.hidden) syncHistoryPull(); }, 10000);
     setInterval(function(){ if (!document.hidden) syncWeeklyPull(); }, 10000);
-    setInterval(function(){ if (!document.hidden) { try { hofPull(); } catch(e8) {} } }, 15000);
+    setInterval(function(){ if (!document.hidden) cbtIdle(function(){ try { hofPull(); } catch(e8) {} }, 900); }, 15000);
 
     /* When returning to the tab, refresh shared Today/Weekly immediately.
        Network work is asynchronous and the pull functions only touch the DOM
