@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.119
+// @version      23.9.123
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -1372,12 +1372,11 @@
     }
     #cbt-hof-view { overflow-x: auto; }
     #cbt-hof-table { width: 100%; max-width: 100%; table-layout: fixed; border-collapse: collapse; }
-    #cbt-hof-table th:nth-child(1), #cbt-hof-table td:nth-child(1) { width: 31%; }
-    #cbt-hof-table th:nth-child(2), #cbt-hof-table td:nth-child(2) { width: 11%; }
-    #cbt-hof-table th:nth-child(3), #cbt-hof-table td:nth-child(3) { width: 12%; }
-    #cbt-hof-table th:nth-child(4), #cbt-hof-table td:nth-child(4) { width: 15%; }
-    #cbt-hof-table th:nth-child(5), #cbt-hof-table td:nth-child(5) { width: 15%; }
-    #cbt-hof-table th:nth-child(6), #cbt-hof-table td:nth-child(6) { width: 16%; }
+    #cbt-hof-table th:nth-child(1), #cbt-hof-table td:nth-child(1) { width: 36%; }
+    #cbt-hof-table th:nth-child(2), #cbt-hof-table td:nth-child(2) { width: 14%; }
+    #cbt-hof-table th:nth-child(3), #cbt-hof-table td:nth-child(3) { width: 14%; }
+    #cbt-hof-table th:nth-child(4), #cbt-hof-table td:nth-child(4) { width: 18%; }
+    #cbt-hof-table th:nth-child(5), #cbt-hof-table td:nth-child(5) { width: 18%; }
     #cbt-hof-table thead tr {
       border-bottom: 2px solid var(--cb-border); background: #f8fafc;
       position: sticky; top: 0; z-index: 1;
@@ -1971,6 +1970,36 @@
       line-height: 1; font-size: 16px; font-variant-numeric: tabular-nums; white-space: nowrap;
       vertical-align: middle; overflow: visible;
     }
+    #cbt-panel .cbt-assoc, #cbt-panel .cbt-name-cell, #cbt-panel .cbt-search-row-name, #cbt-tp .cbt-tp-row-name { cursor: default; }
+
+    #cbt-profile-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); display: flex; align-items: center; justify-content: center; z-index: 2147483646; }
+    #cbt-profile-card { width: 680px; box-sizing: border-box; background: #fff; color: #172435; border: 1px solid #d4dce5; border-radius: 14px; overflow: hidden; font-family: var(--cb-sans, sans-serif); font-size: 16px; }
+    #cbt-profile-card header { display:flex; align-items:center; gap:12px; padding:16px; border-bottom:1px solid #d4dce5; }
+    #cbt-profile-card header strong { flex:1; min-width:0; white-space:nowrap; overflow-x:auto; }
+    #cbt-profile-card button { cursor:pointer; background:#2979ff; color:white; border:0; border-radius:6px; font-size:22px; width:32px; height:32px; }
+    .cbt-profile-controls { display:flex; align-items:center; justify-content:space-between; padding:14px 16px; white-space:nowrap; }
+    #cbt-profile-card select { font:inherit; margin-left:8px; padding:6px 10px; background:#f8fafc !important; color:#172435 !important; border:1px solid #cbd5e1; border-radius:6px; color-scheme:light; }
+    #cbt-profile-card select option { background:#f8fafc !important; color:#172435 !important; }
+    #cbt-profile-card .cbt-profile-controls label, #cbt-profile-card .cbt-profile-controls > span { color:inherit !important; }
+    #cbt-profile-card select:focus-visible { outline:2px solid #2979ff; outline-offset:2px; }
+    .cbt-profile-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; padding:0 16px 14px; }
+    .cbt-profile-metrics > div { background:#eff4fa; border-radius:8px; padding:12px; white-space:nowrap; }
+    .cbt-profile-metrics span { display:block; font-size:13px; }
+    .cbt-profile-metrics b { display:block; font-size:24px; font-variant-numeric:tabular-nums; }
+    .cbt-profile-table-wrap { max-height:300px; overflow:auto; margin:0 16px; }
+    #cbt-profile-card table { width:100%; border-collapse:collapse; }
+    #cbt-profile-card th, #cbt-profile-card td { padding:10px 8px; white-space:nowrap; text-align:right; border-bottom:1px solid #d4dce5; }
+    #cbt-profile-card th:first-child, #cbt-profile-card td:first-child { text-align:left; }
+    #cbt-profile-card p { margin:14px 16px; font-size:12px; line-height:1.5; }
+    #cbt-profile-overlay.dark #cbt-profile-card { background:#0d1117; color:#dce6ef; border-color:#334155; }
+    #cbt-profile-overlay.dark .cbt-profile-metrics > div { background:#18212d; }
+    #cbt-profile-overlay.dark #cbt-profile-card select,
+    #cbt-profile-overlay.dark #cbt-profile-card select option { background:#18212d !important; color:#e6edf3 !important; border-color:#334155; color-scheme:dark; }
+    #cbt-profile-overlay.dark #cbt-profile-card header,
+    #cbt-profile-overlay.dark #cbt-profile-card th,
+    #cbt-profile-overlay.dark #cbt-profile-card td { border-color:#334155; }
+    #cbt-panel .cbt-assoc, #cbt-panel .cbt-name-cell, #cbt-panel .cbt-search-row-name, #cbt-tp .cbt-tp-row-name { cursor:pointer; }
+    #cbt-panel [title="Open associate profile"]:focus-visible, #cbt-tp [title="Open associate profile"]:focus-visible { outline:2px solid #2979ff; outline-offset:2px; }
     .cbt-ac-nm { overflow: visible; text-overflow: clip; flex-shrink: 0; }
     .cbt-ac-hd, .cbt-ac-foot, .cbt-ac-none { white-space: nowrap; }
 
@@ -3654,6 +3683,7 @@
 
   var _liveRenderPending = false;
   function requestLiveRender() {
+    cbtScheduleProfileRefresh();
     /* Do not rebuild a hidden/non-mounted Live table. Data still updates in
        taskCache and renders immediately when Live becomes visible.
 
@@ -3782,6 +3812,7 @@
   }
 
   function saveWeekly(w, skipPush, periodKey) {
+    cbtProfileChanged();
     _dispWeekCache = null;
     var currentWeek = periodKey || currentWeekStartStr();
     var clean = sanitizeWeekly(w || {});
@@ -3816,6 +3847,7 @@
   }
 
   function saveRemoteWeekly(w, periodKey) {
+    cbtProfileChanged();
     _dispWeekCache = null;
     var currentWeek = periodKey || currentWeekStartStr();
     var clean = sanitizeWeekly(w || {});
@@ -4077,6 +4109,7 @@
       card.style.zoom = popupScale;
 
     });
+    cbtScaleProfile();
     var drop = document.getElementById('cbt-ac-drop');
     if (drop) {
       drop.style.zoom = popupZ * ASSOCIATE_AUTOCOMPLETE_BASE_SCALE;
@@ -5096,6 +5129,7 @@
   }
 
   function saveHistory(h, skipPush) {
+    cbtProfileChanged();
     // saveHistory only ever saves THIS device's own recorded batches
     _dispHistCache = null;
     _dispWeekCache = null; /* Weekly includes Today live */
@@ -5119,6 +5153,7 @@
     try { return JSON.parse(localStorage.getItem(REMOTE_HISTORY_KEY) || '{}'); } catch(e3) { return {}; }
   }
   function saveRemoteHistory(h, dateKey) {
+    cbtProfileChanged();
     _dispHistCache = null;
     _dispWeekCache = null; /* Weekly includes Today live */
     var json = JSON.stringify(h || {});
@@ -5719,7 +5754,7 @@
       var rowCls  = (rk && rk <= 3) ? (' class="cbt-hof-' + rk + '"') : '';
       html += '<tr' + rowCls + '>' +
         '<td><span class="cbt-cw"><span class="cbt-cw-top">' +
-          '<span class="cbt-rank ' + rankCls + '" style="font-size:' + Math.min(16,22 / (String(rankTxt).length * .64)).toFixed(2) + 'px">' + rankTxt + '</span><span class="cbt-assoc">' + afaEsc(e.assoc) +
+          '<span class="cbt-rank ' + rankCls + '" style="font-size:' + Math.min(16,22 / (String(rankTxt).length * .64)).toFixed(2) + 'px">' + rankTxt + '</span><span class="cbt-assoc" role="button" tabindex="0" title="Open associate profile">' + afaEsc(e.assoc) +
           '</span></span></span></td>' +
         '<td><span class="cbt-hist-meta">' + e.runs + '</span></td>' +
         '<td><span class="cbt-hist-meta">' + e.pkgs + '</span></td>' +
@@ -5731,7 +5766,6 @@
               (Number(e.latestRate)>=WARN_RATE?'good':Number(e.latestRate)>=ALERT_RATE?'warn':'alert') +
               '">' + Number(e.latestRate).toFixed(1) + '</span>')
           : '<span class="cbt-hist-meta">\u2014</span>') + '</td>' +
-        '<td><span class="cbt-hof-when">' + hofWhen(e.at) + '</span></td>' +
       '</tr>';
     }
     setHTML(tbody, html);
@@ -6299,7 +6333,6 @@
             '<th>Pkgs</th>' +
             '<th>Peak</th>' +
             '<th>Last Avg</th>' +
-            '<th>Date</th>' +
           '</tr></thead><tbody id="cbt-hof-tbody"></tbody></table>' +
           '<div id="cbt-hof-empty"></div>' +
         '</div>' +
@@ -6750,25 +6783,7 @@
       applyMainCollapseState();
     } catch(ex) {}
 
-    document.addEventListener('click', function(e) {
-      var el = e.target.closest('.cbt-assoc');
-      var rank = e.target.closest('.cbt-rank');
-      if (!el && rank && rank.parentElement) el = rank.parentElement.querySelector('.cbt-assoc');
-      if (!el || !panel2.contains(el)) return;
-      var oldTag = el.querySelector('.cbt-copied-tag');
-      if (oldTag) oldTag.remove();
-      var text = el.textContent.replace(/[●•]/g, '').trim();
-      copyWithFeedback(el, text, e);
-    });
 
-    document.addEventListener('click', function(e) {
-      var el = e.target.closest('.cbt-search-row-name');
-      if (!el || !panel2.contains(el)) return;
-      var oldTag2 = el.querySelector('.cbt-copied-tag');
-      if (oldTag2) oldTag2.remove();
-      var text = el.textContent.trim();
-      copyWithFeedback(el, text, e);
-    });
 
     document.addEventListener('click', function(e) {
       if (e.target.id === 'cbt-unified-search-clear') {
@@ -6778,14 +6793,14 @@
         renderActiveSearchTab();
         if (inp) inp.focus();
       }
-      var nameCell = e.target.closest('.cbt-name-cell');
-      if (nameCell) {
-        var oldTag3 = nameCell.querySelector('.cbt-copied-tag');
-        if (oldTag3) oldTag3.remove();
-        var nm = nameCell.textContent.trim();
-        copyWithFeedback(nameCell, nm, e);
-      }
+
     });
+
+    document.addEventListener('click', cbtProfileFromEvent);
+    document.addEventListener('keydown', function(e){
+      if ((e.key==='Enter' || e.key===' ') && e.target.matches('.cbt-assoc,.cbt-name-cell,.cbt-search-row-name,.cbt-tp-row-name')) {e.preventDefault();cbtProfileFromEvent(e);}
+    });
+    document.addEventListener('visibilitychange', function(){if(!document.hidden){cbtProfileChanged();}});
 
     document.addEventListener('input', function(e) {
       if (e.target.id === 'cbt-unified-search-input') {
@@ -6836,7 +6851,7 @@
       histEntries.forEach(function(e) {
         shown.add(e.assoc.toLowerCase());
         var rateCls = e.avgRate >= WARN_RATE ? 'good' : e.avgRate >= ALERT_RATE ? 'warn' : 'alert';
-        html += '<div class="cbt-search-row"><span class="cbt-search-row-name">' + afaEsc(e.assoc) + '</span>' +
+        html += '<div class="cbt-search-row"><span class="cbt-search-row-name" role="button" tabindex="0" title="Open associate profile">' + afaEsc(e.assoc) + '</span>' +
         '<span class="cbt-search-row-mid"><span style="display:inline-block;width:45px;text-align:right;">' + e.runs + '</span> runs | <span style="display:inline-block;width:50px;text-align:left;">' + e.totalPkgs + '</span> pkgs</span>' +
         '<span class="cbt-search-row-rate"><span class="cbt-hist-rate ' + rateCls + '">' + e.avgRate.toFixed(1) + '</span></span></div>';
       });
@@ -6860,7 +6875,7 @@
         shown.add(e.assoc.toLowerCase());
         var avgRate = e.totalPkgs / (e.totalSec / 60);
         var rateCls = avgRate >= WARN_RATE ? 'good' : avgRate >= ALERT_RATE ? 'warn' : 'alert';
-        html += '<div class="cbt-search-row"><span class="cbt-search-row-name">' + afaEsc(e.assoc) + '</span>' +
+        html += '<div class="cbt-search-row"><span class="cbt-search-row-name" role="button" tabindex="0" title="Open associate profile">' + afaEsc(e.assoc) + '</span>' +
         '<span class="cbt-search-row-mid"><span style="display:inline-block;width:45px;text-align:right;">' + e.daysSet.size + '</span> days | <span style="display:inline-block;width:50px;text-align:left;">' + e.totalPkgs + '</span> pkgs</span>' +
         '<span class="cbt-search-row-rate"><span class="cbt-hist-rate ' + rateCls + '">' + avgRate.toFixed(1) + '</span></span></div>';
       });
@@ -7028,7 +7043,7 @@
         r.rateSource==='invalid-api-span' ? 'Rate hidden: API timing/count combination produced an invalid spike' :
         'Rate pending until enough trusted timing/progress is available';
       var slowAlert=(r.scanRate!==null&&r.scanRate<ALERT_RATE&&r.elapsedSec>120)?'<span class="cbt-live-status-slot"><span class="cbt-slow-alert">⚠ SLOW</span></span>':'';
-      html+='<tr><td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-assoc">'+afaEsc(assoc)+'</span>'+slowAlert+'</span><span class="cbt-ref">'+afaEsc(shortRef)+'</span></span></td>';
+      html+='<tr><td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-assoc" role="button" tabindex="0" title="Open associate profile">'+afaEsc(assoc)+'</span>'+slowAlert+'</span><span class="cbt-ref">'+afaEsc(shortRef)+'</span></span></td>';
       html+='<td><span class="cbt-elapsed '+elCls+'" data-start="'+(r.startMs||'')+'" data-live="'+(r.inProgress?'1':'0')+'">'+elTxt+'</span></td>';
       html+='<td><span class="cbt-rate '+rateCls+'" title="'+rateTitle+'">'+rateTxt+'</span></td></tr>';
     }
@@ -7091,7 +7106,7 @@
       var rateCls=bestRate>=WARN_RATE?'good':bestRate>=ALERT_RATE?'warn':'alert';
       var rk=e._displayRank||0;
       var rankCls=rk===1?'gold':rk===2?'silver':rk===3?'bronze':'';
-      html+='<tr><td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-rank '+rankCls+'" style="font-size:'+Math.min(16,22 / (String(rk).length * .64)).toFixed(2)+'px">'+rk+'</span><span class="cbt-assoc">'+afaEsc(e.assoc)+'</span></span></span></td>';
+      html+='<tr><td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-rank '+rankCls+'" style="font-size:'+Math.min(16,22 / (String(rk).length * .64)).toFixed(2)+'px">'+rk+'</span><span class="cbt-assoc" role="button" tabindex="0" title="Open associate profile">'+afaEsc(e.assoc)+'</span></span></span></td>';
       html+='<td><span class="cbt-hist-meta">'+e.runs+'</span></td><td><span class="cbt-hist-meta">'+e.totalPkgs+'</span></td>';
       html+='<td>'+(bestRate>0?'<span class="cbt-hist-rate '+rateCls+'">'+bestRate.toFixed(1)+'</span>':'<span class="cbt-hist-meta">—</span>')+'</td>';
       var latestRate=Number(e.lastRate), latestCls=latestRate>=WARN_RATE?'good':latestRate>=ALERT_RATE?'warn':'alert';
@@ -7134,7 +7149,7 @@
         shown.add(e.assoc.toLowerCase());
         var avgRate=e.totalSec>0?e.totalPkgs/(e.totalSec/60):0;
         var rateCls=avgRate>=WARN_RATE?'good':avgRate>=ALERT_RATE?'warn':'alert';
-        html+='<div class="cbt-search-row"><span class="cbt-search-row-name">'+afaEsc(e.assoc)+'</span>' +
+        html+='<div class="cbt-search-row"><span class="cbt-search-row-name" role="button" tabindex="0" title="Open associate profile">'+afaEsc(e.assoc)+'</span>' +
         '<span class="cbt-search-row-mid"><span style="display:inline-block;width:45px;text-align:right;">'+e.daysSet.size+'</span> days | <span style="display:inline-block;width:50px;text-align:left;">'+e.totalPkgs+'</span> pkgs</span>' +
         '<span class="cbt-search-row-rate"><span class="cbt-hist-rate '+rateCls+'">'+avgRate.toFixed(1)+'</span></span></div>';
       });
@@ -7231,7 +7246,7 @@
       var rateCls=bestRate>=WARN_RATE?'good':bestRate>=ALERT_RATE?'warn':'alert';
       var rk=e._displayRank||0;
       var rankCls=rk===1?'gold':rk===2?'silver':rk===3?'bronze':'';
-      html+='<tr><td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-rank '+rankCls+'" style="font-size:'+Math.min(16,22 / (String(rk).length * .64)).toFixed(2)+'px">'+rk+'</span><span class="cbt-assoc">'+afaEsc(e.assoc)+'</span></span></span></td>';
+      html+='<tr><td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-rank '+rankCls+'" style="font-size:'+Math.min(16,22 / (String(rk).length * .64)).toFixed(2)+'px">'+rk+'</span><span class="cbt-assoc" role="button" tabindex="0" title="Open associate profile">'+afaEsc(e.assoc)+'</span></span></span></td>';
       html+='<td><span class="cbt-hist-meta">'+e.runs+'</span></td>';
       html+='<td><span class="cbt-hist-meta">'+e.totalPkgs+'</span></td>';
       html+='<td>'+(bestRate>0?'<span class="cbt-hist-rate '+rateCls+'">'+bestRate.toFixed(1)+'</span>':'<span class="cbt-hist-meta">—</span>')+'</td>';
@@ -7262,7 +7277,7 @@
     matches = prioritizeNameMatches(matches, term, function(n){ return n; });
     var html = '<div class="cbt-search-result-section">SAVED NAMES</div>';
     matches.slice(0, 50).forEach(function(n){
-      html += '<div class="cbt-search-row"><span class="cbt-search-row-name cbt-name-cell">' + afaEsc(n) + '</span>' +
+      html += '<div class="cbt-search-row"><span class="cbt-search-row-name cbt-name-cell" role="button" tabindex="0" title="Open associate profile">' + afaEsc(n) + '</span>' +
         '<span class="cbt-search-row-mid"></span>' +
         '<span class="cbt-search-row-rate" style="color:#aaa;">—</span></div>';
     });
@@ -7312,7 +7327,7 @@
 
     var html = '';
     names.forEach(function(n){
-      html += '<tr><td style="text-align:left;"><span class="cbt-name-cell">' + n + '</span></td></tr>';
+      html += '<tr><td style="text-align:left;"><span class="cbt-name-cell" role="button" tabindex="0" title="Open associate profile">' + n + '</span></td></tr>';
     });
     setHTML(tbody, html);
     requestUnifiedSearchCount();
@@ -7343,7 +7358,7 @@
       entries.forEach(function(e){
         shown.add(e.assoc.toLowerCase());
         var rateCls=e.avgRate>=WARN_RATE?'good':e.avgRate>=ALERT_RATE?'warn':'alert';
-        html+='<div class="cbt-search-row"><span class="cbt-search-row-name">'+afaEsc(e.assoc)+'</span>' +
+        html+='<div class="cbt-search-row"><span class="cbt-search-row-name" role="button" tabindex="0" title="Open associate profile">'+afaEsc(e.assoc)+'</span>' +
         '<span class="cbt-search-row-mid"><span style="display:inline-block;width:45px;text-align:right;">'+e.runs+'</span> runs | <span style="display:inline-block;width:50px;text-align:left;">'+e.totalPkgs+'</span> pkgs</span>' +
         '<span class="cbt-search-row-rate"><span class="cbt-hist-rate '+rateCls+'">'+e.avgRate.toFixed(1)+'</span></span></div>';
       });
@@ -7420,7 +7435,7 @@
           var r = computeRow(d);
           var displayName = d.associateId||d.associate||d.driverAssignment||d.shortClientRef||'—';
           var rc = !r.scanRate?'color:#aaa':r.scanRate>=WARN_RATE?'color:#2a9d2a':r.scanRate>=ALERT_RATE?'color:#e6a817':'color:#cc0000';
-          html += '<div class="cbt-tp-row"><span class="cbt-tp-row-name">' + displayName + '</span><span class="cbt-tp-row-mid"></span><span class="cbt-tp-row-rate" style="' + rc + ';">' + (r.scanRate?r.scanRate.toFixed(1):'—') + '</span></div>';
+          html += '<div class="cbt-tp-row"><span class="cbt-tp-row-name" role="button" tabindex="0" title="Open associate profile">' + displayName + '</span><span class="cbt-tp-row-mid"></span><span class="cbt-tp-row-rate" style="' + rc + ';">' + (r.scanRate?r.scanRate.toFixed(1):'—') + '</span></div>';
         }
       }
     });
@@ -7430,7 +7445,7 @@
       if (e.assoc.toLowerCase().indexOf(term) !== -1 && !seen.has(e.assoc.toLowerCase())) {
         seen.add(e.assoc.toLowerCase());
         var rc = e.avgRate>=WARN_RATE?'color:#2a9d2a':e.avgRate>=ALERT_RATE?'color:#e6a817':'color:#cc0000';
-        html += '<div class="cbt-tp-row"><span class="cbt-tp-row-name">' + afaEsc(e.assoc) + '</span><span class="cbt-tp-row-mid"></span><span class="cbt-tp-row-rate" style="' + rc + ';">' + e.avgRate.toFixed(1) + '</span></div>';
+        html += '<div class="cbt-tp-row"><span class="cbt-tp-row-name" role="button" tabindex="0" title="Open associate profile">' + afaEsc(e.assoc) + '</span><span class="cbt-tp-row-mid"></span><span class="cbt-tp-row-rate" style="' + rc + ';">' + e.avgRate.toFixed(1) + '</span></div>';
       }
     });
 
@@ -7447,7 +7462,7 @@
         seen.add(e.assoc.toLowerCase());
         var avg = e.totalPkgs/(e.totalSec/60);
         var rc = avg>=WARN_RATE?'color:#2a9d2a':avg>=ALERT_RATE?'color:#e6a817':'color:#cc0000';
-        html += '<div class="cbt-tp-row"><span class="cbt-tp-row-name">' + afaEsc(e.assoc) + '</span><span class="cbt-tp-row-mid"></span><span class="cbt-tp-row-rate" style="' + rc + ';">' + avg.toFixed(1) + '</span></div>';
+        html += '<div class="cbt-tp-row"><span class="cbt-tp-row-name" role="button" tabindex="0" title="Open associate profile">' + afaEsc(e.assoc) + '</span><span class="cbt-tp-row-mid"></span><span class="cbt-tp-row-rate" style="' + rc + ';">' + avg.toFixed(1) + '</span></div>';
       }
     });
 
@@ -7627,19 +7642,13 @@
       }
     });
 
-    // ── clear + click-to-copy ──
+    // ── clear search ──
     tp.addEventListener('click', function(e){
       if (e.target.id === 'cbt-tp-search-clear') {
         var i = tp.querySelector('#cbt-tp-search-input');
         if (i) { i.value = ''; _tpLiveTerm = ''; tpRenderSearch(''); }
       }
-      var nameEl = e.target.closest('.cbt-tp-row-name');
-      if (nameEl && tp.contains(nameEl)) {
-        var oldTag4 = nameEl.querySelector('.cbt-copied-tag');
-        if (oldTag4) oldTag4.remove();
-        var text = nameEl.textContent.trim();
-        copyWithFeedback(nameEl, text, e);
-      }
+
     });
   }
 
@@ -11312,8 +11321,134 @@
     next();
   }
 
+  /* Associate profiles: read existing ledgers only; no new polling or storage. */
+  var _cbtProfile = null, _cbtProfilePending = false, _cbtProfileRevision = 0;
+  function cbtProfileChanged() {
+    _cbtProfileRevision++;
+    cbtScheduleProfileRefresh();
+  }
+  function cbtScheduleProfileRefresh() {
+    if (!_cbtProfile || _cbtProfilePending || document.hidden) return;
+    _cbtProfilePending = true;
+    cbtIdle(function(){ _cbtProfilePending=false; if (_cbtProfile) cbtRenderProfile(); },300);
+  }
+  function cbtProfileSummary(slices, assoc, timezone) {
+    var total={}, days=Object.keys(slices), key=cbtAssociateKey(assoc);
+    days.forEach(function(day){
+      var records=cbtReconcileEventOwners(sanitizeHistory(slices[day] || {}));
+      Object.keys(records).forEach(function(k){
+        var row=records[k];
+        if (cbtAssociateKey(row.assoc || k)===key) total=cbtMergePerformance(total,row,false);
+      });
+    });
+    var hours={}, trackedPkgs=0, trackedCarts=0, fast=0;
+    var fmtParts=new Intl.DateTimeFormat('en-US',{timeZone:timezone,minute:'2-digit',second:'2-digit'});
+    var hourFmt=new Intl.DateTimeFormat('en-US',{timeZone:timezone,month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'});
+    Object.keys(total._cbtEvents || {}).forEach(function(id){
+      var e=total._cbtEvents[id], at=Number(e.at), pkgs=Number(e.pkgs), sec=Number(e.sec);
+      if (!isFinite(at) || at<=0 || !isFinite(pkgs) || !(pkgs>0) || !isFinite(sec) || sec<30) return;
+      var rate=pkgs/(sec/60); if (!isFinite(rate) || rate>CBT_MAX_VALID_RATE) return;
+      var day=new Date(at).toLocaleDateString('en-US',{timeZone:timezone});
+      if (days.indexOf(day)===-1) return;
+      var parts=fmtParts.formatToParts(new Date(at)), minute=0, second=0;
+      parts.forEach(function(p){if(p.type==='minute') minute=Number(p.value);if(p.type==='second') second=Number(p.value);});
+      var start=at-minute*60000-second*1000-(at%1000);
+      var bucket=hours[start] || (hours[start]={at:start,label:hourFmt.format(new Date(start)),carts:0,pkgs:0,sec:0});
+      bucket.carts++;bucket.pkgs+=pkgs;bucket.sec+=sec;
+      trackedPkgs+=pkgs;trackedCarts++;fast=Math.max(fast,rate);
+    });
+    var legacy=cbtPerformanceLegacy(total);
+    // Legacy peak metadata is already subject to the script's trusted-rate migration.
+    var legacyFast=Number(legacy.bestRate)||0;
+    if (isFinite(legacyFast) && legacyFast>0 && legacyFast<=CBT_MAX_VALID_RATE) fast=Math.max(fast,legacyFast);
+    return {carts:Number(total.runs)||0,pkgs:Number(total.totalPkgs)||0,
+      average:Number(total.totalSec)>0?Number(total.totalPkgs)/(Number(total.totalSec)/60):null,
+      fastest:fast || null,latest:Number(total.lastRate)>0?Number(total.lastRate):null,
+      hours:Object.keys(hours).map(function(k){return hours[k];}).sort(function(a,b){return a.at-b.at;}),
+      untrackedCarts:Math.max(0,(Number(total.runs)||0)-trackedCarts),
+      untrackedPkgs:Math.max(0,(Number(total.totalPkgs)||0)-trackedPkgs)};
+  }
+  function cbtProfileLiveRate(assoc) {
+    var pkgs=0, sec=0, key=cbtAssociateKey(assoc);
+    taskCache.forEach(function(d){
+      if (!cbtIsLiveBatch(d) || cbtAssociateKey(d.associateId || d.associate || d.driverAssignment || '')!==key) return;
+      var row=computeRow(d), count=Number(d.packagesBatched);
+      if (isFinite(count) && count>0 && isFinite(row.elapsedSec) && row.elapsedSec>0 && row.fullRate>0 && row.fullRate<=CBT_MAX_VALID_RATE) { pkgs+=count;sec+=row.elapsedSec; }
+    });
+    return sec>0?pkgs/(sec/60):null;
+  }
+  function cbtCloseProfile() {
+    if (!_cbtProfile) return;
+    var old=_cbtProfile;_cbtProfile=null;old.overlay.remove();
+    if (old.trigger && old.trigger.isConnected) {try {old.trigger.focus({preventScroll:true});}catch(e){}}
+  }
+  function cbtScaleProfile() {
+    if (!_cbtProfile) return;
+    var card=_cbtProfile.card;
+    var zoom=Math.max(.01,Math.min(cbtResponsivePopupScale()*1.3,
+      Math.max(1,window.innerWidth-24)/680,Math.max(1,window.innerHeight-24)/Math.max(1,card.scrollHeight || 580)));
+    if(Number(card.style.zoom)!==zoom)card.style.zoom=zoom;
+  }
+  function cbtRenderProfile() {
+    if (!_cbtProfile || !_cbtProfile.card.isConnected) return;
+    var p=_cbtProfile, today=todayStr(), timezone=getStoreTimezone();
+    var cacheKey=p.assoc+'|'+p.period+'|'+today+'|'+timezone+'|'+_cbtProfileRevision;
+    if (p.cacheKey!==cacheKey) {
+      var slices=p.period==='week'?getDisplayWeekly():Object.fromEntries([[today,getDisplayHistory()]]);
+      p.summary=cbtProfileSummary(slices,p.assoc,timezone);p.cacheKey=cacheKey;
+    }
+    var m=p.summary;
+    function rate(n){return isFinite(n)&&n>0?Number(n).toFixed(1):'—';}
+    var current=cbtProfileLiveRate(p.assoc);
+    var metrics=[['Total carts',m.carts],['Total packages',m.pkgs],['Average rate',rate(m.average)],['Fastest rate',rate(m.fastest)],['Current live rate',rate(current)],['Latest cart rate',rate(m.latest)]];
+    var metricHtml=metrics.map(function(v){return '<div><span>'+v[0]+'</span><b>'+afaEsc(String(v[1]))+'</b></div>';}).join('');
+    var metricsEl=p.card.querySelector('[data-profile-metrics]');
+    var changed=metricsEl._cbtLastHTML!==metricHtml;
+    setHTML(metricsEl,metricHtml);
+    var endFmt=new Intl.DateTimeFormat('en-US',{timeZone:timezone,hour:'numeric',minute:'2-digit',timeZoneName:'short'});
+    var html=m.hours.map(function(h){
+      var end=endFmt.format(new Date(h.at+3600000));
+      return '<tr><td>'+afaEsc(h.label+' – '+end)+'</td><td>'+h.carts+'</td><td>'+h.pkgs+'</td><td>'+rate(h.pkgs/(h.sec/60))+'</td></tr>';
+    }).join('');
+    html=html || '<tr><td colspan="4">No timestamped completed carts in this period.</td></tr>';
+    var tbody=p.card.querySelector('tbody');changed=changed || tbody._cbtLastHTML!==html;
+    setHTML(tbody,html);
+    var note='Store time: '+timezone+'. Carts and packages are grouped by completion hour. Rates are packages per minute of recorded batching time.';
+    if (m.untrackedCarts || m.untrackedPkgs) note+=' Older totals ('+m.untrackedCarts+' carts, '+m.untrackedPkgs+' packages) are included above but have no hourly detail.';
+    var noteEl=p.card.querySelector('[data-profile-note]');if(noteEl.textContent!==note){noteEl.textContent=note;changed=true;}
+    if(changed)cbtScaleProfile();
+  }
+  function cbtOpenProfile(assoc, trigger) {
+    assoc=cbtAssociateKey(assoc);if(!assoc)return;
+    cbtCloseProfile();
+    var overlay=document.createElement('div');overlay.id='cbt-profile-overlay';
+    var dark=document.getElementById('cbt-panel');if(dark && dark.classList.contains('dark'))overlay.classList.add('dark');
+    overlay.innerHTML='<section id="cbt-profile-card" role="dialog" aria-modal="true" aria-labelledby="cbt-profile-title">'+
+      '<header><strong id="cbt-profile-title">'+afaEsc(assoc)+' · Profile</strong><button type="button" data-profile-close aria-label="Close associate profile">×</button></header>'+
+      '<div class="cbt-profile-controls"><label>Period <select aria-label="Profile period"><option value="today">Today</option><option value="week">This week</option></select></label><span title="All rate values below use packages per minute of batching time">Rate Unit: Packages/Minute</span></div>'+
+      '<div class="cbt-profile-metrics" data-profile-metrics></div><div class="cbt-profile-table-wrap"><table><thead><tr><th>Completion hour</th><th>Carts</th><th>Packages</th><th>Rate</th></tr></thead><tbody></tbody></table></div>'+
+      '<p data-profile-note></p></section>';
+    document.body.appendChild(overlay);
+    var card=overlay.querySelector('section');_cbtProfile={assoc:assoc,period:activeTab==='weekly'?'week':'today',overlay:overlay,card:card,trigger:trigger};
+    var select=card.querySelector('select');select.value=_cbtProfile.period;
+    select.addEventListener('change',function(){if(_cbtProfile){_cbtProfile.period=select.value;cbtRenderProfile();}});
+    overlay.addEventListener('click',function(e){if(e.target===overlay || e.target.closest('[data-profile-close]'))cbtCloseProfile();});
+    overlay.addEventListener('keydown',function(e){
+      if(e.key==='Escape'){e.preventDefault();e.stopPropagation();cbtCloseProfile();}
+      else if(e.key==='Tab') {var controls=card.querySelectorAll('button,select'),first=controls[0],last=controls[controls.length-1];if(e.shiftKey && document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey && document.activeElement===last){e.preventDefault();first.focus();}}
+    });
+    cbtRenderProfile();card.querySelector('button').focus();
+  }
+  function cbtProfileFromEvent(e) {
+    var el=e.target.closest('.cbt-assoc, .cbt-name-cell, .cbt-search-row-name, .cbt-tp-row-name');
+    if(!el || !el.closest('#cbt-panel, #cbt-tp'))return;
+    var name=el.cloneNode(true);name.querySelectorAll('.cbt-rank,.cbt-slow-alert,.cbt-copied-tag').forEach(function(n){n.remove();});
+    cbtOpenProfile(name.textContent.trim(),el);
+  }
+
   var _cbtReportRefreshPending=false;
   function cbtScheduleReportRefresh() {
+    cbtProfileChanged();
     if (_cbtReportRefreshPending) return;
     _cbtReportRefreshPending=true;
     cbtIdle(cbtRefreshVisibleReport,300);
