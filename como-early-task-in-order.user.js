@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.125
+// @version      23.9.126
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -9830,7 +9830,7 @@
         ? 'Unavailable: the Complete Task request is not configured.'
         : (completeDisabled
             ? 'No tasks with readable IDs are available to check right now.'
-            : 'Checks every task section and completes only when Complete Task is enabled. Never Force Assigns.')
+            : 'Checks every task section using the native Complete Task request. Only server-approved completions count. Never Force Assigns.')
     );
 
     var missingCandidates = afaScanMissingCandidates();
@@ -10273,31 +10273,26 @@
         return;
       }
 
-      /* Every task section is eligible for CHECKING. Complete-only never
-         falls back to Force Assign. Claim before probing to prevent duplicates. */
+      /* Native Complete Task is an atomic eligibility check + completion.
+         Never wait for iframe rendering: background tabs can suspend that UI.
+         Only literal true counts as success; no force-assign fallback. */
       if (autoComplete || completeOnly) {
         _afaDone[item.id]=true;
-        afaProbeCompletable(item.id).then(function(probe){
-          if (_afaStop) return finish();
-          if (!probe || !probe.verified || !probe.eligible) {
-            doneResult({ref:item.ref,skip:true,ok:false,msg:(probe && probe.reason) || 'Complete Task availability could not be verified'},80);
+        afaCompleteTask(item.id).then(function(r){
+          // Record an in-flight result before honoring Stop.
+          if (afaCompletedOk(r)) {
+            doneResult({ref:item.ref,id:item.id,ok:true,msg:'Completed — server allowed Complete Task'},100);
             return;
           }
-          return afaCompleteTask(item.id).then(function(r){
-            // Record the response even if Stop was pressed while the write was in flight.
-            if (afaCompletedOk(r)) {
-              doneResult({ref:item.ref,id:item.id,ok:true,msg:'Completed — Complete Task enabled by site'});
-              return;
-            }
-            var hard=!r || !r.status || r.status===401 || r.status===403 || r.status>=500;
-            var reason=hard?'Complete Task request failed':'Complete Task no longer allowed';
-            if (r && r.status) reason+=' (HTTP '+r.status+')';
-            if (r && r.body) reason+=' — '+String(r.body).replace(/\s+/g,' ').slice(0,80);
-            doneResult({ref:item.ref,ok:false,skip:!hard,msg:reason},80);
-          });
+          var hard=!r || !r.status || r.status===401 || r.status===403 || r.status===429 || r.status>=500;
+          var reason=hard?'Complete Task request failed':'Complete Task not allowed';
+          if (r && r.status) reason+=' (HTTP '+r.status+')';
+          if (r && r.body) reason+=' — '+String(r.body).replace(/\s+/g,' ').slice(0,80);
+          // Avoid sending the rest of the queue against expired auth or a rate limit.
+          if (r && (r.status===401 || r.status===403 || r.status===429)) _afaStop=true;
+          doneResult({ref:item.ref,ok:false,skip:!hard,msg:reason},100);
         }).catch(function(error){
-          if (_afaStop) return finish();
-          doneResult({ref:item.ref,ok:false,msg:'Complete Task check failed — '+String(error && error.message || error).slice(0,80)},80);
+          doneResult({ref:item.ref,ok:false,msg:'Complete Task request failed — '+String(error && error.message || error).slice(0,80)},100);
         });
         return;
       }
