@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.112
+// @version      23.9.119
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -1933,6 +1933,46 @@
     #cbt-tp-header, #cbt-tp-controls { flex-wrap: nowrap; }
     #cbt-tp-title, #cbt-tp-controls { flex-shrink: 0; white-space: nowrap; }
     #cbt-qr-card, #cbt-afa-card { flex-shrink: 0; }
+    #cbt-afa-card { box-sizing: border-box; }
+    #cbt-afa-card:not(.cbt-afa-missing-qr-card) { min-height: 0; }
+    #cbt-afa-card:not(.cbt-afa-missing-qr-card) #cbt-afa-body { white-space: normal; flex: 1; }
+    #cbt-afa-head, #cbt-afa-foot { white-space: nowrap; }
+    #cbt-afa-foot { flex-wrap: nowrap; }
+    .cbt-missing-qr-tile[data-qr-copy] { cursor: pointer; }
+    .cbt-missing-qr-tile[data-qr-copy]:focus-visible { outline: 2px solid #2979ff; outline-offset: 3px; }
+    .cbt-missing-qr-value { position: relative; }
+    .cbt-missing-qr-value .cbt-copied-tag { position: absolute; right: 4px; bottom: 100%; background: #16803d; color: white; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+
+    /* Larger dashboard type; fixed row geometry remains identical in every status. */
+    #cbt-panel .cbt-tab { font-size: 16px; letter-spacing: .06em; }
+    #cbt-panel table th { font-size: 14px; letter-spacing: .06em; white-space: nowrap; }
+    #cbt-panel #cbt-live-search-input, #cbt-panel #cbt-hist-search-input,
+    #cbt-panel #cbt-search-input, #cbt-panel #cbt-names-search-input { font-size: 18px; }
+    #cbt-panel table tbody td .cbt-assoc, #cbt-panel .cbt-name-cell,
+    #cbt-panel .cbt-search-row-name { font-size: 20px !important; line-height: 1.25 !important; }
+    #cbt-panel table tbody td .cbt-ref { font-size: 13px !important; line-height: 1.2 !important; }
+    #cbt-panel table tbody td .cbt-elapsed, #cbt-panel table tbody td .cbt-rate,
+    #cbt-panel table tbody td .cbt-hist-rate, #cbt-panel table tbody td .cbt-hist-meta { font-size: 20px !important; }
+    #cbt-panel table tbody td { font-size: 18px; }
+    #cbt-panel #cbt-table .cbt-cw { height: 44px !important; min-height: 44px !important; max-height: 44px !important; }
+    #cbt-panel #cbt-table .cbt-cw-top { height: 24px !important; min-height: 24px !important; max-height: 24px !important; }
+    #cbt-panel #cbt-table .cbt-assoc, #cbt-panel #cbt-table .cbt-ref,
+    #cbt-panel #cbt-table .cbt-rate { max-height: 24px !important; }
+    #cbt-panel #cbt-table .cbt-elapsed { width: 76px !important; min-width: 76px !important; max-width: 76px !important; height: 26px !important; min-height: 26px !important; max-height: 26px !important; line-height: 26px !important; }
+    #cbt-panel .cbt-slow-alert { font-size: 11px; }
+
+    /* Rank is an independent, non-shrinking item; only the name may ellipsize. */
+    #cbt-panel .cbt-cw { height: 46px !important; min-height: 46px !important; max-height: 46px !important; }
+    #cbt-panel .cbt-cw-top, #cbt-panel #cbt-table .cbt-cw-top { height: 30px !important; min-height: 30px !important; max-height: 30px !important; gap: 8px; }
+    #cbt-panel .cbt-cw-top > .cbt-rank {
+      display: inline-flex; flex: 0 0 28px; width: 28px; min-width: 28px; max-width: 28px;
+      height: 28px; min-height: 28px; max-height: 28px; border-radius: 50%;
+      box-sizing: border-box; padding: 0; margin: 0; align-items: center; justify-content: center;
+      line-height: 1; font-size: 16px; font-variant-numeric: tabular-nums; white-space: nowrap;
+      vertical-align: middle; overflow: visible;
+    }
+    .cbt-ac-nm { overflow: visible; text-overflow: clip; flex-shrink: 0; }
+    .cbt-ac-hd, .cbt-ac-foot, .cbt-ac-none { white-space: nowrap; }
 
   `
 
@@ -3959,6 +3999,14 @@
     // browser 50% => actual 120%. Continue smoothly beyond both anchors.
     return clampUiScale(.2 + .5 / cbtBrowserZoom());
   }
+  function cbtResponsivePopupScale() {
+    // Separate window resizing from browser zoom; multiplying by browser zoom
+    // converts CSS viewport dimensions back to the existing 100%-zoom basis.
+    var zoom=cbtBrowserZoom();
+    var width=Math.max(1,window.innerWidth*zoom), height=Math.max(1,window.innerHeight*zoom);
+    var windowFactor=Math.sqrt((1920*1080)/(width*height));
+    return loadUiScale()*windowFactor;
+  }
   function loadUiScale() {
     if (_uiScaleBias == null) {
       var raw = gmGet(UI_SCALE_KEY, null);
@@ -3984,7 +4032,7 @@
     // Cached preference + cheap DPR calculation; no polling or DOM scans.
     _uiScaleLoaded = true;
     try { _uiScale = loadUiScale(); } catch(e) {}
-    var z = _uiScale;
+    var z = _uiScale, popupZ=cbtResponsivePopupScale();
     var panel = document.getElementById('cbt-panel');
     if (panel) {
       /* Keep the original proportions, but let A- / A+ resize the header
@@ -4015,26 +4063,23 @@
     ['cbt-afa-card', 'cbt-qr-card'].forEach(function(id){
       var card = document.getElementById(id); if (!card) return;
       var missingQr = card.classList.contains('cbt-afa-missing-qr-card');
-      var popupScale = z * (id === 'cbt-afa-card' ? (missingQr ? 1.3 : RUN_POPUP_BASE_SCALE) : 1);
-      if (id === 'cbt-qr-card' || missingQr) {
+      var popupScale = popupZ * (id === 'cbt-afa-card' ? (missingQr ? 1.3 : RUN_POPUP_BASE_SCALE) : 1);
+      {
         // Fit the complete fixed-layout card, keeping QR squares and proportions.
-        var logicalWidth = missingQr ? 980 : 340;
+        var logicalWidth = missingQr ? 980 : (id==='cbt-qr-card' ? 340 : 560);
         card.style.width = logicalWidth + 'px';
         card.style.maxWidth = 'none'; card.style.maxHeight = 'none';
-        var logicalHeight = Math.max(missingQr ? 470 : 410,card.scrollHeight || 0,card.offsetHeight || 0);
+        var logicalHeight = Math.max(missingQr ? 470 : (id==='cbt-qr-card' ? 410 : 1),card.scrollHeight || 0,card.offsetHeight || 0);
         popupScale = Math.max(.01,Math.min(popupScale,
           Math.max(1,window.innerWidth - 24) / logicalWidth,
           Math.max(1,window.innerHeight - 24) / logicalHeight));
       }
       card.style.zoom = popupScale;
-      if (id !== 'cbt-qr-card' && !missingQr) {
-        card.style.maxHeight = Math.round(window.innerHeight * .82 / popupScale) + 'px';
-        card.style.maxWidth = Math.round(window.innerWidth * .92 / popupScale) + 'px';
-      }
+
     });
     var drop = document.getElementById('cbt-ac-drop');
     if (drop) {
-      drop.style.zoom = z * ASSOCIATE_AUTOCOMPLETE_BASE_SCALE;
+      drop.style.zoom = popupZ * ASSOCIATE_AUTOCOMPLETE_BASE_SCALE;
       try { acPlace(); } catch(e) {}   /* re-anchor: zoom changes its metrics */
     }
 
@@ -4091,11 +4136,12 @@
     if (!tp) return;
     var body = tp.querySelector('#cbt-tp-body');
     if (body) body.style.zoom = 1;
-    var automaticScale = loadUiScale();
+    var automaticScale = cbtResponsivePopupScale();
     var effectiveScale = automaticScale * scale * SEARCH_POPUP_BASE_SCALE;
-    tp.style.zoom = effectiveScale;
-    tp.style.maxWidth = Math.round(window.innerWidth * .94 / effectiveScale) + 'px';
-    tp.style.maxHeight = Math.round(window.innerHeight * .82 / effectiveScale) + 'px';
+    tp.style.maxWidth='none';tp.style.maxHeight='none';
+    effectiveScale=Math.max(.01,Math.min(effectiveScale,(window.innerWidth-24)/420,
+      (window.innerHeight-24)/Math.max(1,tp.scrollHeight || tp.offsetHeight || 1)));
+    tp.style.zoom=effectiveScale;
   }
 
   /* ══════════════════════════════════════
@@ -5143,11 +5189,13 @@
 
      Every updated computer now shares /como_hof_v2. */
   var HOF_SCHEMA          = 2;
-  var HOF_FIREBASE_ROOT   = '/como_hof_v2';
-  var HOF_PEAKS_KEY       = 'cbt_hof_v2_peaks';
-  var HOF_LATEST_KEY      = 'cbt_hof_v2_latest';
-  var HOF_OWN_KEY         = 'cbt_hof_v2_own_totals';
-  var HOF_REMOTE_KEY      = 'cbt_hof_v2_remote_totals';
+  /* User-requested Fastest reset: a fresh persistent generation prevents
+     older devices from restoring pre-reset records during sync. */
+  var HOF_FIREBASE_ROOT   = '/como_hof_v2_reset_v239117';
+  var HOF_PEAKS_KEY       = 'cbt_hof_v2_reset_v239117_peaks';
+  var HOF_LATEST_KEY      = 'cbt_hof_v2_reset_v239117_latest';
+  var HOF_OWN_KEY         = 'cbt_hof_v2_reset_v239117_own_totals';
+  var HOF_REMOTE_KEY      = 'cbt_hof_v2_reset_v239117_remote_totals';
 
   function hofUrl(path)      { return FIREBASE_URL + path + '.json'; }
   function hofRootPath(path) {
@@ -5670,8 +5718,8 @@
       var rankCls = rk === 1 ? 'gold' : rk === 2 ? 'silver' : rk === 3 ? 'bronze' : '';
       var rowCls  = (rk && rk <= 3) ? (' class="cbt-hof-' + rk + '"') : '';
       html += '<tr' + rowCls + '>' +
-        '<td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-assoc">' +
-          '<span class="cbt-rank ' + rankCls + '">' + rankTxt + '</span>' + afaEsc(e.assoc) +
+        '<td><span class="cbt-cw"><span class="cbt-cw-top">' +
+          '<span class="cbt-rank ' + rankCls + '" style="font-size:' + Math.min(16,22 / (String(rankTxt).length * .64)).toFixed(2) + 'px">' + rankTxt + '</span><span class="cbt-assoc">' + afaEsc(e.assoc) +
           '</span></span></span></td>' +
         '<td><span class="cbt-hist-meta">' + e.runs + '</span></td>' +
         '<td><span class="cbt-hist-meta">' + e.pkgs + '</span></td>' +
@@ -6704,10 +6752,12 @@
 
     document.addEventListener('click', function(e) {
       var el = e.target.closest('.cbt-assoc');
+      var rank = e.target.closest('.cbt-rank');
+      if (!el && rank && rank.parentElement) el = rank.parentElement.querySelector('.cbt-assoc');
       if (!el || !panel2.contains(el)) return;
       var oldTag = el.querySelector('.cbt-copied-tag');
       if (oldTag) oldTag.remove();
-      var text = el.textContent.replace(/^\d+\s*/, '').replace(/[●•]/g, '').trim();
+      var text = el.textContent.replace(/[●•]/g, '').trim();
       copyWithFeedback(el, text, e);
     });
 
@@ -7041,7 +7091,7 @@
       var rateCls=bestRate>=WARN_RATE?'good':bestRate>=ALERT_RATE?'warn':'alert';
       var rk=e._displayRank||0;
       var rankCls=rk===1?'gold':rk===2?'silver':rk===3?'bronze':'';
-      html+='<tr><td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-assoc"><span class="cbt-rank '+rankCls+'">'+rk+'</span>'+afaEsc(e.assoc)+'</span></span></span></td>';
+      html+='<tr><td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-rank '+rankCls+'" style="font-size:'+Math.min(16,22 / (String(rk).length * .64)).toFixed(2)+'px">'+rk+'</span><span class="cbt-assoc">'+afaEsc(e.assoc)+'</span></span></span></td>';
       html+='<td><span class="cbt-hist-meta">'+e.runs+'</span></td><td><span class="cbt-hist-meta">'+e.totalPkgs+'</span></td>';
       html+='<td>'+(bestRate>0?'<span class="cbt-hist-rate '+rateCls+'">'+bestRate.toFixed(1)+'</span>':'<span class="cbt-hist-meta">—</span>')+'</td>';
       var latestRate=Number(e.lastRate), latestCls=latestRate>=WARN_RATE?'good':latestRate>=ALERT_RATE?'warn':'alert';
@@ -7181,7 +7231,7 @@
       var rateCls=bestRate>=WARN_RATE?'good':bestRate>=ALERT_RATE?'warn':'alert';
       var rk=e._displayRank||0;
       var rankCls=rk===1?'gold':rk===2?'silver':rk===3?'bronze':'';
-      html+='<tr><td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-assoc"><span class="cbt-rank '+rankCls+'">'+rk+'</span>'+afaEsc(e.assoc)+'</span></span></span></td>';
+      html+='<tr><td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-rank '+rankCls+'" style="font-size:'+Math.min(16,22 / (String(rk).length * .64)).toFixed(2)+'px">'+rk+'</span><span class="cbt-assoc">'+afaEsc(e.assoc)+'</span></span></span></td>';
       html+='<td><span class="cbt-hist-meta">'+e.runs+'</span></td>';
       html+='<td><span class="cbt-hist-meta">'+e.totalPkgs+'</span></td>';
       html+='<td>'+(bestRate>0?'<span class="cbt-hist-rate '+rateCls+'">'+bestRate.toFixed(1)+'</span>':'<span class="cbt-hist-meta">—</span>')+'</td>';
@@ -7430,17 +7480,12 @@
   /* Keep the panel reachable rather than boxed in: it may hang off any edge
      as long as a grabbable strip of the header stays on screen, so you can
      park it literally anywhere and still drag it back. */
-  function clampTpPos(tp, left, top) {
-    var w = tp.getBoundingClientRect().width || (tp.offsetWidth || 420) * (parseFloat(tp.style.zoom) || 1);
-    var KEEP = 90;                                  /* visible strip, px */
-    var minLeft = -(w - KEEP);
-    var maxLeft = window.innerWidth - KEEP;
-    var minTop  = 0;                                /* header never above the top */
-    var maxTop  = Math.max(0, window.innerHeight - 44);
-    return {
-      left: Math.min(Math.max(minLeft, left), maxLeft),
-      top:  Math.min(Math.max(minTop,  top),  maxTop)
-    };
+  function clampTpPos(tp,left,top) {
+    var scale=parseFloat(tp.style.zoom)||1, rect=tp.getBoundingClientRect();
+    var width=rect.width || (tp.offsetWidth || 420)*scale;
+    var height=rect.height || (tp.offsetHeight || 1)*scale;
+    return {left:Math.max(8,Math.min(left,window.innerWidth-width-8)),
+      top:Math.max(8,Math.min(top,window.innerHeight-height-8))};
   }
   /* The panel's own CSS declares `top: 90px !important; right: 12px !important`.
      A plain inline style loses to !important, which pinned the panel
@@ -7461,7 +7506,10 @@
 
   function applyTpPos(tp) {
     var p = loadTpPos();
-    if (!p) return;                 /* never moved — keep the default corner */
+    if (!p) {
+      var scale=parseFloat(tp.style.zoom)||1;
+      p={left:window.innerWidth-420*scale-12,top:90};
+    }
     var c = clampTpPos(tp, p.left, p.top);
     tpSetPos(tp, c.left, c.top);
   }
@@ -9094,7 +9142,7 @@
     var svg = afaQrSvgMarkup(value);
     if (!svg) return '';
 
-    return '<div class="cbt-missing-qr-tile">' +
+    return '<div class="cbt-missing-qr-tile" role="button" tabindex="0" data-qr-copy="' + afaEsc(value) + '" title="Click to copy ID" aria-label="Copy ' + afaEsc(kind) + ' ID">' +
       '<div class="cbt-missing-qr-kind">' + afaEsc(kind) + '</div>' +
       '<div class="cbt-missing-qr-svg">' + svg + '</div>' +
       '<div class="cbt-missing-qr-value" style="font-size:' + Math.min(16,210 / (Math.max(1,String(value).length) * .64)).toFixed(2) + 'px">' + afaEsc(value) + '</div>' +
@@ -9215,8 +9263,17 @@
     try { card.focus({ preventScroll: true }); }
     catch(eFocus) { try { card.focus(); } catch(eFocus2) {} }
 
+    function copyQrTile(e) {
+      var tile = e.target.closest('[data-qr-copy]');
+      if (!tile || !card.contains(tile)) return false;
+      e.preventDefault();
+      copyWithFeedback(tile.querySelector('.cbt-missing-qr-value'), tile.getAttribute('data-qr-copy'), e);
+      return true;
+    }
+
     card.addEventListener('keydown', function(e){
       if (!e) return;
+      if ((e.key === 'Enter' || e.key === ' ') && copyQrTile(e)) return;
 
       var isLeft = e.key === 'ArrowLeft' || e.keyCode === 37;
       var isRight = e.key === 'ArrowRight' || e.keyCode === 39;
@@ -9232,6 +9289,7 @@
     });
 
     card.addEventListener('click', function(e){
+      if (copyQrTile(e)) return;
       var b = e.target.closest('[data-afa]');
       if (!b) return;
 
@@ -9831,6 +9889,7 @@
           ' found. Click to open QR' +
           (verifiedEntries.length === 1 ? '' : 's') +
           (verifiedEntries.length > 1 ? ' with left/right navigation.' : '.');
+        cbtScheduleUiScale();
         return;
       }
 
@@ -9843,6 +9902,7 @@
         copy.textContent =
           'No MISSING or DAMAGED package was found in Tasks, Problem Solve, or Partially Batched. This button is disabled.';
       }
+      cbtScheduleUiScale();
     }
 
     if (missingCandidates.length) {
@@ -10524,9 +10584,11 @@
        of left/top/width — so divide by it to land on the real viewport
        pixels of the field. Without this the list drifts off the input as
        soon as the size is changed. */
-    var z = parseFloat(_acDrop.style.zoom) || loadUiScale() * ASSOCIATE_AUTOCOMPLETE_BASE_SCALE;
+    var logicalWidth=_acDrop._cbtLogicalWidth || 320;
+    var z=Math.max(.01,Math.min(cbtResponsivePopupScale()*ASSOCIATE_AUTOCOMPLETE_BASE_SCALE,Math.max(1,window.innerWidth-16)/logicalWidth));
+    _acDrop.style.zoom=z;
     var r = _acInput.getBoundingClientRect();
-    var w = Math.min(Math.max(r.width, 320 * z), Math.max(1, window.innerWidth - 16));
+    var w = Math.min(Math.max(r.width, logicalWidth * z), Math.max(1, window.innerWidth - 16));
     _acDrop.style.minWidth = '0';
     _acDrop.style.boxSizing = 'border-box';
     var left = Math.min(r.left, window.innerWidth - w - 8);
@@ -10553,7 +10615,7 @@
       _acDrop = document.createElement('div');
       _acDrop.id = 'cbt-ac-drop';
       document.body.appendChild(_acDrop);
-      try { _acDrop.style.zoom = loadUiScale() * ASSOCIATE_AUTOCOMPLETE_BASE_SCALE; } catch(e) {}
+      try { _acDrop.style.zoom = cbtResponsivePopupScale() * ASSOCIATE_AUTOCOMPLETE_BASE_SCALE; } catch(e) {}
       try { applyPopupTheme(); } catch(e) {}
       /* mousedown, not click: fires before the field loses focus */
       _acDrop.addEventListener('mousedown', function(e){
@@ -10580,6 +10642,7 @@
       }
     }
     _acDrop.innerHTML = html;
+    _acDrop._cbtLogicalWidth=Math.max(320,rows.reduce(function(width,row){ return Math.max(width,String(row).length*8+110); },0));
     acPlace();
   }
 
@@ -10890,13 +10953,14 @@
   }
 
   var _cbtUiResizeFrame = null;
-  window.addEventListener('resize', function(){
+  function cbtScheduleUiScale(){
     if (_cbtUiResizeFrame !== null) return;
     _cbtUiResizeFrame = requestAnimationFrame(function(){
       _cbtUiResizeFrame = null;
       try { applyUiScale(); } catch(e) {}
     });
-  });
+  }
+  window.addEventListener('resize',cbtScheduleUiScale);
   window.addEventListener('scroll', function(){ if (_acDrop) acPlace(); }, true);
   var _acObserver = null;
 
