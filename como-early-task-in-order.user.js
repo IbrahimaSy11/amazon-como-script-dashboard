@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.94
+// @version      23.9.112
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -28,7 +28,7 @@
   /* A second installation must not stack network hooks and observers. */
   if (document.documentElement.hasAttribute('data-cbt-runtime-v23985')) return;
   document.documentElement.setAttribute('data-cbt-runtime-v23985', '1');
-  document.documentElement.setAttribute('data-cbt-version', '23.9.94');
+  document.documentElement.setAttribute('data-cbt-version', '23.9.110');
 
   var _cbtAuthCache = {route: '', until: 0, value: false};
   function cbtAuthPage() {
@@ -1459,6 +1459,7 @@
       border: 1px solid #d8e0e8;
       border-radius: 10px;
       width: 340px;
+      box-sizing: border-box;
       max-width: calc(100vw - 20px);
       box-shadow: 0 8px 24px rgba(13,27,42,0.18), 0 2px 7px rgba(13,27,42,0.10);
       overflow: hidden;
@@ -1566,11 +1567,7 @@
       border-color: var(--cb-blue);
       box-shadow: 0 0 0 2px rgba(41,121,255,.12);
     }
-    @media (max-width: 560px) {
-      #cbt-qr-overlay { padding: 6px; }
-      #cbt-qr-card { width: 300px; }
-      #cbt-qr-svg { width: 230px; height: 230px; }
-    }
+
 
     /* ══════════════════════════════════════
        AUTO FORCE ASSIGN
@@ -1718,7 +1715,9 @@
       line-height: 1;
       transform: translateY(-1px);
     }
-    #cbt-afa-card.cbt-afa-missing-qr-card { width: 1180px; }
+    #cbt-afa-card.cbt-afa-missing-qr-card { width: 980px; box-sizing: border-box; }
+    #cbt-afa-card.cbt-afa-missing-qr-card #cbt-afa-title,
+    #cbt-afa-card.cbt-afa-missing-qr-card #cbt-afa-bar { white-space: nowrap; flex-wrap: nowrap; }
     .cbt-missing-qr-summary {
       margin-bottom: 10px;
       color: var(--cb-text2);
@@ -1768,16 +1767,16 @@
     .cbt-missing-qr-next { grid-column: 3; justify-self: end; }
     .cbt-missing-qr-grid {
       display: grid;
-      grid-template-columns: repeat(2, minmax(0, 300px));
+      grid-template-columns: repeat(2, 260px);
       justify-content: center;
       /* Keep the two scanner targets very far apart so aiming at one QR does
          not easily place the other QR inside the scanner's field of view. */
-      column-gap: clamp(220px, 24vw, 360px);
+      column-gap: 400px;
       row-gap: 50px;
       align-items: start;
     }
     .cbt-missing-qr-grid.single {
-      grid-template-columns: minmax(0, 330px);
+      grid-template-columns: 260px;
       justify-content: center;
     }
     .cbt-missing-qr-tile {
@@ -1798,12 +1797,12 @@
       white-space: nowrap;
     }
     .cbt-missing-qr-svg {
-      width: 270px;
-      min-width: 270px;
-      max-width: 270px;
-      height: 270px;
-      min-height: 270px;
-      max-height: 270px;
+      width: 200px;
+      min-width: 200px;
+      max-width: 200px;
+      height: 200px;
+      min-height: 200px;
+      max-height: 200px;
       aspect-ratio: 1 / 1;
       margin: 0 auto;
       display: flex;
@@ -1815,6 +1814,7 @@
       display: block;
       width: 100%;
       height: 100%;
+      shape-rendering: crispEdges;
     }
     .cbt-missing-qr-value {
       margin-top: 10px;
@@ -1827,16 +1827,9 @@
       line-height: 1.25;
       font-weight: 900;
       text-align: center;
-      word-break: break-all;
-    }
-    @media (max-width: 760px) {
-      .cbt-missing-qr-grid,
-      .cbt-missing-qr-grid.single {
-        grid-template-columns: minmax(0, 330px);
-        justify-content: center;
-        row-gap: 50px;
-      }
-      #cbt-afa-card.cbt-afa-missing-qr-card { width: 94vw; }
+      white-space: nowrap;
+      word-break: normal;
+      box-sizing: border-box;
     }
     .cbt-afa-opt {
       display: flex; align-items: flex-start; gap: 9px; cursor: pointer;
@@ -1927,6 +1920,19 @@
     .cbt-task-sort-layout > job-card { flex: 0 0 auto; width: 100%; min-width: 0; }
     .cbt-task-sort-layout > :not(job-card) { order: -1; }
     .cbt-task-sort-layout > .job-card-header { order: -1 !important; }
+
+    #cbt-header, #cbt-controls { flex-wrap: nowrap !important; }
+    #cbt-header { overflow-x: auto; }
+    #cbt-title { flex-shrink: 0; white-space: nowrap; }
+    #cbt-controls { flex-shrink: 0; }
+
+    /* Viewport safeguards for automatic scaling, without nested body zoom. */
+    #cbt-tp, #cbt-afa-card, #cbt-qr-card { overflow: auto !important; }
+    #cbt-tp { box-sizing: border-box; }
+    #cbt-tp-header, #cbt-tp-body { min-width: 420px; box-sizing: border-box; }
+    #cbt-tp-header, #cbt-tp-controls { flex-wrap: nowrap; }
+    #cbt-tp-title, #cbt-tp-controls { flex-shrink: 0; white-space: nowrap; }
+    #cbt-qr-card, #cbt-afa-card { flex-shrink: 0; }
 
   `
 
@@ -3120,7 +3126,6 @@
          clock cannot make the timer jump or show the wrong duration. */
   var _cbtLiveStartByRef = Object.create(null);
   var _cbtMissingPollsByRef = Object.create(null);
-  var CBT_MISSING_POLL_GRACE = 3;                 // ~6s at the 2s poll rate
   var CBT_START_RETAIN_AFTER_MISSING_MS = 30000;  // enough for a transient API gap
   var CBT_START_CACHE_TTL_MS = 15 * 60 * 1000;
   var CBT_MAX_LIVE_AGE_MS = 12 * 60 * 60 * 1000;
@@ -3317,7 +3322,9 @@
 
   function cbtIsLiveBatch(data) {
     if (!data || typeof data !== 'object') return false;
-    if (String(data.state || '').toUpperCase() === 'BATCHING') return true;
+    var jobState = String(data.state || '').toUpperCase();
+    if (jobState === 'BATCHING') return true;
+    if (/^(BATCHED|DROPPING|STOWING|COMPLETED|COMPLETE|CANCELLED|CANCELED|DONE|FINISHED|CLOSED)$/.test(jobState)) return false;
     var ops = Array.isArray(data.operationDetails) ? data.operationDetails : [];
     for (var i = 0; i < ops.length; i++) {
       var op = ops[i];
@@ -3518,6 +3525,91 @@
   var WEEKLY_SYNC_SCHEMA_KEY    = 'cbt_weekly_sync_schema_v2';
 
   var taskCache = new Map();
+  var _cbtRequestSequence = 0, _cbtLastSnapshotSequence = 0;
+  var _cbtSnapshotRefs = new Set(), _cbtIngestSequence = 0;
+  var _cbtTaskSequences = new Map();
+  var _cbtDataBatchDepth=0, _cbtBatchHistory=null, _cbtBatchHistoryDirty=false;
+  var _cbtBatchHof=null, _cbtBatchHofDirty=false;
+  function cbtRunDataBatch(fn) {
+    _cbtDataBatchDepth++;
+    try { return fn(); }
+    finally {
+      _cbtDataBatchDepth--;
+      if (!_cbtDataBatchDepth) {
+        var history=_cbtBatchHistory, save=_cbtBatchHistoryDirty;
+        var hof=_cbtBatchHof, saveHof=_cbtBatchHofDirty;
+        _cbtBatchHistory=null; _cbtBatchHistoryDirty=false;
+        _cbtBatchHof=null; _cbtBatchHofDirty=false;
+        if (save && history) saveHistory(history);
+        if (saveHof && hof) hofSaveOwnTotals(hof);
+      }
+    }
+  }
+  function cbtAssociateKey(value) {
+    return typeof value === 'string' ? value.trim().toLowerCase() : '';
+  }
+  function cbtLiveItems(payload) {
+    if (Array.isArray(payload)) return payload;
+    if (!payload || typeof payload !== 'object') return null;
+    if (payload.shortClientRef != null) return [payload];
+    var found = false, items = [];
+    ['summaries','tasks','results','items','jobs','data'].forEach(function(key){
+      if (Array.isArray(payload[key])) { found = true; items = items.concat(payload[key]); }
+    });
+    return found ? items : null;
+  }
+  function cbtSourceUpdatedMs(data) {
+    return cbtNormalizeEpochMs(data && (data.updatedAt || data.lastUpdated || data.modifiedAt || data.updated || data.lastModified)) || 0;
+  }
+  function cbtTaskSignature(data) {
+    return [data.state, data.associateId, data.associate, data.driverAssignment,
+      data.packagesBatched, data.packagesCollected, data.totalExpectedPackages,
+      cbtTaskGeneration(data), cbtSourceUpdatedMs(data),
+      (Array.isArray(data.operationDetails) ? data.operationDetails : []).filter(Boolean).map(function(op){ return [op.name,op.state,op.operationState,op.start,op.end].join(':'); }).join('|')].join('~');
+  }
+  function cbtApplyLiveSnapshot(payload, sequence) {
+    var items = cbtLiveItems(payload);
+    // Unknown envelopes and failed reads never clear valid current work.
+    if (items == null || sequence < _cbtLastSnapshotSequence) return false;
+    var canonical = new Map();
+    items.forEach(function(data){
+      if (!data || data.shortClientRef == null) return;
+      var ref = String(data.shortClientRef).trim(); if (!ref) return;
+      var previous = canonical.get(ref);
+      if (!previous) { canonical.set(ref,data); return; }
+      var oldAt = cbtSourceUpdatedMs(previous), newAt = cbtSourceUpdatedMs(data);
+      var oldInfo = cbtBatchingOpInfo(previous,false), newInfo = cbtBatchingOpInfo(data,false);
+      var oldStart = oldInfo && oldInfo.startMs || 0, newStart = newInfo && newInfo.startMs || 0;
+      if (newAt > oldAt || (newAt === oldAt && newStart > oldStart)) canonical.set(ref,data);
+      else if (newAt === oldAt && newStart === oldStart) {
+        // Complementary fragments of the same job can fill omitted fields.
+        var merged = Object.assign({},previous,data);
+        if (previous.state && !cbtIsLiveBatch(previous) && cbtIsLiveBatch(data)) { merged.state=previous.state; merged.operationDetails=previous.operationDetails; }
+        if (cbtTaskGeneration(previous) && cbtTaskGeneration(data) &&
+            cbtTaskGeneration(previous) !== cbtTaskGeneration(data)) return;
+        if (!Array.isArray(data.operationDetails) || !data.operationDetails.length) merged.operationDetails = previous.operationDetails;
+        canonical.set(ref,merged);
+      }
+    });
+    _cbtLastSnapshotSequence = sequence;
+    _cbtSnapshotRefs = new Set();
+    canonical.forEach(function(data,ref){ if (cbtIsLiveBatch(data)) _cbtSnapshotRefs.add(ref); });
+    var previousSequence = _cbtIngestSequence;
+    _cbtIngestSequence = sequence;
+    try { cbtRunDataBatch(function(){
+      canonical.forEach(function(data){ ingestItem(data,true); });
+      taskCache.forEach(function(data,ref){
+        if (_cbtSnapshotRefs.has(ref) || (_cbtTaskSequences.get(ref) || 0) > sequence) return;
+        taskCache.delete(ref); cbtMarkLiveMissing(ref); _cbtTaskSequences.delete(ref);
+      });
+      deepCaptureNames(payload,0);
+      try { afaRecordJobs(payload,0); } catch(e) {}
+    }); } finally { _cbtIngestSequence = previousSequence; }
+    cbtPruneOldLiveStarts();
+    requestLiveRender(); // Includes an authoritative empty array/count of zero.
+    return true;
+  }
+
   var activeTab = 'live';
 
   var _liveRenderPending = false;
@@ -3632,7 +3724,7 @@
       var ls = JSON.parse(localStorage.getItem(OWN_WEEKLY_KEY) || localStorage.getItem(WEEKLY_KEY) || '{}');
       for (var dk in ls) {
         if (!result[dk]) result[dk] = {};
-        for (var a in ls[dk]) { if (!result[dk][a]) result[dk][a] = ls[dk][a]; }
+        for (var a in ls[dk]) { result[dk][a] = cbtMergePerformance(result[dk][a],ls[dk][a],true); }
       }
     } catch(e3) {}
 
@@ -3744,30 +3836,7 @@
     var remote = sanitizeWeekly(loadRemoteWeekly());
     var out = {};
 
-    function addSlice(slice) {
-      for (var dk in slice) {
-        if (!cbtIsDateInCurrentWeek(dk)) continue;
-        if (!out[dk]) out[dk] = {};
-        for (var a in slice[dk]) {
-          var r = slice[dk][a];
-          if (!out[dk][a]) {
-            out[dk][a] = { totalPkgs: r.totalPkgs||0, totalSec: r.totalSec||0, runs: r.runs||0,
-              totalMissing: r.totalMissing||0, totalExpected: r.totalExpected||0,
-              bestRate: null, lastRate: null, lastAt: 0 };
-            cbtMergeBestFields(out[dk][a], r);
-            cbtMergeLatestFields(out[dk][a], r);
-          } else {
-            out[dk][a].totalPkgs    += r.totalPkgs    || 0;
-            out[dk][a].totalSec     += r.totalSec     || 0;
-            out[dk][a].runs         += r.runs         || 0;
-            out[dk][a].totalMissing += r.totalMissing || 0;
-            out[dk][a].totalExpected+= r.totalExpected|| 0;
-            cbtMergeBestFields(out[dk][a], r);
-            cbtMergeLatestFields(out[dk][a], r);
-          }
-        }
-      }
-    }
+    function addSlice(slice) { cbtAddWeeklySlice(out,slice); }
 
     addSlice(own);
     addSlice(remote);
@@ -3791,11 +3860,12 @@
           totalExpected: r2.totalExpected||0,
           bestRate: Math.max(Number(r2.bestRate)||0, Number(r2.lastRate)||0, Number(r2.avgRate)||0) || null,
           lastRate: Number(r2.lastRate) > 0 ? Number(r2.lastRate) : null,
-          lastAt: Number(r2.lastAt) || 0
+          lastAt: Number(r2.lastAt) || 0, _cbtEvents:r2._cbtEvents || {}, _cbtLegacy:cbtPerformanceLegacy(r2)
         };
       }
     }
 
+    Object.keys(out).forEach(function(day){ out[day]=cbtReconcileEventOwners(out[day]); });
     _dispWeekCache = out; _dispWeekTime = _now;
     return out;
   }
@@ -3849,29 +3919,61 @@
 
      It only ever touches elements this script created. The dashboard
      itself is never zoomed, and the browser's own zoom is untouched.
-     Deliberately a NEW storage key, so everyone starts at a clean 100%.
+     A new preference starts at 70% at normal browser zoom, and adjusts across the full browser zoom range.
   ══════════════════════════════════════ */
-  var HEADER_FIXED_SCALE = 1.3;      /* header bar: constant, never scaled */
-  var STATS_FIXED_SCALE  = 1.3;      /* Batchers / Recommended / Remaining: constant 130% */
-  var MISSING_QR_FIXED_SCALE = 1.3;  /* Missing Package QR results: constant 130% */
-  var UI_SCALE_KEY  = 'cbt_ui_scale';
-  var UI_SCALE_MIN  = 0.7, UI_SCALE_MAX = 2.0, UI_SCALE_STEP = 0.1, UI_SCALE_DEFAULT = 1;
+  var HEADER_FIXED_SCALE = 1.3;      /* original header proportions at 100% */
+  var STATS_FIXED_SCALE  = 1.3;      /* original stats proportions at 100% */
+  var UI_SCALE_KEY = 'cbt_ui_scale_responsive_v1';
+  var UI_SCALE_MIN  = 0.01, UI_SCALE_MAX = Infinity, UI_SCALE_STEP = 0.1, UI_SCALE_DEFAULT = 0.7;
   var _uiScale = UI_SCALE_DEFAULT;
+  var SEARCH_POPUP_BASE_SCALE = 1.4, RUN_POPUP_BASE_SCALE = 1.8;
+  var ASSOCIATE_AUTOCOMPLETE_BASE_SCALE = 1.6;
 
   function clampUiScale(v) {
     v = parseFloat(v);
-    if (!v || isNaN(v)) v = UI_SCALE_DEFAULT;
-    return Math.min(UI_SCALE_MAX, Math.max(UI_SCALE_MIN, Math.round(v * 100) / 100));
+    if (!isFinite(v)) v = UI_SCALE_DEFAULT;
+    return Math.min(UI_SCALE_MAX, Math.max(UI_SCALE_MIN, Math.round(v * 10000) / 10000));
+  }
+  var _uiScaleBias = null, _cbtBaseDpr = null, _cbtScreenSize = '';
+  function cbtBrowserZoom() {
+    // Browsers do not expose their zoom menu directly. Calibrate DPR against
+    // the outer/inner viewport ratio, then track DPR changes. Ordinary window
+    // resizing or opening a sidebar must not be mistaken for browser zoom.
+    var dpr = Number(window.devicePixelRatio) || 1;
+    var screenSize = String(window.screen.width) + ':' + String(window.screen.height);
+    var estimate = Number(window.outerWidth) / Number(window.innerWidth);
+    if (!isFinite(estimate) || estimate < .2 || estimate > 5) estimate = 1;
+    var levels = [.25,.33,.5,.67,.75,.8,.9,1,1.1,1.25,1.5,1.75,2,2.5,3,4,5];
+    var nearest = levels.reduce(function(best, value){
+      return Math.abs(value - estimate) < Math.abs(best - estimate) ? value : best;
+    }, 1);
+    if (Math.abs(nearest - estimate) > .06) nearest = 1;
+    if (_cbtBaseDpr == null || screenSize !== _cbtScreenSize) {
+      _cbtBaseDpr = dpr / nearest;
+      _cbtScreenSize = screenSize;
+    }
+    return dpr / _cbtBaseDpr;
+  }
+  function cbtAutomaticUiScale() {
+    // Preserve the approved anchors: browser 100% => actual 70%,
+    // browser 50% => actual 120%. Continue smoothly beyond both anchors.
+    return clampUiScale(.2 + .5 / cbtBrowserZoom());
   }
   function loadUiScale() {
-    var raw = gmGet(UI_SCALE_KEY, null);
-    if (raw == null) { try { raw = localStorage.getItem(UI_SCALE_KEY); } catch(e) {} }
-    if (raw == null) return UI_SCALE_DEFAULT;          /* first run: 100% */
-    return clampUiScale(raw);
+    if (_uiScaleBias == null) {
+      var raw = gmGet(UI_SCALE_KEY, null);
+      if (raw == null) { try { raw = localStorage.getItem(UI_SCALE_KEY); } catch(e) {} }
+      var bias = raw == null ? 0 : Number(raw);
+      _uiScaleBias = isFinite(bias) && bias > -UI_SCALE_DEFAULT ? bias : 0;
+    }
+    // A proportional manual adjustment continues following browser zoom
+    // instead of reaching a fixed additive floor at higher browser zoom.
+    return clampUiScale(cbtAutomaticUiScale() * (1 + _uiScaleBias / UI_SCALE_DEFAULT));
   }
   function saveUiScale(v) {
-    gmSet(UI_SCALE_KEY, String(v));
-    try { localStorage.setItem(UI_SCALE_KEY, String(v)); } catch(e) {}
+    _uiScaleBias = Math.round((clampUiScale(v) / cbtAutomaticUiScale() - 1) * UI_SCALE_DEFAULT * 10000) / 10000;
+    gmSet(UI_SCALE_KEY, String(_uiScaleBias));
+    try { localStorage.setItem(UI_SCALE_KEY, String(_uiScaleBias)); } catch(e) {}
   }
 
   /* Every root this script owns. Popups are scaled on their inner card, not
@@ -3879,59 +3981,63 @@
      exactly and the card stays centred at any size. */
   var _uiScaleLoaded = false;
   function applyUiScale() {
-    /* Read the saved size the first time anything is drawn, so a panel that
-       mounts before startup finishes still comes up at the chosen size
-       instead of snapping back to 100%. */
-    if (!_uiScaleLoaded) {
-      _uiScaleLoaded = true;
-      try { _uiScale = loadUiScale(); } catch(e) {}
-    }
+    // Cached preference + cheap DPR calculation; no polling or DOM scans.
+    _uiScaleLoaded = true;
+    try { _uiScale = loadUiScale(); } catch(e) {}
     var z = _uiScale;
     var panel = document.getElementById('cbt-panel');
     if (panel) {
-      /* The header bar is pinned at 130% and deliberately ignores A- / A+,
-         so it stays a constant anchor while the content below resizes. */
+      /* Keep the original proportions, but let A- / A+ resize the header
+         and the three-number strip shown directly beneath it too. */
       var hdr = panel.querySelector('#cbt-header');
-      if (hdr) hdr.style.zoom = HEADER_FIXED_SCALE;
+      if (hdr) hdr.style.zoom = Math.round(HEADER_FIXED_SCALE * z * 100) / 100;
 
-      /* v23.9.84: pin the three-number stats row at the same 130% as the
-         header. A- / A+ must never resize Batchers, Recommended This Hour,
-         or Remaining. */
+      /* Batchers, Recommended This Hour and Remaining follow the same
+         size change as the header, preserving their existing proportions. */
       var stats = panel.querySelector('#cbt-stats-bar');
-      if (stats) stats.style.zoom = STATS_FIXED_SCALE;
+      if (stats) stats.style.zoom = Math.round(STATS_FIXED_SCALE * z * 100) / 100;
 
-      /* Only the tabs/search/table area below the fixed stats row follows
-         the A- / A+ scale controls. */
+      /* Give tabs, search and table text the same readable base scale as
+         the header. Zoom scales row heights and spacing with the text, so
+         fixed row geometry is preserved without clipping larger letters. */
       ['#cbt-tabs', '#cbt-unified-search', '#cbt-body', '#cbt-drag-bottom'].forEach(function(sel){
         var el = panel.querySelector(sel);
-        if (el) el.style.zoom = z;
+        if (el) el.style.zoom = Math.round(HEADER_FIXED_SCALE * z * 100) / 100;
       });
     }
     var tp = document.getElementById('cbt-tp');
-    if (tp) { tp.style.zoom = z; }
-
-    /* The QR popup is intentionally left out: it keeps its own fixed size
-       and its plain white styling in both day and night mode. */
-    var afa = document.getElementById('cbt-afa-card');
-    if (afa) {
-      /* Only the Missing Package QR result view is pinned at 130%.
-         A- / A+ can continue resizing the normal Cart Actions menu, but they
-         can never resize the generated Missing/Cart QR codes. */
-      var afaScale = afa.classList.contains('cbt-afa-missing-qr-card')
-        ? MISSING_QR_FIXED_SCALE
-        : z;
-
-      afa.style.zoom = afaScale;
-      afa.style.maxHeight = Math.round((window.innerHeight * 0.82) / afaScale) + 'px';
-      afa.style.maxWidth  = Math.round((window.innerWidth  * 0.92) / afaScale) + 'px';
+    if (tp) {
+      // Scale the whole search panel once, including its header and controls.
+      // Preserve its existing local A-/A+ preference as a proportional factor.
+      applyTpFontScale(tp, loadTpFontScale());
+      applyTpPos(tp);
     }
+    ['cbt-afa-card', 'cbt-qr-card'].forEach(function(id){
+      var card = document.getElementById(id); if (!card) return;
+      var missingQr = card.classList.contains('cbt-afa-missing-qr-card');
+      var popupScale = z * (id === 'cbt-afa-card' ? (missingQr ? 1.3 : RUN_POPUP_BASE_SCALE) : 1);
+      if (id === 'cbt-qr-card' || missingQr) {
+        // Fit the complete fixed-layout card, keeping QR squares and proportions.
+        var logicalWidth = missingQr ? 980 : 340;
+        card.style.width = logicalWidth + 'px';
+        card.style.maxWidth = 'none'; card.style.maxHeight = 'none';
+        var logicalHeight = Math.max(missingQr ? 470 : 410,card.scrollHeight || 0,card.offsetHeight || 0);
+        popupScale = Math.max(.01,Math.min(popupScale,
+          Math.max(1,window.innerWidth - 24) / logicalWidth,
+          Math.max(1,window.innerHeight - 24) / logicalHeight));
+      }
+      card.style.zoom = popupScale;
+      if (id !== 'cbt-qr-card' && !missingQr) {
+        card.style.maxHeight = Math.round(window.innerHeight * .82 / popupScale) + 'px';
+        card.style.maxWidth = Math.round(window.innerWidth * .92 / popupScale) + 'px';
+      }
+    });
     var drop = document.getElementById('cbt-ac-drop');
     if (drop) {
-      drop.style.zoom = z;
+      drop.style.zoom = z * ASSOCIATE_AUTOCOMPLETE_BASE_SCALE;
       try { acPlace(); } catch(e) {}   /* re-anchor: zoom changes its metrics */
     }
-    var label = document.getElementById('cbt-scale-reset');
-    if (label) label.textContent = Math.round(z * 100) + '%';
+
   }
 
   /* Which theme is active right now. The board carries the truth once it
@@ -3961,7 +4067,12 @@
     applyUiScale();
   }
   function stepUiScale(dir) { setUiScale(_uiScale + dir * UI_SCALE_STEP); }
-  function resetUiScale()   { setUiScale(UI_SCALE_DEFAULT); }
+  function resetUiScale() {
+    _uiScaleBias = 0;
+    gmSet(UI_SCALE_KEY, '0');
+    try { localStorage.setItem(UI_SCALE_KEY, '0'); } catch(e) {}
+    applyUiScale();
+  }
 
   // ── Text size (zoom) for the Associate Search (task detail) panel ──
   var TP_FONT_SCALE_KEY = 'cbt_tp_font_scale';
@@ -3979,7 +4090,12 @@
   function applyTpFontScale(tp, scale) {
     if (!tp) return;
     var body = tp.querySelector('#cbt-tp-body');
-    if (body) body.style.zoom = scale;
+    if (body) body.style.zoom = 1;
+    var automaticScale = loadUiScale();
+    var effectiveScale = automaticScale * scale * SEARCH_POPUP_BASE_SCALE;
+    tp.style.zoom = effectiveScale;
+    tp.style.maxWidth = Math.round(window.innerWidth * .94 / effectiveScale) + 'px';
+    tp.style.maxHeight = Math.round(window.innerHeight * .82 / effectiveScale) + 'px';
   }
 
   /* ══════════════════════════════════════
@@ -4105,6 +4221,13 @@
       gmSet(ALL_NAMES_KEY, sjson);
       try { localStorage.setItem(ALL_NAMES_KEY, sjson); } catch(e) {}
     }
+    var canonicalNames = Object.create(null);
+    Object.keys(_allNamesCache).forEach(function(key){
+      var name=_allNamesCache[key]; if (typeof name !== 'string') return;
+      name=name.trim(); var canonical=cbtAssociateKey(name); if (!canonical) return;
+      if (!canonicalNames[canonical]) canonicalNames[canonical]=name;
+    });
+    _allNamesCache=canonicalNames;
     return _allNamesCache;
   }
   var _namesSaveTimer = null;
@@ -4132,7 +4255,7 @@
     var all = loadAllNames();
     var added = false;
     for (var k in remote) {
-      if (!all[k] && typeof remote[k] === 'string') { all[k] = remote[k]; added = true; }
+      if (typeof remote[k] === 'string') { var name=remote[k].trim(), key=cbtAssociateKey(name); if (key && !all[key]) { all[key]=name; added=true; } }
     }
     if (added) { persistAllNames(); if (activeTab === 'names') renderNames(); }
     return added;
@@ -4143,7 +4266,8 @@
   // re-seeding push is needed to bring it back to the full union.
   function localNamesMissingFromRemote(remote) {
     var all = loadAllNames();
-    for (var k in all) { if (!remote[k]) return true; }
+    var keys = new Set(); Object.keys(remote || {}).forEach(function(k){ keys.add(cbtAssociateKey(remote[k])); });
+    for (var k in all) { if (!keys.has(k)) return true; }
     return false;
   }
 
@@ -4274,6 +4398,7 @@
         method: 'GET', url: syncHistoryUrl(), headers: { 'Content-Type': 'application/json' },
         onload: function(res){
           _histPullInFlight = false;
+          if (!(res.status >= 200 && res.status < 300) || !res.responseText) { if (cb) cb(false); return; }
           _lastHistoryPullAt = Date.now();
 
           var changed = false;
@@ -4311,25 +4436,7 @@
                   if (!deviceDate && anyModernMeta) continue;
 
                   var slice = sanitizeHistory(devices[d] || {});
-                  for (var a in slice) {
-                    var r = slice[a];
-                    if (!remoteCache[a]) {
-                      remoteCache[a] = { assoc: r.assoc||a, totalPkgs: r.totalPkgs||0,
-                        totalSec: r.totalSec||0, runs: r.runs||0,
-                        totalMissing: r.totalMissing||0, totalExpected: r.totalExpected||0,
-                        bestRate: null, lastRate: null, lastAt: 0 };
-                      cbtMergeBestFields(remoteCache[a], r);
-                      cbtMergeLatestFields(remoteCache[a], r);
-                    } else {
-                      remoteCache[a].totalPkgs     += r.totalPkgs     || 0;
-                      remoteCache[a].totalSec      += r.totalSec      || 0;
-                      remoteCache[a].runs          += r.runs          || 0;
-                      remoteCache[a].totalMissing  += r.totalMissing  || 0;
-                      remoteCache[a].totalExpected += r.totalExpected || 0;
-                      cbtMergeBestFields(remoteCache[a], r);
-                      cbtMergeLatestFields(remoteCache[a], r);
-                    }
-                  }
+                  for (var a in slice) remoteCache[a]=cbtMergePerformance(remoteCache[a],slice[a],false);
                 }
               }
             }
@@ -4347,9 +4454,7 @@
               saveRemoteHistory(remoteCache, currentDay);
               changed = true;
 
-              if (document.getElementById('cbt-hist-tbody')) {
-                setTimeout(function(){ try { renderHistory(); } catch(e) {} }, 0);
-              }
+              cbtScheduleReportRefresh();
             }
           } catch(e) {}
 
@@ -4412,37 +4517,14 @@
   var _weeklyPullInFlight = false;
   var _lastWeeklyPullAt = 0;
 
-  function cbtAddWeeklySlice(target, slice) {
-    slice = sanitizeWeekly(slice || {});
-    for (var dk in slice) {
-      if (!cbtIsDateInCurrentWeek(dk)) continue;
-      if (!target[dk]) target[dk] = {};
-      for (var a in slice[dk]) {
-        var r = slice[dk][a];
-        if (!target[dk][a]) {
-          target[dk][a] = {
-            totalPkgs: r.totalPkgs||0,
-            totalSec: r.totalSec||0,
-            runs: r.runs||0,
-            totalMissing: r.totalMissing||0,
-            totalExpected: r.totalExpected||0,
-            bestRate: null,
-            lastRate: null,
-            lastAt: 0
-          };
-          cbtMergeBestFields(target[dk][a], r);
-          cbtMergeLatestFields(target[dk][a], r);
-        } else {
-          target[dk][a].totalPkgs     += r.totalPkgs     || 0;
-          target[dk][a].totalSec      += r.totalSec      || 0;
-          target[dk][a].runs          += r.runs          || 0;
-          target[dk][a].totalMissing  += r.totalMissing  || 0;
-          target[dk][a].totalExpected += r.totalExpected || 0;
-          cbtMergeBestFields(target[dk][a], r);
-          cbtMergeLatestFields(target[dk][a], r);
-        }
-      }
-    }
+  function cbtAddWeeklySlice(target,slice) {
+    slice=sanitizeWeekly(slice || {});
+    Object.keys(slice).forEach(function(day){
+      if (!target[day]) target[day]={};
+      Object.keys(slice[day]).forEach(function(assoc){
+        target[day][assoc]=cbtMergePerformance(target[day][assoc],slice[day][assoc],false);
+      });
+    });
   }
 
   function cbtLooksLikeWeeklyRoot(obj) {
@@ -4468,6 +4550,7 @@
         method: 'GET', url: syncWeeklyUrl(), headers: { 'Content-Type': 'application/json' },
         onload: function(res){
           _weeklyPullInFlight = false;
+          if (!(res.status >= 200 && res.status < 300) || !res.responseText) { if (cb) cb(false); return; }
           _lastWeeklyPullAt = Date.now();
 
           var changed = false;
@@ -4546,9 +4629,7 @@
               saveRemoteWeekly(remoteCache, currentWeek2);
               changed = true;
 
-              if (document.getElementById('cbt-weekly-tbody')) {
-                setTimeout(function(){ try { renderWeekly(); } catch(e) {} }, 0);
-              }
+              cbtScheduleReportRefresh();
             }
           } catch(e) {}
 
@@ -4611,26 +4692,29 @@
     return added;
   }
 
+  var _cbtNamesStorageScanBusy=false;
   function scanLocalStorageForNames() {
-    var added = false;
-    try {
-      for (var i = 0; i < localStorage.length; i++) {
-        var key = localStorage.key(i);
-        if (!key) continue;
-        var val;
-        try { val = localStorage.getItem(key); } catch(e) { continue; }
-        if (!val || val.length < 2) continue;
-        var ch = val.charAt(0);
-        if (ch !== '{' && ch !== '[') continue;
+    if (_cbtNamesStorageScanBusy) return false;
+    _cbtNamesStorageScanBusy=true;
+    var keys=[], index=0, added=false;
+    try { for (var i=0;i<localStorage.length;i++) keys.push(localStorage.key(i)); } catch(e) {}
+    function next() {
+      var started=performance.now(), processed=0;
+      while (index<keys.length && processed<2 && performance.now()-started<4) {
+        var key=keys[index++]; processed++;
         try {
-          var parsed = JSON.parse(val);
-          if (_deepCaptureInner(parsed, 0)) added = true;
+          var value=key && localStorage.getItem(key);
+          if (value && value.length>=2 && (value[0]==='{' || value[0]==='[')) {
+            if (_deepCaptureInner(JSON.parse(value),0)) added=true;
+          }
         } catch(e) {}
       }
-    } catch(e) {}
-    if (added && activeTab === 'names') renderNames();
-    if (added) syncPush();
-    return added;
+      if (index<keys.length) { cbtIdle(next,900);return; }
+      _cbtNamesStorageScanBusy=false; _namesScanLast=Date.now();
+      if (added) { if (activeTab==='names') renderNames();syncPush(); }
+    }
+    cbtIdle(next,900);
+    return false; // Discovery completes asynchronously and refreshes Names.
   }
 
   function addNameToAll(all, n) {
@@ -4702,19 +4786,86 @@
       var w = loadWeekly(); if (!w[sd]) w[sd] = {};
       for (var a of Object.keys(daily)) {
         var d2 = daily[a];
-        // Merge: take max totalPkgs so we never downgrade an existing entry
-        if (!w[sd][a] || (d2.totalPkgs||0) > (w[sd][a].totalPkgs||0)) {
-          w[sd][a] = { totalPkgs: d2.totalPkgs, totalSec: d2.totalSec, runs: d2.runs,
-            avgRate: d2.avgRate, totalMissing: d2.totalMissing||0, totalExpected: d2.totalExpected||0,
-            bestRate: Math.max(Number(d2.bestRate)||0, Number(d2.lastRate)||0, Number(d2.avgRate)||0) || null,
-            lastRate: Number(d2.lastRate) > 0 ? Number(d2.lastRate) : null,
-            lastAt: Number(d2.lastAt) || 0 };
-        }
+        w[sd][a] = cbtMergePerformance(w[sd][a],d2,true);
       }
       saveWeekly(w);
     } catch(e) {}
   }
 
+  var CBT_TOTAL_FIELDS = ['totalPkgs','totalSec','runs','totalMissing','totalExpected'];
+  function cbtNonnegative(value) { value = Number(value); return isFinite(value) && value >= 0 ? value : 0; }
+  function cbtPerformanceLegacy(record) {
+    var base = {}, events = record._cbtEvents || {};
+    CBT_TOTAL_FIELDS.forEach(function(field){ base[field] = cbtNonnegative(record[field]); });
+    if (record._cbtLegacy) {
+      CBT_TOTAL_FIELDS.forEach(function(field){ base[field] = cbtNonnegative(record._cbtLegacy[field]); });
+    } else {
+      Object.keys(events).forEach(function(id){ var e=events[id];
+        if (!e || typeof e !== 'object') return;
+        base.totalPkgs -= cbtNonnegative(e.pkgs); base.totalSec -= cbtNonnegative(e.sec); base.runs -= 1;
+        base.totalMissing -= cbtNonnegative(e.missing); base.totalExpected -= cbtNonnegative(e.expected);
+      });
+      CBT_TOTAL_FIELDS.forEach(function(field){ base[field] = Math.max(0,base[field]); });
+    }
+    var metadata=record._cbtLegacy || (Object.keys(events).length ? {} : record);
+    base.bestRate=Math.max(Number(metadata.bestRate)||0,Number(metadata.lastRate)||0,Number(metadata.avgRate)||0) || null;
+    base.lastRate=Number(metadata.lastRate)>0?Number(metadata.lastRate):null; base.lastAt=Number(metadata.lastAt)||0;
+    return base;
+  }
+  function cbtMergePerformance(target, source, aliases) {
+    source = source || {}; target = target || {};
+    var base = cbtPerformanceLegacy(target), extra = cbtPerformanceLegacy(source);
+    CBT_TOTAL_FIELDS.forEach(function(field){ base[field] = aliases ? Math.max(base[field],extra[field]) : base[field]+extra[field]; });
+    cbtMergeBestFields(base,extra); cbtMergeLatestFields(base,extra);
+    var events = Object.assign({},target._cbtEvents || {});
+    Object.keys(source._cbtEvents || {}).forEach(function(id){
+      var e = source._cbtEvents[id];
+      if (!e || typeof e !== 'object' || !(Number(e.pkgs)>0) || !(Number(e.sec)>=30)) return;
+      var rate = Number(e.pkgs)/(Number(e.sec)/60);
+      if (!(rate>0) || !isFinite(rate) || !isFinite(Number(e.sec)) || rate > CBT_MAX_VALID_RATE) return;
+      var old = events[id];
+      if (!old || Number(e.revision || e.at) > Number(old.revision || old.at) ||
+          (Number(e.revision || e.at) === Number(old.revision || old.at) && Number(e.pkgs)>Number(old.pkgs))) events[id]=e;
+    });
+    var out = Object.assign({},target,{assoc:source.assoc || target.assoc,_cbtLegacy:base,_cbtEvents:events});
+    CBT_TOTAL_FIELDS.forEach(function(field){ out[field]=base[field]; });
+    out.bestRate=base.bestRate; out.lastRate=base.lastRate; out.lastAt=base.lastAt;
+    var latestEvent=null;
+    Object.keys(events).forEach(function(id){ var e=events[id];
+      out.totalPkgs += cbtNonnegative(e.pkgs); out.totalSec += cbtNonnegative(e.sec); out.runs += 1;
+      out.totalMissing += cbtNonnegative(e.missing); out.totalExpected += cbtNonnegative(e.expected);
+      var rate = Number(e.pkgs)/(Number(e.sec)/60);
+      cbtMergeBestFields(out,{bestRate:rate});
+      if (!latestEvent || Number(e.at)>Number(latestEvent.at) || (Number(e.at)===Number(latestEvent.at) && Number(e.revision)>Number(latestEvent.revision))) latestEvent=e;
+    });
+    if (latestEvent && Number(latestEvent.at)>=Number(out.lastAt || 0)) { out.lastRate=Number(latestEvent.pkgs)/(Number(latestEvent.sec)/60);out.lastAt=Number(latestEvent.at)||0; }
+    out.avgRate=out.totalSec>0?out.totalPkgs/(out.totalSec/60):0;
+    return out;
+  }
+  function cbtBatchEventId(data) {
+    var generation = cbtTaskGeneration(data);
+    if (!generation) return '';
+    return encodeURIComponent([STORE_ID || '',String(data.shortClientRef || '').trim(),generation].join('|')).replace(/[.$#\[\]\/]/g,function(c){return '%'+c.charCodeAt(0).toString(16);});
+  }
+
+  function cbtReconcileEventOwners(records) {
+    var owners=Object.create(null), changed=new Set();
+    Object.keys(records).forEach(function(assoc){
+      Object.keys(records[assoc]._cbtEvents || {}).forEach(function(id){
+        var event=records[assoc]._cbtEvents[id], prior=owners[id];
+        if (!prior || Number(event.revision || event.at)>prior.revision ||
+            (Number(event.revision || event.at)===prior.revision && assoc<prior.assoc)) {
+          owners[id]={assoc:assoc,revision:Number(event.revision || event.at)};
+        }
+      });
+    });
+    Object.keys(records).forEach(function(assoc){
+      var row=records[assoc], events=Object.assign({},row._cbtEvents || {});
+      Object.keys(events).forEach(function(id){ if (owners[id].assoc!==assoc) { delete events[id]; changed.add(assoc); } });
+      if (changed.has(assoc)) records[assoc]=cbtMergePerformance({},Object.assign({},row,{_cbtLegacy:cbtPerformanceLegacy(row),_cbtEvents:events}),true);
+    });
+    return records;
+  }
   function sanitizeHistory(h) {
     var clean = {};
     for (var a in (h || {})) {
@@ -4732,9 +4883,12 @@
         c.lastRate = null;
         c.lastAt = 0;
       }
-      clean[a] = c;
+      var key = cbtAssociateKey(c.assoc || a); if (!key) continue;
+      c.assoc = key;
+      CBT_TOTAL_FIELDS.forEach(function(field){ c[field]=cbtNonnegative(c[field]); });
+      clean[key] = cbtMergePerformance(clean[key],c,true);
     }
-    return clean;
+    return cbtReconcileEventOwners(clean);
   }
 
   var _todayBoundaryTimer = null;
@@ -4875,6 +5029,7 @@
   }
 
   function loadHistory() {
+    if (_cbtDataBatchDepth && _cbtBatchHistory) return _cbtBatchHistory;
     try {
       if (cbtResetTodayForNewDay()) return {};
       // Merge GM storage + localStorage so neither source beats the other
@@ -4884,11 +5039,13 @@
         var ls = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
         for (var a in ls) {
           if (!result[a]) result[a] = ls[a];
-          else if ((ls[a].totalPkgs||0) > (result[a].totalPkgs||0)) result[a] = ls[a];
+          else result[a] = cbtMergePerformance(result[a],ls[a],true);
         }
       } catch(e) {}
       // Scrub any entries corrupted by old double-count bug
-      return sanitizeHistory(result);
+      var clean=sanitizeHistory(result);
+      if (_cbtDataBatchDepth) _cbtBatchHistory=clean;
+      return clean;
     } catch(e) { return {}; }
   }
 
@@ -4896,8 +5053,9 @@
     // saveHistory only ever saves THIS device's own recorded batches
     _dispHistCache = null;
     _dispWeekCache = null; /* Weekly includes Today live */
+    if (_cbtDataBatchDepth) { _cbtBatchHistory=h;_cbtBatchHistoryDirty=true;return; }
     var json = JSON.stringify(h);
-    localStorage.setItem(STORAGE_KEY, json); localStorage.setItem(DATE_KEY, todayStr());
+    try { localStorage.setItem(STORAGE_KEY, json); localStorage.setItem(DATE_KEY, todayStr()); } catch(e) {}
     gmSet(STORAGE_KEY, json); gmSet(DATE_KEY, todayStr());
     if (!skipPush) { setTimeout(function(){ if (typeof syncHistoryPush === 'function') syncHistoryPush(); }, 0); }
   }
@@ -4935,24 +5093,7 @@
     var remote = sanitizeHistory(loadRemoteHistory());
     var out = {};
     function addSlice(slice) {
-      for (var a in slice) {
-        var r = slice[a];
-        if (!out[a]) {
-          out[a] = { assoc: r.assoc||a, totalPkgs: r.totalPkgs||0, totalSec: r.totalSec||0,
-            runs: r.runs||0, totalMissing: r.totalMissing||0, totalExpected: r.totalExpected||0,
-            bestRate: null, lastRate: null, lastAt: 0 };
-          cbtMergeBestFields(out[a], r);
-          cbtMergeLatestFields(out[a], r);
-        } else {
-          out[a].totalPkgs    += r.totalPkgs    || 0;
-          out[a].totalSec     += r.totalSec     || 0;
-          out[a].runs         += r.runs         || 0;
-          out[a].totalMissing += r.totalMissing || 0;
-          out[a].totalExpected+= r.totalExpected|| 0;
-          cbtMergeBestFields(out[a], r);
-          cbtMergeLatestFields(out[a], r);
-        }
-      }
+      Object.keys(slice).forEach(function(key){ out[key]=cbtMergePerformance(out[key],slice[key],false); });
     }
     addSlice(own);
     addSlice(remote);
@@ -4960,6 +5101,7 @@
     for (var a2 in out) {
       out[a2].avgRate = out[a2].totalSec > 0 ? out[a2].totalPkgs / (out[a2].totalSec / 60) : 0;
     }
+    out=cbtReconcileEventOwners(out);
     _dispHistCache = out; _dispHistTime = _now;
     return out;
   }
@@ -5031,10 +5173,18 @@
   function hofSavePeaks(p)       { hofSaveJson(HOF_PEAKS_KEY, p); }
   function hofLoadLatest()       { return hofLoadJson(HOF_LATEST_KEY) || {}; }
   function hofSaveLatest(p)      { hofSaveJson(HOF_LATEST_KEY, p); }
-  function hofLoadOwnTotals()    { return hofLoadJson(HOF_OWN_KEY) || {}; }
-  function hofSaveOwnTotals(t)   { hofSaveJson(HOF_OWN_KEY, t); }
-  function hofLoadRemoteTotals() { return hofLoadJson(HOF_REMOTE_KEY) || {}; }
-  function hofSaveRemoteTotals(t){ hofSaveJson(HOF_REMOTE_KEY, t); }
+  function hofLoadOwnTotals()    {
+    if (_cbtDataBatchDepth && _cbtBatchHof) return _cbtBatchHof;
+    var totals=cbtNormalizeHofTotals(hofLoadJson(HOF_OWN_KEY) || {});
+    if (_cbtDataBatchDepth) _cbtBatchHof=totals;
+    return totals;
+  }
+  function hofSaveOwnTotals(t)   {
+    if (_cbtDataBatchDepth) { _cbtBatchHof=t;_cbtBatchHofDirty=true;return; }
+    hofSaveJson(HOF_OWN_KEY, cbtNormalizeHofTotals(t));
+  }
+  function hofLoadRemoteTotals() { return cbtNormalizeHofTotals(hofLoadJson(HOF_REMOTE_KEY) || {}); }
+  function hofSaveRemoteTotals(t){ hofSaveJson(HOF_REMOTE_KEY, cbtNormalizeHofTotals(t)); }
 
   /* Latest is different from Peak: it ALWAYS follows the newest completed
      batch, even if that rate is lower than the associate's personal best. */
@@ -5257,10 +5407,8 @@
                 var slice = devices[d] || {};
                 for (var a in slice) {
                   var r = slice[a] || {};
-                  if (!remote[a]) remote[a] = { assoc: r.assoc || a, runs: 0, pkgs: 0 };
-                  remote[a].runs += (r.runs || 0);
-                  remote[a].pkgs += (r.pkgs || 0);
-                  if (r.assoc) remote[a].assoc = r.assoc;
+                  var normalized=hofKey(r.assoc || a); if (!normalized) continue;
+                  remote[normalized]=cbtMergeHofTotals(remote[normalized],r,false);
                 }
               }
               hofSaveRemoteTotals(remote);
@@ -5277,22 +5425,51 @@
 
   /* Called for every completed batch. Totals always advance; the peak only
      moves when the batch is substantial enough to be a real record. */
-  function hofRecordBatch(assoc, pkgs, elapsedSec, rate) {
+  function cbtNormalizeHofTotals(totals) {
+    var clean={};
+    Object.keys(totals || {}).forEach(function(key){
+      var row=totals[key], normalized=hofKey(row && row.assoc || key);
+      if (normalized) clean[normalized]=cbtMergeHofTotals(clean[normalized],row,true);
+    });
+    cbtReconcileEventOwners(clean);
+    Object.keys(clean).forEach(function(key){ clean[key].pkgs=clean[key].totalPkgs; });
+    return clean;
+  }
+  function cbtMergeHofTotals(target,source,aliases) {
+    function adapt(row) {
+      row=Object.assign({},row || {});
+      row.totalPkgs=cbtNonnegative(row.pkgs == null ? row.totalPkgs : row.pkgs);
+      return row;
+    }
+    var result=cbtMergePerformance(adapt(target),adapt(source),!!aliases);
+    result.pkgs=result.totalPkgs;
+    return result;
+  }
+  function hofRecordBatch(assoc, pkgs, elapsedSec, rate, completion) {
     if (!assoc) return;
     var key = hofKey(assoc);
     if (!key) return;
 
     var own = hofLoadOwnTotals();
-    if (!own[key]) own[key] = { assoc: assoc, runs: 0, pkgs: 0 };
-    own[key].assoc = assoc;
-    own[key].runs += 1;
-    own[key].pkgs += (pkgs || 0);
+    if (completion && completion.id) {
+      var previous=own[key] && own[key]._cbtEvents && own[key]._cbtEvents[completion.id];
+      if (previous && (Number(previous.revision)>Number(completion.revision) ||
+          (Number(previous.revision)===Number(completion.revision) && Number(previous.pkgs)>=Number(pkgs)))) return;
+      var addition={assoc:assoc,_cbtEvents:{},_cbtLegacy:{}};
+      addition._cbtEvents[completion.id]={pkgs:Number(pkgs),sec:Number(elapsedSec),at:Number(completion.at),revision:Number(completion.revision)};
+      own[key]=cbtMergeHofTotals(own[key],addition,false);
+    } else {
+      // Compatibility for callers without a source batch identity.
+      var legacy=own[key] ? cbtPerformanceLegacy(Object.assign({},own[key],{totalPkgs:own[key].pkgs})) : {};
+      legacy.runs=cbtNonnegative(legacy.runs)+1; legacy.totalPkgs=cbtNonnegative(legacy.totalPkgs)+cbtNonnegative(pkgs);
+      own[key]=cbtMergeHofTotals(Object.assign({},own[key],{_cbtLegacy:legacy}),{assoc:assoc,_cbtLegacy:{}},false);
+    }
     hofSaveOwnTotals(own);
     hofPushTotals();
 
     /* Latest records EVERY valid completed rate, regardless of whether it is
        higher/lower than Peak or whether the batch meets Fastest thresholds. */
-    var latestTs = Date.now();
+    var latestTs = completion && Number(completion.at) || Date.now();
     if (Number(rate) > 0 && isFinite(Number(rate)) && Number(rate) <= CBT_MAX_VALID_RATE) {
       hofPushLatest(key, assoc, Number(rate), latestTs, pkgs, elapsedSec);
     }
@@ -5303,7 +5480,7 @@
     var peaks = hofLoadPeaks();
     var cur = peaks[key];
     if (cur && typeof cur.rate === 'number' && cur.rate >= rate) return;  /* never decreases */
-    hofPushPeak(key, assoc, rate, Date.now(), pkgs, elapsedSec);
+    hofPushPeak(key, assoc, rate, latestTs, pkgs, elapsedSec);
     if (activeTab === 'hof') renderHallOfFame();
   }
 
@@ -5331,6 +5508,9 @@
     /* Fastest is no longer Peak-only. Keep Peak as the ranking metric, while
        also admitting associates who have a Latest rate but have not yet met
        the Peak qualification threshold. Those rows remain unranked (—). */
+    var mergedTotals={};
+    Object.keys(own).concat(Object.keys(remote)).forEach(function(key){ if (!mergedTotals[key]) mergedTotals[key]=cbtMergeHofTotals(own[key],remote[key],false); });
+    mergedTotals=cbtNormalizeHofTotals(mergedTotals);
     var allKeys = Object.create(null);
     for (var pk in peaks) allKeys[pk] = true;
     for (var lk0 in latest) allKeys[lk0] = true;
@@ -5339,7 +5519,7 @@
     for (var k in allKeys) {
       var p = peaks[k] || null;
       var l = latest[k] || null;
-      var o = own[k] || {}, r = remote[k] || {};
+      var o = own[k] || {}, r = remote[k] || {}, combined = mergedTotals[k] || cbtMergeHofTotals(o,r,false);
       var peakRate =
         p && Number(p.schema) === HOF_SCHEMA &&
         Number(p.rate) > 0 && Number(p.rate) <= CBT_MAX_VALID_RATE &&
@@ -5359,8 +5539,8 @@
         at: p && p.at ? p.at : null,
         latestRate: latestRate,
         latestAt: l && l.at ? l.at : null,
-        runs: (o.runs || 0) + (r.runs || 0),
-        pkgs: (o.pkgs || 0) + (r.pkgs || 0)
+        runs: combined.runs,
+        pkgs: combined.pkgs
       });
     }
 
@@ -5426,10 +5606,8 @@
       for (kk in own) totalKeys[kk] = true;
       for (kk in remote) totalKeys[kk] = true;
       for (kk in totalKeys) {
-        var oo = own[kk] || {}, rr = remote[kk] || {};
-        addSearchOnly(kk, oo.assoc || rr.assoc || kk,
-          (oo.runs || 0) + (rr.runs || 0),
-          (oo.pkgs || 0) + (rr.pkgs || 0), 3);
+        var oo = own[kk] || {}, rr = remote[kk] || {}, totals=mergedTotals[kk] || cbtMergeHofTotals(oo,rr,false);
+        addSearchOnly(kk, oo.assoc || rr.assoc || kk,totals.runs,totals.pkgs,3);
       }
 
       /* Weekly history catches associates who existed before Fastest totals
@@ -5668,7 +5846,7 @@
 
     var assoc = data.associateId || data.associate || data.driverAssignment;
     if (typeof assoc !== 'string') return false;
-    assoc = assoc.trim();
+    assoc = cbtAssociateKey(assoc);
     if (!assoc || assoc.length > 80) return false;
 
     var history = loadHistory();
@@ -5695,70 +5873,78 @@
     captureName(data);
     saveHistory(history);
 
-    if (activeTab === 'history') {
-      try { renderHistory(); } catch(e0) {}
-    }
-    if (activeTab === 'weekly') {
-      try { renderWeekly(); } catch(e1) {}
-    }
+    cbtScheduleReportRefresh();
     return true;
   }
 
-  function recordCompletedBatch(data, elapsedSec) {
-    if (!data.associateId&&!data.associate) return;
-    var pkgs = Number(data.packagesBatched)||0;
-    if (pkgs===0||!elapsedSec||elapsedSec<30) return;
-    var assoc = data.associateId||data.associate;
-    captureName(data);
-    var rate = pkgs/(elapsedSec/60);
-
-    /* Never let a timing mismatch contaminate Today / Weekly / Best /
-       Latest Avg / Fastest history. Live can fall back to observed delta,
-       but a completed batch is only stored when its complete API span itself
-       produces a valid rate. */
-    if (!(rate > 0) || !isFinite(rate) || rate > CBT_MAX_VALID_RATE) return;
-    var expected = data.totalExpectedPackages||0;
-    var collected = data.packagesCollected||data.packagesBatched||0;
-    var missing = expected>collected ? expected-collected : 0;
-    var history = loadHistory();
-    if (history[assoc]) {
-      var e2=history[assoc], tp=e2.totalPkgs+pkgs, ts=e2.totalSec+elapsedSec;
-      var priorBest = Math.max(Number(e2.bestRate)||0, Number(e2.lastRate)||0, Number(e2.avgRate)||0);
-      history[assoc] = { assoc:assoc, totalPkgs:tp, totalSec:ts, runs:e2.runs+1,
-        avgRate:tp/(ts/60), bestRate:Math.max(priorBest, rate),
-        lastRate:rate, lastAt:Date.now(),
-        totalMissing:(e2.totalMissing||0)+missing, totalExpected:(e2.totalExpected||0)+expected };
-    } else {
-      history[assoc] = { assoc:assoc, totalPkgs:pkgs, totalSec:elapsedSec, runs:1,
-        avgRate:rate, bestRate:rate, lastRate:rate, lastAt:Date.now(),
-        totalMissing:missing, totalExpected:expected };
+  var _cbtCompletionMemo = new Map();
+  function recordCompletedBatch(data,elapsedSec) {
+    var assoc=cbtAssociateKey(data.associateId || data.associate || data.driverAssignment);
+    var info=cbtBatchingOpInfo(data,false), pkgs=Number(data.packagesBatched), id=cbtBatchEventId(data);
+    if (!assoc || !id || !info || !info.startMs || !info.endMs || !(pkgs>0)) return false;
+    var memoKey=id+'|'+assoc, signature=[cbtSourceUpdatedMs(data),pkgs,data.packagesCollected,data.totalExpectedPackages,info.startMs,info.endMs].join('|');
+    if (_cbtCompletionMemo.get(memoKey)===signature) return false;
+    // Use the completed API span; observation delays never alter history rate.
+    elapsedSec=(info.endMs-info.startMs)/1000;
+    var rate=pkgs/(elapsedSec/60);
+    if (!(elapsedSec>=30) || !(rate>0) || !isFinite(rate) || rate>CBT_MAX_VALID_RATE) return false;
+    var day=new Date(info.endMs).toLocaleDateString('en-US',{timeZone:getStoreTimezone()});
+    var history=loadHistory(), weekly=null;
+    if (day !== todayStr()) {
+      if (!cbtIsDateInCurrentWeek(day)) return false;
+      weekly=loadWeekly(); history=weekly[day] || {};
     }
-    saveHistory(history);
-    try { hofRecordBatch(assoc, pkgs, elapsedSec, rate); } catch(e) {}
-    if (activeTab==='history') renderHistory();
+    var current=history[assoc] || {assoc:assoc};
+    var expected=cbtNonnegative(data.totalExpectedPackages);
+    var collected=data.packagesCollected == null ? pkgs : cbtNonnegative(data.packagesCollected);
+    var event={pkgs:pkgs,sec:elapsedSec,missing:Math.max(0,expected-collected),expected:expected,at:info.endMs,revision:cbtSourceUpdatedMs(data)||info.endMs};
+    _cbtCompletionMemo.delete(memoKey); _cbtCompletionMemo.set(memoKey,signature);
+    if (_cbtCompletionMemo.size>1000) _cbtCompletionMemo.delete(_cbtCompletionMemo.keys().next().value);
+    var previous=current._cbtEvents && current._cbtEvents[id];
+    if (previous && (Number(previous.revision)>event.revision || (Number(previous.revision)===event.revision && Number(previous.pkgs)>=event.pkgs))) return false;
+    var addition={assoc:assoc,_cbtEvents:{},_cbtLegacy:{}}; addition._cbtEvents[id]=event;
+    history[assoc]=cbtMergePerformance(current,addition,false);
+    history=cbtReconcileEventOwners(history);
+    captureName(data);
+    if (weekly) { weekly[day]=history;saveWeekly(weekly); }
+    else saveHistory(history);
+    try { hofRecordBatch(assoc,pkgs,elapsedSec,rate,{id:id,at:info.endMs,revision:event.revision}); } catch(e) {}
+    cbtScheduleReportRefresh();
+    return true;
   }
 
   function ingestItem(item, authoritative) {
     if (!item || typeof item !== 'object' || item.shortClientRef == null) return false;
-    var ref = String(item.shortClientRef);
+    var ref = String(item.shortClientRef).trim();
+    if (!ref) return false;
     var incoming = Object.assign({}, item, { shortClientRef: ref });
     var existing = taskCache.get(ref);
+    var sequence = _cbtIngestSequence || ++_cbtRequestSequence;
+    if (sequence < (_cbtTaskSequences.get(ref) || 0)) return false;
+    if (!authoritative && sequence <= _cbtLastSnapshotSequence && !_cbtSnapshotRefs.has(ref)) return false;
+    ['associateId','associate','driverAssignment'].forEach(function(field){
+      if (typeof incoming[field] === 'string') incoming[field] = incoming[field].trim();
+    });
+    var oldUpdated = cbtSourceUpdatedMs(existing), newUpdated = cbtSourceUpdatedMs(incoming);
+    if (oldUpdated && newUpdated && newUpdated < oldUpdated) return false;
     var incomingGen = cbtTaskGeneration(incoming);
     var existingGen = existing ? cbtTaskGeneration(existing) : '';
 
     /* The same CART_x reference can be reused by a later job. If the job/task
        identity changes, do not merge the new task with the old task's state. */
-    if (existing && incomingGen && existingGen && incomingGen !== existingGen) {
+    if (existing && incomingGen && existingGen && incomingGen !== existingGen &&
+        !(incomingGen.indexOf('batch:') === 0 && existingGen.indexOf('batch:') === 0)) {
       taskCache.delete(ref);
       cbtForgetLiveStart(ref);
       existing = null;
     }
 
     var incomingLive = cbtIsLiveBatch(incoming);
+    if (existing && incoming.state === undefined && !Array.isArray(incoming.operationDetails)) incomingLive = cbtIsLiveBatch(existing);
     if (authoritative && incomingLive) cbtObserveAuthoritativeLive(incoming);
 
     /* Never let an older/out-of-order response move package progress backward. */
-    if (existing) {
+    if (existing && !authoritative) {
       var oldB = Number(existing.packagesBatched) || 0, newB = Number(incoming.packagesBatched) || 0;
       var oldC = Number(existing.packagesCollected) || 0, newC = Number(incoming.packagesCollected) || 0;
       if (newB < oldB || newC < oldC) {
@@ -5769,21 +5955,24 @@
 
     /* Completion is recognized from an explicit non-BATCHING state. A partial
        response that merely omits operationDetails is not treated as finished. */
-    if (existing && cbtIsLiveBatch(existing) && incoming.state !== undefined &&
-        String(incoming.state).toUpperCase() !== 'BATCHING') {
-      var mergedDone = Object.assign({}, existing, incoming);
-      mergedDone.packagesBatched = Math.max(Number(existing.packagesBatched)||0, Number(incoming.packagesBatched)||0);
-      mergedDone.packagesCollected = Math.max(Number(existing.packagesCollected)||0, Number(incoming.packagesCollected)||0);
-      var finishedRow = computeRow(mergedDone, true);
-      recordCompletedBatch(mergedDone, finishedRow.elapsedSec);
-      taskCache.delete(ref);
-      cbtForgetLiveStart(ref);
-      return true;
+    if (!incomingLive) {
+      if (incoming.state === undefined && !Array.isArray(incoming.operationDetails)) return false;
+      var mergedDone = existing ? Object.assign({},existing,incoming) : incoming;
+      var finishedInfo = cbtBatchingOpInfo(mergedDone,false);
+      // History requires a real API end time; disappearing rows are not
+      // guessed completions and never use the current wall clock as an end.
+      if (finishedInfo && finishedInfo.endMs) {
+        var assoc=cbtAssociateKey(mergedDone.associateId || mergedDone.associate || mergedDone.driverAssignment);
+        var id=cbtBatchEventId(mergedDone);
+        var known=loadHistory()[assoc];
+        if ((existing && cbtIsLiveBatch(existing)) ||
+            (known && known._cbtEvents && known._cbtEvents[id]) || _cbtCompletionMemo.has(id+'|'+assoc)) recordCompletedBatch(mergedDone);
+      }
+      var removed = taskCache.delete(ref);
+      _cbtTaskSequences.delete(ref);
+      cbtMarkLiveMissing(ref);
+      return removed;
     }
-
-    /* Only actual BATCHING work belongs on the Live tab. Generic IN_PROGRESS
-       jobs from another operation are intentionally ignored. */
-    if (!incomingLive) return false;
 
     var merged = existing ? Object.assign({}, existing, incoming) : incoming;
     /* Some endpoints omit operationDetails on alternating responses. Preserve
@@ -5793,20 +5982,25 @@
         Array.isArray(existing.operationDetails) && existing.operationDetails.length) {
       merged.operationDetails = existing.operationDetails;
     }
-    merged.packagesBatched = Math.max(Number(existing && existing.packagesBatched)||0, Number(incoming.packagesBatched)||0);
-    merged.packagesCollected = Math.max(Number(existing && existing.packagesCollected)||0, Number(incoming.packagesCollected)||0);
+    ['packagesBatched','packagesCollected'].forEach(function(field){
+      var value = incoming[field] == null ? Number(existing && existing[field]) || 0 : Number(incoming[field]);
+      if (!isFinite(value) || value < 0) value = Number(existing && existing[field]) || 0;
+      merged[field] = authoritative ? value : Math.max(Number(existing && existing[field]) || 0,value);
+    });
     if (!merged.associateId && !merged.associate && merged.driverAssignment) merged.associate = merged.driverAssignment;
 
     /* Today/Weekly name presence is event-driven from real BATCHING records.
        No new observer or polling loop is added. */
+    _cbtTaskSequences.set(ref,sequence);
+    if (existing && cbtTaskSignature(existing) === cbtTaskSignature(merged)) return false;
     try { ensureActiveAssociateInToday(merged); } catch(e) {}
-
     taskCache.set(ref, merged);
     return true;
   }
 
   function ingestData(d, authoritative) {
     if (!d) return;
+    return cbtRunDataBatch(function(){
     var changed = false;
     deepCaptureNames(d, 0);
     try { afaRecordJobs(d, 0); } catch(e) {}
@@ -5827,6 +6021,7 @@
     }
 
     if (changed && !authoritative) requestLiveRender();
+    });
   }
 
   var _nativeFetch = window.fetch;
@@ -5854,15 +6049,24 @@
   var _origFetch = function(){ return _nativeFetch.apply(window, arguments); };
 
   var _cbtPassiveQueue = [], _cbtPassiveBusy = false;
-  function cbtQueuePassive(payload, requestStore) {
-    _cbtPassiveQueue.push({payload: payload, store: requestStore == null ? STORE_ID : requestStore});
+  function cbtQueuePassive(payload, requestStore, snapshot, sequence) {
+    sequence = sequence || ++_cbtRequestSequence;
+    var store = requestStore == null ? STORE_ID : requestStore;
+    if (snapshot) _cbtPassiveQueue = _cbtPassiveQueue.filter(function(entry){ return !entry.snapshot || entry.store !== store || entry.sequence > sequence; });
+    _cbtPassiveQueue.push({payload: payload, store: store, snapshot: !!snapshot, sequence: sequence});
     if (_cbtPassiveBusy) return;
     _cbtPassiveBusy = true;
     function drain() {
       var next = _cbtPassiveQueue.shift();
       try {
-        if (next && next.store === STORE_ID && cbtApplicationReady())
-          ingestData(typeof next.payload === 'string' ? JSON.parse(next.payload) : next.payload);
+        if (next && next.store === STORE_ID && cbtApplicationReady()) {
+          var payload = typeof next.payload === 'string' ? JSON.parse(next.payload) : next.payload;
+          if (next.snapshot) cbtApplyLiveSnapshot(payload,next.sequence);
+          else {
+            _cbtIngestSequence = next.sequence;
+            try { ingestData(payload); } finally { _cbtIngestSequence = 0; }
+          }
+        }
       } catch(e) {}
       if (_cbtPassiveQueue.length) cbtIdle(drain, 100);
       else _cbtPassiveBusy = false;
@@ -5880,11 +6084,13 @@
   /* Transparent hook: return the native promise; never await or delay the page. */
   window.fetch = function() {
     var promise = _nativeFetch.apply(this, arguments);
-    var requested = arguments[0], requestStore = STORE_ID;
+    var requested = arguments[0], requestStore = STORE_ID, requestSequence = ++_cbtRequestSequence;
+    var requestUrl = typeof requested === 'string' ? requested : requested && requested.url || '';
+    var snapshot = /\/activeJobsWithSiteSummary(?:[?/#]|$)/.test(requestUrl);
     if (cbtCaptureUrl(requested)) promise.then(function(resp){
       try {
         if (!resp.ok || resp.redirected || !/json/i.test(resp.headers.get('content-type') || '')) return;
-        resp.clone().text().then(function(raw){ cbtQueuePassive(raw, requestStore); }).catch(function(){});
+        resp.clone().text().then(function(raw){ cbtQueuePassive(raw, requestStore, snapshot, requestSequence); }).catch(function(){});
       } catch(e) {}
     }, function(){});
     return promise;
@@ -5900,8 +6106,8 @@
       if (!cbtCaptureUrl(this._cbtUrl) || this.status < 200 || this.status >= 300 ||
           !/json/i.test(this.getResponseHeader('content-type') || '')) return;
       if (this.responseURL && !cbtCaptureUrl(this.responseURL)) return;
-      if (this.responseType === 'json') cbtQueuePassive(this.response);
-      else if (!this.responseType || this.responseType === 'text') cbtQueuePassive(this.responseText);
+      if (this.responseType === 'json') cbtQueuePassive(this.response,this._cbtStore,/\/activeJobsWithSiteSummary(?:[?/#]|$)/.test(this._cbtUrl),this._cbtSequence);
+      else if (!this.responseType || this.responseType === 'text') cbtQueuePassive(this.responseText,this._cbtStore,/\/activeJobsWithSiteSummary(?:[?/#]|$)/.test(this._cbtUrl),this._cbtSequence);
     } catch(e) {}
   }
   XMLHttpRequest.prototype.send = function() {
@@ -5909,6 +6115,8 @@
       this.addEventListener('load', cbtXhrLoaded);
       this._cbtLoadBound = true;
     }
+    this._cbtStore = STORE_ID;
+    this._cbtSequence = ++_cbtRequestSequence;
     return _xhrSend.apply(this, arguments);
   };
 
@@ -5917,7 +6125,7 @@
     if (_cbtPollInFlight || document.hidden || !cbtApplicationReady() || !STORE_ID) return;
     _cbtPollInFlight = true;
     try {
-      var requestStore = STORE_ID;
+      var requestStore = STORE_ID, requestSequence = ++_cbtRequestSequence;
       var liveUrl = COMO_BASE + '/store/' + encodeURIComponent(STORE_ID) + '/activeJobsWithSiteSummary?_cbt=' + Date.now();
       var requestPerf = cbtPerfNow();
       var result = await cbtFetchJson(liveUrl, {
@@ -5932,71 +6140,7 @@
            remains the user's local display time. */
         cbtCalibrateServerClock(res, requestPerf);
 
-        var freshData = result.data;
-
-        var activeRefs = new Set();
-        var items = Array.isArray(freshData) ? freshData.slice() : [];
-        ['summaries','tasks','results','items','jobs','data'].forEach(function(k) {
-          if (freshData && Array.isArray(freshData[k])) items = items.concat(freshData[k]);
-        });
-
-        /* Select one authoritative timing record per cart. If multiple payload
-           sections describe the same cart, prefer the record with the latest
-           current BATCHING start rather than whichever array happened to appear
-           first in the JSON. */
-        var bestByRef = Object.create(null);
-        items.forEach(function(d) {
-          if (!d || d.shortClientRef == null || !cbtIsLiveBatch(d)) return;
-          var ref = String(d.shortClientRef);
-          activeRefs.add(ref);
-          var info = cbtBatchingOpInfo(d, true);
-          var score = info && info.startMs ? info.startMs : -1;
-          var prev = bestByRef[ref];
-          if (!prev || score > prev.score) bestByRef[ref] = { data:d, score:score };
-        });
-
-        Object.keys(bestByRef).forEach(function(ref) {
-          cbtObserveAuthoritativeLive(bestByRef[ref].data);
-        });
-
-        activeRefs.forEach(function(ref) {
-          _cbtMissingPollsByRef[ref] = 0;
-          var locked = _cbtLiveStartByRef[ref];
-          if (locked) {
-            locked.lastSeen = cbtNowMs();
-            locked.missingSince = 0;
-          }
-        });
-
-        taskCache.forEach(function(val, key) {
-          key = String(key);
-          if (activeRefs.has(key)) {
-            _cbtMissingPollsByRef[key] = 0;
-            return;
-          }
-
-          cbtMarkLiveMissing(key);
-          var misses = (_cbtMissingPollsByRef[key] || 0) + 1;
-          _cbtMissingPollsByRef[key] = misses;
-          if (misses >= CBT_MISSING_POLL_GRACE) {
-            taskCache.delete(key);
-            delete _cbtMissingPollsByRef[key];
-          }
-        });
-
-        /* Ingest every complementary array, but suppress intermediate renders.
-           Re-apply the canonical timer observation afterward in case a stale
-           duplicate record for the same cart appeared in another payload array. */
-        ingestData(freshData, true);
-        Object.keys(bestByRef).forEach(function(ref) {
-          /* Make the canonical current-job record the final cache merge too.
-             This prevents a stale duplicate from another payload array from
-             being the last writer for the same cart. */
-          ingestItem(bestByRef[ref].data, true);
-          cbtObserveAuthoritativeLive(bestByRef[ref].data);
-        });
-
-        cbtPruneOldLiveStarts();
+        cbtApplyLiveSnapshot(result.data,requestSequence);
         var jobExpiry = Date.now() - 6 * 3600000;
         Object.keys(_afaJobInfo).forEach(function(id){
           var info = _afaJobInfo[id];
@@ -6009,7 +6153,7 @@
     } catch(e) {}
     finally {
       _cbtPollInFlight = false;
-      if (result && result.data && STORE_ID === requestStore) requestLiveRender();
+      if (result && STORE_ID === requestStore) requestLiveRender();
     }
   }
 
@@ -6020,9 +6164,6 @@
       '<div id="cbt-header">' +
         '<span id="cbt-title">Batcher Timers</span>' +
         '<div id="cbt-controls">' +
-          '<span id="cbt-font-dec" title="Smaller (A−)">A−</span>' +
-          '<span id="cbt-scale-reset" title="Reset size to 100%">100%</span>' +
-          '<span id="cbt-font-inc" title="Larger (A+)">A+</span>' +
           '<span id="cbt-theme-btn" title="Toggle Dark/Light">🌙</span>' +
           '<span id="cbt-afa-btn" title="Open cart actions">' +
             '<span class="cbt-afa-lbl">▶ Run</span>' +
@@ -6524,13 +6665,6 @@
     });
 
     applyUiScale();
-    var fontIncBtn  = panel2.querySelector('#cbt-font-inc');
-    var fontDecBtn  = panel2.querySelector('#cbt-font-dec');
-    var scaleResetB = panel2.querySelector('#cbt-scale-reset');
-    if (fontIncBtn)  fontIncBtn.addEventListener('click',  function(){ stepUiScale(1); });
-    if (fontDecBtn)  fontDecBtn.addEventListener('click',  function(){ stepUiScale(-1); });
-    if (scaleResetB) scaleResetB.addEventListener('click', function(){ resetUiScale(); });
-
     var isDragging = false, dragStartY = 0, dragStartH = 350;
     panel2.querySelector('#cbt-drag-bottom').addEventListener('mousedown', function(e) {
       isDragging = true;
@@ -6546,7 +6680,7 @@
       var tabs = panel2.querySelector('#cbt-tabs');
       if (!body) return;
       var contentH = body.scrollHeight || 9999;
-      var newH = Math.min(contentH, Math.max(350, dragStartH + (e.clientY - dragStartY)));
+      var newH = Math.min(contentH, Math.max(350, dragStartH + (e.clientY - dragStartY) / (HEADER_FIXED_SCALE * _uiScale)));
       body.style.height = newH + 'px';
       body.style.maxHeight = newH + 'px';
       body.style.minHeight = newH + 'px';
@@ -6857,10 +6991,17 @@
     requestUnifiedSearchCount();
   }
 
+  function cbtHasPerformanceData(entry) {
+    if (!entry || typeof entry !== 'object') return false;
+    return ['runs','totalPkgs','totalSec','bestRate','lastRate','totalMissing','totalExpected'].some(function(key){
+      var value = Number(entry[key]); return isFinite(value) && value > 0;
+    });
+  }
+
   function renderHistory() {
     var tbody=document.querySelector('#cbt-hist-tbody'),empty=document.querySelector('#cbt-hist-empty'),summary=document.querySelector('#cbt-hist-summary');
     if(!tbody||!empty) return;
-    var history=getDisplayHistory(),entries=Object.values(history);
+    var history=getDisplayHistory(),entries=Object.values(history).filter(cbtHasPerformanceData);
     if(entries.length===0){setHTML(tbody,'');empty.style.display='block';if(summary)summary.innerHTML='';
       if(historySearchTerm) renderHistoryCrossSearch(historySearchTerm);
       return;}
@@ -6975,6 +7116,7 @@
         }
         clean[dk][a] = c;
       }
+      clean[dk] = sanitizeHistory(clean[dk]);
       if (!Object.keys(clean[dk]).length) delete clean[dk];
     }
     return clean;
@@ -6994,7 +7136,7 @@
         cbtMergeLatestFields(agg[assoc], d3);
       }
     }
-    var all=Object.values(agg).map(function(a){
+    var all=Object.values(agg).filter(cbtHasPerformanceData).map(function(a){
       var pkgs = Math.min(a.totalPkgs, 100000);
       var sec  = Math.min(a.totalSec,  500*3600);
       var runs = Math.min(a.runs, 500);
@@ -7070,7 +7212,7 @@
     matches = prioritizeNameMatches(matches, term, function(n){ return n; });
     var html = '<div class="cbt-search-result-section">SAVED NAMES</div>';
     matches.slice(0, 50).forEach(function(n){
-      html += '<div class="cbt-search-row"><span class="cbt-search-row-name cbt-name-cell">' + n + '</span>' +
+      html += '<div class="cbt-search-row"><span class="cbt-search-row-name cbt-name-cell">' + afaEsc(n) + '</span>' +
         '<span class="cbt-search-row-mid"></span>' +
         '<span class="cbt-search-row-rate" style="color:#aaa;">—</span></div>';
     });
@@ -7289,7 +7431,7 @@
      as long as a grabbable strip of the header stays on screen, so you can
      park it literally anywhere and still drag it back. */
   function clampTpPos(tp, left, top) {
-    var w = tp.offsetWidth  || 420;
+    var w = tp.getBoundingClientRect().width || (tp.offsetWidth || 420) * (parseFloat(tp.style.zoom) || 1);
     var KEEP = 90;                                  /* visible strip, px */
     var minLeft = -(w - KEEP);
     var maxLeft = window.innerWidth - KEEP;
@@ -7305,8 +7447,9 @@
      vertically at 90px — horizontal drags worked, vertical ones did nothing.
      Setting the position with matching priority frees it to go anywhere. */
   function tpSetPos(tp, left, top) {
-    tp.style.setProperty('left',   left + 'px', 'important');
-    tp.style.setProperty('top',    top  + 'px', 'important');
+    var zoom = parseFloat(tp.style.zoom) || 1;
+    tp.style.setProperty('left', (left / zoom) + 'px', 'important');
+    tp.style.setProperty('top', (top / zoom) + 'px', 'important');
     tp.style.setProperty('right',  'auto',      'important');
     tp.style.setProperty('bottom', 'auto',      'important');
   }
@@ -7419,11 +7562,13 @@
       _tpFontScale = Math.min(2.0, Math.round((_tpFontScale + 0.1) * 10) / 10);
       saveTpFontScale(_tpFontScale);
       applyTpFontScale(tp, _tpFontScale);
+      applyTpPos(tp);
     });
     if (fontDecBtn) fontDecBtn.addEventListener('click', function() {
       _tpFontScale = Math.max(0.7, Math.round((_tpFontScale - 0.1) * 10) / 10);
       saveTpFontScale(_tpFontScale);
       applyTpFontScale(tp, _tpFontScale);
+      applyTpPos(tp);
     });
 
     // ── search input ──
@@ -7478,7 +7623,7 @@
       tpAttachEvents(_tpRef);
     }
     document.body.appendChild(_tpRef);
-    applyTpPos(_tpRef);
+    applyUiScale();
   }
 
   /* Exactly one panel per page type:
@@ -7512,6 +7657,7 @@
     if (findMountPoint()) injectPanel();
   }
 
+  var _cbtLastPageMutation=0;
   var panelWatcher = new MutationObserver(function(mutations) {
     try { cbtQuickDashboardMount(); } catch(e) {}
     /* Mount outside observer delivery so framework rebuilding can settle. */
@@ -7520,6 +7666,7 @@
        checks remain coalesced exactly as before. */
     for (var i = 0; i < mutations.length; i++) {
       if (!cbtMutationIsOnlyOwnUi(mutations[i])) {
+        _cbtLastPageMutation=Date.now();
         _panelMutationRun();
         cbtSchedulePackageFit();
         return;
@@ -7880,6 +8027,7 @@
 
     /* Position survives close/reopen and every new text highlight. */
     qrApplyPosition(qrLoadPosition());
+    applyUiScale();
 
     var card = _qrOverlay.querySelector('#cbt-qr-card');
     var input = _qrOverlay.querySelector('#cbt-qr-input');
@@ -8949,7 +9097,7 @@
     return '<div class="cbt-missing-qr-tile">' +
       '<div class="cbt-missing-qr-kind">' + afaEsc(kind) + '</div>' +
       '<div class="cbt-missing-qr-svg">' + svg + '</div>' +
-      '<div class="cbt-missing-qr-value">' + afaEsc(value) + '</div>' +
+      '<div class="cbt-missing-qr-value" style="font-size:' + Math.min(16,210 / (Math.max(1,String(value).length) * .64)).toFixed(2) + 'px">' + afaEsc(value) + '</div>' +
     '</div>';
   }
 
@@ -8988,7 +9136,7 @@
     card.classList.add('cbt-afa-missing-qr-card');
 
     /* afaShell creates/scales the card before this result class exists.
-       Re-apply once here so the very first QR frame is already fixed at 130%. */
+       Re-apply once here so the first QR frame has the compact viewport-fit scale. */
     try { applyUiScale(); } catch(eScale) {}
 
     function renderCurrent() {
@@ -9037,6 +9185,17 @@
         '<div class="cbt-missing-qr-grid' + (hasCart ? '' : ' single') + '">' +
           tiles +
         '</div>';
+      var summary = stage.querySelector('.cbt-missing-qr-summary');
+      if (summary) { summary.style.whiteSpace='nowrap'; summary.style.fontSize=Math.min(12,920 / (Math.max(1,summary.textContent.length) * .64)).toFixed(2)+'px'; }
+      // Content-only fitting: inspect at most the summary and two ID labels.
+      stage.querySelectorAll('.cbt-missing-qr-summary, .cbt-missing-qr-value').forEach(function(label){
+        if (label.clientWidth > 0 && label.scrollWidth > label.clientWidth) {
+          var available = label.clientWidth;
+          if (label.classList.contains('cbt-missing-qr-value')) available = Math.max(1,available - 20);
+          label.style.fontSize = (parseFloat(getComputedStyle(label).fontSize) * available / label.scrollWidth * .98).toFixed(2) + 'px';
+        }
+      });
+      try { applyUiScale(); } catch(eScale) {}
     }
 
     renderCurrent();
@@ -10365,9 +10524,11 @@
        of left/top/width — so divide by it to land on the real viewport
        pixels of the field. Without this the list drifts off the input as
        soon as the size is changed. */
-    var z = (typeof _uiScale === 'number' && _uiScale > 0) ? _uiScale : 1;
+    var z = parseFloat(_acDrop.style.zoom) || loadUiScale() * ASSOCIATE_AUTOCOMPLETE_BASE_SCALE;
     var r = _acInput.getBoundingClientRect();
-    var w = Math.max(r.width, 240);
+    var w = Math.min(Math.max(r.width, 320 * z), Math.max(1, window.innerWidth - 16));
+    _acDrop.style.minWidth = '0';
+    _acDrop.style.boxSizing = 'border-box';
     var left = Math.min(r.left, window.innerWidth - w - 8);
     _acDrop.style.width = (w / z) + 'px';
     _acDrop.style.left  = (Math.max(8, left) / z) + 'px';
@@ -10376,11 +10537,11 @@
     if (below < 180 && r.top > below) {
       _acDrop.style.top = 'auto';
       _acDrop.style.bottom = ((window.innerHeight - r.top + 4) / z) + 'px';
-      _acDrop.style.maxHeight = (Math.max(120, r.top - 12) / z) + 'px';
+      _acDrop.style.maxHeight = (Math.max(1, r.top - 12) / z) + 'px';
     } else {
       _acDrop.style.bottom = 'auto';
       _acDrop.style.top = ((r.bottom + 4) / z) + 'px';
-      _acDrop.style.maxHeight = (Math.max(120, below - 12) / z) + 'px';
+      _acDrop.style.maxHeight = (Math.max(1, below - 12) / z) + 'px';
     }
   }
 
@@ -10392,7 +10553,7 @@
       _acDrop = document.createElement('div');
       _acDrop.id = 'cbt-ac-drop';
       document.body.appendChild(_acDrop);
-      try { _acDrop.style.zoom = _uiScale; } catch(e) {}
+      try { _acDrop.style.zoom = loadUiScale() * ASSOCIATE_AUTOCOMPLETE_BASE_SCALE; } catch(e) {}
       try { applyPopupTheme(); } catch(e) {}
       /* mousedown, not click: fires before the field loses focus */
       _acDrop.addEventListener('mousedown', function(e){
@@ -10728,8 +10889,14 @@
     if (sig !== _acRect) { _acRect = sig; acPlace(); }
   }
 
-  window.addEventListener('resize', function(){ try { applyUiScale(); } catch(e) {} });
-  window.addEventListener('resize', function(){ if (_acDrop) acPlace(); });
+  var _cbtUiResizeFrame = null;
+  window.addEventListener('resize', function(){
+    if (_cbtUiResizeFrame !== null) return;
+    _cbtUiResizeFrame = requestAnimationFrame(function(){
+      _cbtUiResizeFrame = null;
+      try { applyUiScale(); } catch(e) {}
+    });
+  });
   window.addEventListener('scroll', function(){ if (_acDrop) acPlace(); }, true);
   var _acObserver = null;
 
@@ -10751,6 +10918,7 @@
       _acObserver = new MutationObserver(function(mutations){
         if (document.hidden) return;
         for (var i = 0; i < mutations.length; i++) {
+          if (mutations[i].type==='attributes' && !_acDrop) continue;
           if (!cbtMutationIsOnlyOwnUi(mutations[i])) {
             acMutationRun();
             return;
@@ -10942,6 +11110,7 @@
       if (nextStore !== STORE_ID) {
         STORE_ID = nextStore;
         taskCache.clear();
+        _cbtTaskSequences.clear(); _cbtSnapshotRefs.clear(); _cbtLastSnapshotSequence = 0;
         _cbtLiveStartByRef = Object.create(null);
         _cbtMissingPollsByRef = Object.create(null);
         _cbtObservedProgressByRef = Object.create(null);
@@ -11079,6 +11248,34 @@
     next();
   }
 
+  var _cbtReportRefreshPending=false;
+  function cbtScheduleReportRefresh() {
+    if (_cbtReportRefreshPending) return;
+    _cbtReportRefreshPending=true;
+    cbtIdle(cbtRefreshVisibleReport,300);
+  }
+  function cbtRefreshVisibleReport() {
+    _cbtReportRefreshPending=false;
+    _dispHistCache = null; _dispWeekCache = null;
+    if (document.hidden) return;
+    if (activeTab === 'history') renderHistory();
+    else if (activeTab === 'weekly') renderWeekly();
+    else if (activeTab === 'hof') renderHallOfFame();
+    else if (activeTab === 'names') renderNames();
+    else requestLiveRender();
+  }
+
+  function cbtWhenPageSettles(fn) {
+    var started=Date.now();
+    function check() {
+      var now=Date.now(), elapsed=now-started;
+      if (elapsed>=8000 || (elapsed>=2500 && document.readyState==='complete' && now-_cbtLastPageMutation>=350)) {
+        cbtIdle(fn,1200);return;
+      }
+      setTimeout(check,250);
+    }
+    check();
+  }
   function startBackgroundFeatures() {
     /* These are important, but none of them needs to compete with the website's
        first paint. They are started after the visible board is already usable. */
@@ -11101,6 +11298,11 @@
     }, 5000);
 
 
+    window.addEventListener('storage',function(event){
+      if ([STORAGE_KEY,OWN_WEEKLY_KEY,REMOTE_HISTORY_KEY,REMOTE_WEEKLY_KEY,ALL_NAMES_KEY].indexOf(event.key) === -1) return;
+      if (event.key === ALL_NAMES_KEY) _allNamesCache = null;
+      cbtScheduleReportRefresh();
+    });
     setInterval(function(){ if (!document.hidden) syncPull(); }, 30000);
     setInterval(function(){ if (!document.hidden) syncHistoryPull(); }, 10000);
     setInterval(function(){ if (!document.hidden) syncWeeklyPull(); }, 10000);
@@ -11111,7 +11313,7 @@
        when data actually changed. */
     document.addEventListener('visibilitychange', function(){
       if (document.hidden) return;
-      try { panelHealthCheck(); taskPanelHealthCheck(); } catch(e9p) {}
+      try { panelHealthCheck(); taskPanelHealthCheck(); requestLiveRender(); pollActiveTasks(); } catch(e9p) {}
       try { syncHistoryPull(); } catch(e9a) {}
       try { syncWeeklyPull(); } catch(e9b) {}
       try { syncPull(); } catch(e9c) {}
@@ -11135,7 +11337,7 @@
         function(){ cbtResetTodayWeeklyV2(); },
         function(){ cbtTrustedRateMigration(); },
         function(){
-          setTimeout(function(){ cbtIdle(startBackgroundFeatures, 900); }, 2500);
+          cbtWhenPageSettles(startBackgroundFeatures);
         }
       ]);
     }, 0);
