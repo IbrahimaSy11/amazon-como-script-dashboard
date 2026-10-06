@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.123
+// @version      23.9.125
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -6648,6 +6648,7 @@
          idle    -> ▶ Run opens the independent Cart Actions menu
          running -> ⏹ Stop requests the current action to stop */
       if (_afaRunning) {
+        if (!_afaOverlay) { afaProgressView(_afaRunState && _afaRunState.mode);return; }
         _afaStop = true;
         afaSetBtn('⏹ Stopping…', true);
 
@@ -8318,6 +8319,7 @@
      rest of the session. */
   var _afaDone     = Object.create(null);  /* job id -> claimed during THIS run */
   var _afaRunning  = false, _afaStop = false, _afaOverlay = null;
+  var _afaRunState = null;
 
   /* Missing QR availability is verified only when ▶ Run opens.
      The button remains disabled unless a real MISSING package is confirmed. */
@@ -9408,8 +9410,18 @@
     try { buttons = doc.querySelectorAll('button'); } catch(e) { return null; }
     for (var i = 0; i < buttons.length; i++) {
       var b = buttons[i];
-      var label = ((b.getAttribute('title') || '') + ' ' + (b.textContent || '')).replace(/\s+/g, ' ').trim();
-      if (/complete\s*task/i.test(label)) return b;
+      var label = ((b.getAttribute('title') || '') + ' ' + (b.getAttribute('aria-label') || '') + ' ' + (b.textContent || '')).replace(/\s+/g, ' ').trim();
+      if (!/complete\s*task/i.test(label)) continue;
+      if (b.closest('[hidden], [aria-hidden="true"]')) continue;
+      var visible=true, node=b;
+      try {
+        while(node && node.nodeType===1) {
+          var style=doc.defaultView.getComputedStyle(node);
+          if(style.display==='none' || style.visibility==='hidden' || style.visibility==='collapse') {visible=false;break;}
+          node=node.parentElement;
+        }
+      } catch(eStyle) {}
+      if(visible)return b;
     }
     return null;
   }
@@ -9458,8 +9470,8 @@
 
       var frame = document.createElement('iframe');
       frame.className = 'cbt-missing-probe-frame';
-      var done = false, started = Date.now(), firstSeen = 0;
-      var lastDisabled = null, stable = 0;
+      var done = false, started = Date.now();
+      var lastDisabled = null, stable = 0, stateSince = 0;
       frame.setAttribute('aria-hidden', 'true');
       frame.tabIndex = -1;
       frame.style.cssText = 'position:fixed!important;left:-10000px!important;top:-10000px!important;width:1px!important;height:1px!important;opacity:0!important;pointer-events:none!important;border:0!important;';
@@ -9473,6 +9485,7 @@
 
       function poll() {
         if (done) return;
+        if (_afaRunning && _afaStop) {finish({eligible:false,verified:false,reason:'Stopped'});return;}
         if (Date.now() - started > AFA_COMPLETE_PROBE_TIMEOUT_MS) {
           finish({ eligible: false, verified: false, reason: 'Complete Task eligibility could not be verified' });
           return;
@@ -9483,16 +9496,15 @@
         try { btn = afaFindCompleteButton(doc); } catch(e2) {}
 
         if (btn) {
-          if (!firstSeen) firstSeen = Date.now();
           var aria = String(btn.getAttribute('aria-disabled') || '').toLowerCase();
-          var disabled = !!btn.disabled || btn.hasAttribute('disabled') || aria === 'true' || btn.classList.contains('disabled');
-          if (disabled === lastDisabled) stable++; else { lastDisabled = disabled; stable = 1; }
+          var disabled = !!btn.disabled || btn.hasAttribute('disabled') || aria === 'true' || btn.classList.contains('disabled') || btn.matches(':disabled');
+          if (disabled === lastDisabled) stable++; else { lastDisabled = disabled; stable = 1; stateSince=Date.now(); }
 
           /* Wait long enough for Angular's ng-disabled expression to settle.
              Enabled gets the longer dwell because a button can briefly render
              enabled before the controller finishes applying its state. */
           var dwell = disabled ? 400 : 900;
-          if (stable >= 3 && Date.now() - firstSeen >= dwell) {
+          if (stable >= 3 && Date.now() - stateSince >= dwell) {
             finish({
               eligible: !disabled,
               verified: true,
@@ -9529,32 +9541,30 @@
     });
   }
 
-  /* Every regular task on the main dashboard is only a completion CANDIDATE.
-     No write is made from this scan. The hidden probe above decides whether
-     the site's own Complete Task control is actually enabled. Problem rows and
-     the side sections are deliberately excluded. */
+  /* All visible dashboard task sources are completion candidates. Eligibility
+     is verified on demand; section/status never substitutes for an enabled button. */
   function afaScanCompletionCandidates() {
     var found = [], seen = Object.create(null);
-    var cards = document.querySelectorAll('job-card');
-    for (var i = 0; i < cards.length; i++) {
-      var card = cards[i];
-      try { if (isInExcludedSection(card)) continue; } catch(e) {}
-      var txt = card.innerText || card.textContent || '';
-      if (/problem\s*solve|\bproblem\b/i.test(txt)) continue;
-      var a = card.querySelector('a');
+    function add(a, card) {
       var ref = a ? (a.textContent || '').trim() : '';
-      var id = null;
-      if (a) {
-        var href = a.getAttribute('href') || '';
-        var m = href.match(/jobId=([^&#]+)/i);
-        if (m) { try { id = decodeURIComponent(m[1]); } catch(e2) { id = m[1]; } }
-      }
-      if (!id && ref && _afaJobIndex[ref]) id = _afaJobIndex[ref];
-      var key = id || ('ref:' + ref + ':' + i);
-      if (seen[key]) continue;
-      seen[key] = true;
-      found.push({ ref: ref || '(unknown)', id: id, completeCandidate: true });
+      var id = null, match = a && (a.getAttribute('href') || '').match(/[?&]jobId=([^&#]+)/i);
+      if (match) { try { id=decodeURIComponent(match[1]); } catch(e) {id=match[1];} }
+      if (!id && ref && _afaJobIndex[ref]) id=_afaJobIndex[ref];
+      if (!id) return;
+      if (seen[id]) return;
+      seen[id]=true;
+      found.push({ref:ref || '(unknown)',id:id,completeCandidate:true});
     }
+    document.querySelectorAll('job-card').forEach(function(card){
+      var links=card.querySelectorAll('a');
+      var taskLink=null;
+      for(var i=0;i<links.length;i++) {
+        if (/[?&]jobId=/i.test(links[i].getAttribute('href') || '')) {taskLink=links[i];break;}
+      }
+      add(taskLink || links[0],card);
+    });
+    // Side sections may use plain anchors rather than job-card components.
+    document.querySelectorAll('a[href*="jobId="]').forEach(function(a){add(a,null);});
     return found;
   }
 
@@ -9667,12 +9677,13 @@
   }
 
   function afaClose() {
-    if (_afaRunning) return;                    /* never vanish mid-run */
+    /* Hiding the view never cancels the independent action queue. */
     _afaMissingMenuInfo = null;
     _afaMissingMenuCheckSeq++;
     if (_afaOverlay && _afaOverlay.parentNode) _afaOverlay.parentNode.removeChild(_afaOverlay);
     _afaOverlay = null;
-    afaSetBtn('▶ Run', false);
+    if (_afaRunning) afaSetBtn('▶ Running — View', true);
+    else { _afaRunState=null; afaSetBtn('▶ Run', false); }
   }
   function afaShell(title, bodyHtml, footHtml) {
     if (!_afaOverlay) {
@@ -9697,6 +9708,13 @@
     return String(s == null ? '' : s)
       .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
+  document.addEventListener('visibilitychange',function(){
+    if (document.hidden || !_afaOverlay || !_afaRunState) return;
+    var state=_afaRunState;
+    if (state.finished) afaSummary(state.results,state.stopped,state.retryable,state.mode);
+    else afaProgress(state.done,state.total,state.ref,state.results);
+  });
+
   function afaRowsHtml(items) {
     return '<div class="cbt-afa-list">' + items.map(function(it){
       var cls = it.ok === true ? 'ok' : (it.skip ? 'skip' : (it.ok === false ? 'bad' : ''));
@@ -9713,7 +9731,10 @@
      (or gives up after a couple of seconds and reports what it has).
      This is what stopped the popup showing a stale 5-of-9. */
   function afaConfirm() {
-    if (_afaRunning) { afaProgressView(); return; }
+    if (_afaRunning) { afaProgressView(_afaRunState && _afaRunState.mode); return; }
+    if (_afaRunState && _afaRunState.finished) {
+      var last=_afaRunState;afaShell('Run results','', '');afaSummary(last.results,last.stopped,last.retryable,last.mode);return;
+    }
 
     /* Opening ▶ Run must be instant. Do NOT show the old animated
        "Checking the dashboard..." screen. Render the current action menu from
@@ -9729,7 +9750,7 @@
     /* Three completely independent actions:
          1) Force Assign         -> UNASSIGNABLE only
          2) Partially Batched    -> Partially Batched only
-         3) Auto Complete        -> regular completion candidates only
+         3) Auto Complete        -> all tasks with enabled Complete Task
        No checkbox can mix one queue into another. */
 
     suppress = suppress || {
@@ -9808,8 +9829,8 @@
       !AFA_COMPLETE_PATH
         ? 'Unavailable: the Complete Task request is not configured.'
         : (completeDisabled
-            ? 'No regular tasks are available to Auto Complete right now.'
-            : 'Runs Complete Task only. It never Force Assigns and never includes Partially Batched.')
+            ? 'No tasks with readable IDs are available to check right now.'
+            : 'Checks every task section and completes only when Complete Task is enabled. Never Force Assigns.')
     );
 
     var missingCandidates = afaScanMissingCandidates();
@@ -9946,13 +9967,15 @@
     function runFresh(action, button) {
       if (!button || button.disabled || _afaRunning) return;
 
-      var original = button.textContent;
       button.disabled = true;
+      _afaRunning=true;_afaStop=false;
+      _afaRunState={mode:action,done:0,total:0,ref:'',results:[],finished:false};
+      afaProgressView(action);
 
       /* Refresh silently. The old visible "Checking..." state looked like a
          second loader after the user had already chosen an action. */
       afaRefreshJobData().then(function(){
-        if (!_afaOverlay || _afaRunning) return;
+        if (_afaStop) {_afaRunning=false;afaSetBtn('▶ Run',false);afaSummary([],true,0,action);return;}
 
         var queue = [];
         var opts = {};
@@ -9972,19 +9995,15 @@
         }
 
         if (!queue.length) {
-          /* State changed while the menu was open. Rebuild instantly with no
-             loading screen so the now-empty action becomes disabled. */
-          var pbNow2 = afaScanPartiallyBatched();
-          var expected2 = afaSectionCount(/^Partially\s+Batched(\s*\(\d+\))?$/i);
-          afaConfirmRender(afaScanDashboard(), pbNow2, expected2, suppress);
+          _afaRunning=false;afaSetBtn('▶ Run',false);
+          afaSummary([],false,0,action);
           return;
         }
 
         afaRun(queue, opts);
-      }).catch(function(){
-        if (!_afaOverlay) return;
-        button.disabled = false;
-        button.textContent = original;
+      }).catch(function(error){
+        _afaRunning=false;afaSetBtn('▶ Run',false);
+        afaSummary([{ref:'Refresh',ok:false,msg:String(error && error.message || error || 'Task refresh failed')}],_afaStop,0,action);
       });
     }
 
@@ -10023,18 +10042,26 @@
       '<div id="cbt-afa-lead"><span id="cbt-afa-count">Starting\u2026</span></div>' +
       '<div id="cbt-afa-bar"><div id="cbt-afa-fill"></div></div>' +
       '<div id="cbt-afa-live"></div>',
+      '<button class="cbt-afa-act" data-afa="hide">Hide — keep running</button>' +
       '<button class="cbt-afa-act stop" data-afa="stop">⏹ Stop</button>');
     var card = _afaOverlay.querySelector('#cbt-afa-card');
     card.addEventListener('click', function(e){
       var b = e.target.closest('[data-afa]');
+      if (b && b.getAttribute('data-afa') === 'hide') {afaClose();return;}
       if (b && b.getAttribute('data-afa') === 'stop') {
         _afaStop = true;
         b.textContent = '⏹ Stopping\u2026';
         b.disabled = true;
       }
     });
+    afaSetBtn('⏹ Stop',true);
+    if (_afaRunState) afaProgress(_afaRunState.done,_afaRunState.total,_afaRunState.ref,_afaRunState.results);
   }
   function afaProgress(done, total, ref, results) {
+    if (_afaRunState && !_afaRunState.finished) {
+      _afaRunState.done=done;_afaRunState.total=total;_afaRunState.ref=ref;_afaRunState.results=results;
+    }
+    if (document.hidden || !_afaOverlay) return;
     var c = document.getElementById('cbt-afa-count');
     if (c) c.innerHTML = 'Processing <b>' + done + '</b> of <b>' + total + '</b>' + (ref ? ' \u2014 cart ' + afaEsc(ref) : '');
     var f = document.getElementById('cbt-afa-fill');
@@ -10044,6 +10071,8 @@
   }
 
   function afaSummary(results, stopped, retryable, mode) {
+    _afaRunState={finished:true,results:results,stopped:stopped,retryable:retryable,mode:mode};
+    if (document.hidden || !_afaOverlay) return;
     var isComplete = mode === 'complete';
     var isPartial = mode === 'partial';
     var title = isComplete ? 'Auto Complete' : (isPartial ? 'Partially Batched' : 'Force Assign');
@@ -10073,6 +10102,7 @@
       }
 
       if (action === 'back') {
+        _afaRunState=null;
         /* The dashboard DOM can take a few seconds to visually remove a cart
            after a successful write. Build a suppression map from the exact
            successful results of THIS run, then return instantly to Cart
@@ -10121,16 +10151,20 @@
     /* The dashboard header behaves like a coding playground:
        ▶ Run while idle, ⏹ Stop while an action is executing. */
     afaSetBtn('⏹ Stop', true);
-    afaProgressView(runMode);
-    var results = [], i = 0;
+    var showProgress=!!_afaOverlay || !_afaRunState;
+    var results = [], i = 0, finished = false;
+    _afaRunState={mode:runMode,done:0,total:list.length,ref:'',results:results,finished:false};
+    if(showProgress)afaProgressView(runMode);
+    else afaSetBtn('▶ Running — View',true);
 
     function finish() {
-      _afaRunning = false;
-      afaSetBtn('▶ Run', false);
+      if (finished) return;
+      finished=true;
       var stopped = _afaStop;
       /* Re-read the dashboard: any cart still sitting under Partially
          Batched can simply be run again next time. */
-      afaRefreshJobData().then(function(){
+      afaRefreshJobData().catch(function(){return null;}).then(function(){
+        _afaRunning=false;afaSetBtn('▶ Run',false);
         var stillThere = Object.create(null), retryable = 0;
         try {
           afaScanPartiallyBatched().forEach(function(x){
@@ -10145,7 +10179,12 @@
         afaSummary(results, stopped, retryable, runMode);
       });
     }
-    function next(delay) { i++; setTimeout(step, delay); }
+    function next(delay) {
+      i++;
+      // Background runs need no visual pacing. Each request/check is still awaited.
+      if (document.hidden) Promise.resolve().then(step);
+      else setTimeout(step,delay);
+    }
 
     function step() {
       if (_afaStop || i >= list.length) return finish();
@@ -10158,6 +10197,7 @@
       function doneResult(row, delay) {
         results.push(row);
         afaProgress(i + 1, list.length, item.ref, results);
+        if (_afaStop) {finish();return;}
         next(delay == null ? AFA_DELAY_MS : delay);
       }
 
@@ -10233,38 +10273,31 @@
         return;
       }
 
-      /* Auto Complete is deliberately COMPLETE-ONLY.
-         It never calls Force Assign, even when the same cart is UNASSIGNABLE.
-         The server remains the eligibility gate: literal true means completed;
-         a normal rejection is skipped; network/auth/server errors are reported.
-         Partially Batched is excluded from this mode entirely. */
+      /* Every task section is eligible for CHECKING. Complete-only never
+         falls back to Force Assign. Claim before probing to prevent duplicates. */
       if (autoComplete || completeOnly) {
-        if (item.partial) {
-          doneResult({ ref: item.ref, skip: true, ok: false, msg: 'Skipped \u2014 Partially Batched is Force Assign only' }, 80);
-          return;
-        }
-
-        _afaDone[item.id] = true;
-        afaCompleteTask(item.id).then(function(r){
+        _afaDone[item.id]=true;
+        afaProbeCompletable(item.id).then(function(probe){
           if (_afaStop) return finish();
-
-          if (afaCompletedOk(r)) {
-            doneResult({ ref: item.ref, id: item.id, ok: true, msg: 'Completed \u2014 server allowed Complete Task' });
+          if (!probe || !probe.verified || !probe.eligible) {
+            doneResult({ref:item.ref,skip:true,ok:false,msg:(probe && probe.reason) || 'Complete Task availability could not be verified'},80);
             return;
           }
-
-          if (!r || !r.status || r.status === 401 || r.status === 403 || r.status >= 500) {
-            var hardWhy = (!r || !r.status)
-              ? ((r && r.body) ? String(r.body) : 'no response')
-              : ('HTTP ' + r.status + (r.body ? ' \u2014 ' + String(r.body).replace(/\s+/g, ' ').slice(0, 80) : ''));
-            doneResult({ ref: item.ref, ok: false, msg: 'Complete Task check failed \u2014 ' + hardWhy });
-            return;
-          }
-
-          var rejectWhy = 'Skipped \u2014 Complete Task not allowed';
-          if (r.status) rejectWhy += ' (HTTP ' + r.status + ')';
-          if (r.ok && r.body) rejectWhy += ' \u2014 response ' + String(r.body).replace(/\s+/g, ' ').slice(0, 50);
-          doneResult({ ref: item.ref, skip: true, ok: false, msg: rejectWhy }, 80);
+          return afaCompleteTask(item.id).then(function(r){
+            // Record the response even if Stop was pressed while the write was in flight.
+            if (afaCompletedOk(r)) {
+              doneResult({ref:item.ref,id:item.id,ok:true,msg:'Completed — Complete Task enabled by site'});
+              return;
+            }
+            var hard=!r || !r.status || r.status===401 || r.status===403 || r.status>=500;
+            var reason=hard?'Complete Task request failed':'Complete Task no longer allowed';
+            if (r && r.status) reason+=' (HTTP '+r.status+')';
+            if (r && r.body) reason+=' — '+String(r.body).replace(/\s+/g,' ').slice(0,80);
+            doneResult({ref:item.ref,ok:false,skip:!hard,msg:reason},80);
+          });
+        }).catch(function(error){
+          if (_afaStop) return finish();
+          doneResult({ref:item.ref,ok:false,msg:'Complete Task check failed — '+String(error && error.message || error).slice(0,80)},80);
         });
         return;
       }
