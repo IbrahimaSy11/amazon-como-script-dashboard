@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.154
+// @version      23.9.155
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -4181,9 +4181,9 @@
     return dpr / _cbtBaseDpr;
   }
   function cbtAutomaticUiScale() {
-    // Preserve the approved anchors: browser 100% => actual 70%,
-    // browser 50% => actual 120%. Continue smoothly beyond both anchors.
-    return clampUiScale(.2 + .5 / cbtBrowserZoom());
+    // Apply the requested 20% reduction to every shared UI scale while
+    // retaining browser responsiveness and proportional saved preferences.
+    return clampUiScale((.2 + .5 / cbtBrowserZoom()) * .8);
   }
   function cbtResponsivePopupScale() {
     // Separate window resizing from browser zoom; multiplying by browser zoom
