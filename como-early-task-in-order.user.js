@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.126
+// @version      23.9.127
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -9732,8 +9732,17 @@
      This is what stopped the popup showing a stale 5-of-9. */
   function afaConfirm() {
     if (_afaRunning) { afaProgressView(_afaRunState && _afaRunState.mode); return; }
+    var completedSuppress=null;
     if (_afaRunState && _afaRunState.finished) {
-      var last=_afaRunState;afaShell('Run results','', '');afaSummary(last.results,last.stopped,last.retryable,last.mode);return;
+      var last=_afaRunState;
+      completedSuppress={force:Object.create(null),partial:Object.create(null),complete:Object.create(null)};
+      var bucket=completedSuppress[last.mode==='complete'?'complete':(last.mode==='partial'?'partial':'force')];
+      (last.results || []).forEach(function(r){
+        if (!r || r.ok!==true) return;
+        if (r.id) bucket['id:'+String(r.id)]=true;
+        if (r.ref) bucket['ref:'+String(r.ref)]=true;
+      });
+      _afaRunState=null;
     }
 
     /* Opening ▶ Run must be instant. Do NOT show the old animated
@@ -9743,7 +9752,7 @@
        make Force Assign / Partial / Auto Complete stale. */
     var pbNow = afaScanPartiallyBatched();
     var expected = afaSectionCount(/^Partially\s+Batched(\s*\(\d+\))?$/i);
-    afaConfirmRender(afaScanDashboard(), pbNow, expected);
+    afaConfirmRender(afaScanDashboard(), pbNow, expected, completedSuppress);
   }
 
   function afaConfirmRender(list, pbAll, pbExpected, suppress) {
