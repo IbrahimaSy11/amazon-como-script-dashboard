@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.130
+// @version      23.9.149
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -151,7 +151,7 @@
     }
     .cbt-stat-icon { font-size: 18px; line-height: 1; margin-bottom: 4px; }
     .cbt-stat-label {
-      font-size: 11px; font-weight: 800; letter-spacing: 0.1em; text-transform: uppercase;
+      font-size: 11px; font-weight: 800; letter-spacing: 0.04em; text-transform: uppercase;
       color: #3a5068; margin-bottom: 5px;
       white-space: nowrap; overflow: hidden; text-overflow: clip;
     }
@@ -1982,12 +1982,38 @@
     #cbt-profile-card select option { background:#f8fafc !important; color:#172435 !important; }
     #cbt-profile-card .cbt-profile-controls label, #cbt-profile-card .cbt-profile-controls > span { color:inherit !important; }
     #cbt-profile-card select:focus-visible { outline:2px solid #2979ff; outline-offset:2px; }
+    #cbt-profile-card .cbt-profile-period { display:inline-block; position:relative; margin-left:8px; vertical-align:middle; }
+    #cbt-profile-card .cbt-profile-period button { display:block; box-sizing:border-box; width:110px; height:36px; padding:6px 10px; font:inherit; text-align:left; white-space:nowrap; background:#f8fafc; color:#172435; border:1px solid #cbd5e1; border-radius:6px; }
+    #cbt-profile-card .cbt-profile-period-menu { display:block; position:absolute; left:0; top:100%; width:110px; z-index:10; padding:0; background:#f8fafc; border:1px solid #cbd5e1; box-sizing:border-box; border-radius:3px; overflow:hidden; }
+    #cbt-profile-card .cbt-profile-period-menu[hidden] { display:none !important; }
+    #cbt-profile-card .cbt-profile-period-menu button { display:block !important; width:100% !important; margin:0 !important; border:0; border-radius:0; }
+    #cbt-profile-overlay.dark .cbt-profile-period button,
+    #cbt-profile-overlay.dark .cbt-profile-period-menu { background:#18212d; color:#e6edf3; border-color:#334155; }
+    #cbt-profile-card .cbt-profile-period-menu button:hover { background:#000 !important; color:#fff !important; }
+    #cbt-profile-card .cbt-profile-period-menu button:focus-visible { outline:2px solid #2979ff; outline-offset:-2px; }
     .cbt-profile-metrics { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; padding:0 16px 14px; }
     .cbt-profile-metrics > div { background:#eff4fa; border-radius:8px; padding:12px; white-space:nowrap; }
     .cbt-profile-metrics span { display:block; font-size:13px; }
     .cbt-profile-metrics b { display:block; font-size:24px; font-variant-numeric:tabular-nums; }
     .cbt-profile-table-wrap { max-height:300px; overflow:auto; margin:0 16px; }
+    #cbt-profile-card .cbt-profile-detail-row > td { padding:10px 8px 14px; background:#f0f6ff; }
+    #cbt-profile-card .cbt-profile-details { background:#fff; border:1px solid #93b4e7; border-left:4px solid #2979ff; border-radius:8px; padding:10px; }
+    #cbt-profile-card .cbt-profile-details-title { display:block; color:#174ea6; font-size:14px; margin-bottom:8px; }
+    #cbt-profile-card .cbt-profile-details-scroll { overflow-x:auto; }
+    #cbt-profile-card .cbt-profile-details th { background:#eaf2ff; font-size:12px; }
+    #cbt-profile-card .cbt-profile-details td { font-size:13px; }
+    #cbt-profile-overlay.dark #cbt-profile-card .cbt-profile-detail-row > td { background:#101c2d; }
+    #cbt-profile-overlay.dark #cbt-profile-card .cbt-profile-details { background:#18212d; border-color:#36577b; border-left-color:#58a6ff; }
+    #cbt-profile-overlay.dark #cbt-profile-card .cbt-profile-details-title { color:#9ecbff; }
+    #cbt-profile-overlay.dark #cbt-profile-card .cbt-profile-details th { background:#24364e; }
     #cbt-profile-card table { width:100%; border-collapse:collapse; }
+    #cbt-profile-card button[data-profile-hour] { width:100%; height:auto; min-height:32px; padding:6px 8px; font:inherit; text-align:left; white-space:nowrap; background:transparent; color:inherit; transition:background-color 120ms ease; }
+    #cbt-profile-card button[data-profile-hour]:hover,
+    #cbt-profile-card button[data-profile-hour][aria-expanded="true"] { background:#dbeafe; color:#174ea6; }
+    #cbt-profile-card button[data-profile-hour]:focus-visible { outline:2px solid #2979ff; outline-offset:2px; background:#dbeafe; color:#174ea6; }
+    #cbt-profile-overlay.dark #cbt-profile-card button[data-profile-hour]:hover,
+    #cbt-profile-overlay.dark #cbt-profile-card button[data-profile-hour][aria-expanded="true"],
+    #cbt-profile-overlay.dark #cbt-profile-card button[data-profile-hour]:focus-visible { background:#1e3a5f; color:#e6f0ff; }
     #cbt-profile-card th, #cbt-profile-card td { padding:10px 8px; white-space:nowrap; text-align:right; border-bottom:1px solid #d4dce5; }
     #cbt-profile-card th:first-child, #cbt-profile-card td:first-child { text-align:left; }
     #cbt-profile-card p { margin:14px 16px; font-size:12px; line-height:1.5; }
@@ -2651,12 +2677,13 @@
 
      CONSERVATIVE PLANNING ASSUMPTIONS:
        - EVERY batcher is treated as slow/unpredictable for staffing.
-       - One cart consumes 20 planning-minutes of one batcher.
-         This is a fixed WORST-CASE planning unit, NOT a measured worker speed.
+       - One cart consumes 10 planning-minutes of one batcher.
+         This is a conservative low-to-middle planning unit, NOT a claim that
+         every associate works at the same speed.
        - A batcher is reusable: after finishing one cart, they can immediately
          take another. Capacity is therefore worker-minutes across the hour,
          not one permanently assigned batcher per cart.
-       - Keep 5 minutes of deadline safety.
+       - The workload planning estimate is 10 minutes per cart.
        - Reserve 12% extra cart capacity (1–4 carts) for mid-hour rush work.
        - Normal task waves begin around :55 and are finalized at :57.
        - Normal hourly waves run from 2:55 AM through the final 8:55 PM wave.
@@ -2670,14 +2697,9 @@
   var CBT_REC_FIRST_DROP_HOUR      = 2;   /* 2:55 AM */
   var CBT_REC_LAST_DROP_HOUR       = 20;  /* 8:55 PM */
   var CBT_REC_QUIET_START_HOUR     = 21;  /* 9:00 PM */
-  var CBT_REC_CART_MINUTES         = 20;
-  var CBT_REC_DEADLINE_BUFFER_MIN  = 5;
-  var CBT_REC_OVERDUE_WINDOW_MIN   = 8;
-  var CBT_REC_RUSH_RATIO           = 0.12;
-  var CBT_REC_RUSH_MIN             = 1;
-  var CBT_REC_RUSH_MAX             = 4;
+  var CBT_REC_CART_MINUTES         = 10;
   var CBT_REC_MAX_BATCHERS         = 38;
-  var CBT_REC_STATE_PREFIX         = 'cbt_hourly_recommend_v3_schedule_';
+  var CBT_REC_STATE_PREFIX         = 'cbt_hourly_recommend_v8_progress_';
 
   /* Kept only because an older background Drive pull still assigns it.
      Recommendation no longer reads this value. */
@@ -2848,113 +2870,152 @@
     return true;
   }
 
-  function cbtRecRushReserve(openCount) {
-    if (!(openCount > 0)) return 0;
-    var r = Math.ceil(openCount * CBT_REC_RUSH_RATIO);
-    r = Math.max(CBT_REC_RUSH_MIN, r);
-    r = Math.min(CBT_REC_RUSH_MAX, r);
-    return r;
+
+  var _cbtRecRates = { store: '', at: 0, values: [] };
+  function cbtRecConservativeRate(jobs, nowMs) {
+    var store = cbtRecStoreKey(), rates = [];
+    if (_cbtRecRates.store !== store || nowMs - _cbtRecRates.at >= 60000 || nowMs < _cbtRecRates.at) {
+      var history = getDisplayHistory(), seen = new Set(), values = [];
+      Object.keys(history).forEach(function(key) {
+        var events = history[key]._cbtEvents || {};
+        Object.keys(events).forEach(function(id) {
+          if (seen.has(id) || !cbtEventStoreMatches(id)) return;
+          seen.add(id);
+          var e = events[id];
+          if (!e || typeof e !== 'object') return;
+          var end = Number(e.endAt || e.at), sec = Number(e.sec), pkgs = Number(e.pkgs);
+          if (!isFinite(end) || end <= 0 || end > nowMs ||
+              end < nowMs - 6 * 3600000 || !isFinite(sec) || sec < 120 || pkgs < 5) return;
+          var rate = pkgs * 60 / sec;
+          if (isFinite(rate) && rate > 0 && rate <= CBT_MAX_VALID_RATE) values.push({ at: end, rate: rate });
+        });
+      });
+      values.sort(function(a,b) { return b.at - a.at; });
+      _cbtRecRates = { store: store, at: nowMs, values: values.slice(0,500).map(function(v) { return v.rate; }) };
+    }
+    rates = _cbtRecRates.values.slice();
+    /* Unfinished elapsed spans never define the team's future-cart speed. */
+    if (rates.length < 3) return null;
+    rates.sort(function(a,b) { return a - b; });
+    /* Lower quartile, not a personal best; never assume faster than the
+       original 30-package / 10-minute baseline for general staffing. */
+    return Math.min(3, rates[Math.floor((rates.length - 1) * 0.25)]);
   }
 
-  function cbtRecNeedForCount(count, availableMinutes) {
-    if (!(count > 0)) return 0;
+  var _cbtRecProgress=new Map();
+  function cbtRecLiveRate(job, nowMs) {
+    var state=String(job.operationState || job.state || '').toUpperCase();
+    if(state!=='BATCHING' && state!=='IN_PROGRESS')return null;
+    var key=String(job.jobId || job.id || job.shortClientRef || '');
+    if(!key)return null;
+    var pkgs=Number(job.packagesBatched);
+    if(!isFinite(pkgs) || pkgs<0)return null;
+    var detail=taskCache.get(job.shortClientRef), generation=cbtTaskGeneration(detail || job);
+    var identity=cbtAssociateKey(job.associateId || job.associate || (detail && detail.associateId) || '');
+    var cur=_cbtRecProgress.get(key);
+    if(!cur || cur.store!==STORE_ID || cur.generation!==generation || cur.assoc!==identity ||
+        pkgs<cur.pkgs || nowMs<cur.at){
+      cur={store:STORE_ID,generation:generation,assoc:identity,pkgs:pkgs,at:nowMs,changedAt:nowMs,samples:[]};
+      _cbtRecProgress.set(key,cur);
+    }
+    if(pkgs>cur.pkgs)cur.changedAt=nowMs;
+    cur.pkgs=pkgs;cur.at=nowMs;
+    var samples=cur.samples;
+    if(!samples.length || samples[samples.length-1].at!==nowMs)samples.push({at:nowMs,pkgs:pkgs});
+    while(samples.length>61 || (samples.length>1 && samples[1].at<nowMs-5*60000))samples.shift();
+    var first=samples[0],elapsed=nowMs-first.at,delta=pkgs-first.pkgs;
+    if(elapsed<60000 || delta<3 || nowMs-cur.changedAt>3*60000)return null;
+    var rate=delta/(elapsed/60000);
+    return isFinite(rate) && rate>0 && rate<=CBT_MAX_VALID_RATE?rate:null;
+  }
 
-    var mins = Number(availableMinutes);
-    if (!isFinite(mins)) mins = CBT_REC_OVERDUE_WINDOW_MIN;
-
-    /* Once a deadline is missed, the safest task-count-only instruction is
-       effectively "one person per overdue cart" until the backlog is caught. */
-    if (mins <= 0) mins = CBT_REC_OVERDUE_WINDOW_MIN;
-
-    var effective = Math.max(1, mins - CBT_REC_DEADLINE_BUFFER_MIN);
-    var need = Math.ceil((count * CBT_REC_CART_MINUTES) / effective);
-
-    /* More batchers than carts cannot create more parallel cart work. */
-    if (need > count) need = count;
-    if (need < 1) need = 1;
-    return need;
+  function cbtRecUniqueJobs(data) {
+    var seen = new Map();
+    var mainTasks = afaSectionCount(/^Tasks\s*\(\d+\)\s*$/i);
+    (mainTasks === 0 || !Array.isArray(data) ? [] : data).forEach(function(job, i) {
+      if (!job || typeof job !== 'object') return;
+      var key = job.jobId || job.id || job.shortClientRef || ('unknown-' + i);
+      /* A duplicate terminal row must not resurrect an open task. */
+      var previous = seen.get(key);
+      if (!previous || !cbtRecIsBatchingWork(job) || cbtRecIsBatchingWork(previous)) seen.set(key, job);
+    });
+    return Array.from(seen.values()).filter(cbtRecIsBatchingWork);
   }
 
   function cbtRecCalculate(data, nowMs) {
     nowMs = Number(nowMs) || Date.now();
-    var cycle = cbtRecCycleInfo(nowMs);
-
-    // The main task list is authoritative for staffing; side-section work
-    // and aggregate totals must not request batchers when Tasks (0) is shown.
-    var mainTasks = afaSectionCount(/^Tasks\s*\(\d+\)\s*$/i);
-    var jobs = mainTasks === 0 ? [] : (Array.isArray(data)
-      ? data.filter(cbtRecIsBatchingWork)
-      : []);
-
-    var openCount = jobs.length;
-    if (!openCount) {
-      return {
-        raw: 0, urgentRaw: 0, openCount: 0, rushReserve: 0,
-        overdue: 0, dueByNextRelease: 0, earliestMinutes: null,
-        cycle: cycle
-      };
-    }
-
-    var fallbackDeadline = nowMs + cycle.minutesToNextRelease * 60000;
-    var rows = [];
-    for (var i = 0; i < jobs.length; i++) {
-      var dl = cbtRecJobDeadlineMs(jobs[i]) || fallbackDeadline;
-      rows.push({ deadline: dl, job: jobs[i] });
-    }
-    rows.sort(function(a,b){ return a.deadline - b.deadline; });
-
-    var maxNeed = 0;
-    var urgentNeed = 0;
-    var overdue = 0;
-    var dueByNextRelease = 0;
-    var nextReleaseMs = nowMs + cycle.minutesToNextRelease * 60000;
-    /* Give the normal :57 → :00 handoff a tiny grace so 8:00 targets still
-       belong to the ending 7:57 planning hour. */
-    var urgentCutoff = nextReleaseMs + 3 * 60000;
-
-    for (var r = 0; r < rows.length; r++) {
-      var count = r + 1;
-      var minutes = (rows[r].deadline - nowMs) / 60000;
-      if (minutes <= 0) overdue++;
-
-      var need = cbtRecNeedForCount(count, minutes);
-      if (need > maxNeed) maxNeed = need;
-
-      if (rows[r].deadline <= urgentCutoff) {
-        dueByNextRelease = count;
-        if (need > urgentNeed) urgentNeed = need;
+    var cycle = cbtRecCycleInfo(nowMs), jobs = cbtRecUniqueJobs(data);
+    var activeIds=new Set(jobs.map(function(job){return String(job.jobId || job.id || job.shortClientRef || '');}));
+    _cbtRecProgress.forEach(function(value,key){if(!activeIds.has(key) || value.store!==STORE_ID)_cbtRecProgress.delete(key);});
+    if (!jobs.length) return { raw:0, urgentRaw:0, openCount:0, rushReserve:0,
+      overdue:0, dueByNextRelease:0, earliestMinutes:null, cycle:cycle,
+      rate:null, fallbackCount:0, atRisk:0, capacityLimited:false, activeWorkers:0 };
+    var rate = cbtRecConservativeRate(jobs, nowMs);
+    var waiting = [], workers = new Map(), overdue = 0, intrinsicRisk = 0, fallbackCount = 0, stalled=0;
+    var earliest = null, nextRelease = nowMs + cycle.minutesToNextRelease * 60000;
+    jobs.forEach(function(job, i) {
+      var state = String(job.operationState || job.state || '').toUpperCase();
+      var active = state === 'IN_PROGRESS' || state === 'BATCHING';
+      var expected = Number(job.totalExpectedPackages), done = Number(job.packagesBatched);
+      /* Collected and batched can describe the same packages: never add them
+         together when estimating batching work. */
+      var known = isFinite(expected) && expected > 0;
+      if (!isFinite(done) || done < 0) done = 0;
+      var remaining = known ? Math.max(0, expected - done) : null;
+      var ownRate = active ? cbtRecLiveRate(job, nowMs) : null;
+      var progress=_cbtRecProgress.get(String(job.jobId || job.id || job.shortClientRef || ''));
+      var isStalled=active && progress && nowMs-progress.changedAt>=3*60000;
+      if(isStalled)stalled++;
+      var useRate = ownRate != null ? Math.min(rate || 3, ownRate) : rate;
+      var duration;
+      if (known) duration = remaining / (useRate || 3);
+      else { duration = CBT_REC_CART_MINUTES; fallbackCount++; }
+      /* Include handoff/finishing overhead and a modest uncertainty margin. */
+      duration = (duration + (active ? 0.75 : 1.5)) * 1.15;
+      if(isStalled)duration+=5; /* Review allowance, not a team-wide speed penalty. */
+      var deadline = cbtRecJobDeadlineMs(job);
+      if (!deadline) { deadline = nextRelease; fallbackCount++; }
+      var mins = (deadline - nowMs) / 60000;
+      if (earliest == null || mins < earliest) earliest = mins;
+      if (mins <= 0) overdue++;
+      if (duration > mins) intrinsicRisk++;
+      if (active) {
+        var detail = taskCache.get(job.shortClientRef);
+        var name = job.associateId || job.associate || (detail && (detail.associateId || detail.associate));
+        var key = name ? cbtAssociateKey(String(name)) : 'active-' + i;
+        workers.set(key, (workers.get(key) || 0) + duration);
+      } else {
+        /* Already impossible deadlines cannot be repaired by unlimited people.
+           Flag the risk and use a disclosed recovery target for planning. */
+        waiting.push({ duration: duration, deadline: mins,
+          target: Math.max(mins, duration + 1, mins <= 0 ? CBT_REC_CART_MINUTES : 0) });
       }
+    });
+    waiting.sort(function(a,b) { return a.deadline - b.deadline; });
+    var activeTimes = Array.from(workers.values());
+    function simulate(count) {
+      var available = activeTimes.slice();
+      while (available.length < count) available.push(0);
+      var missed = 0;
+      for (var i = 0; i < waiting.length; i++) {
+        var index = 0;
+        for (var j = 1; j < available.length; j++) if (available[j] < available[index]) index = j;
+        if (!available.length) { missed++; continue; }
+        available[index] += waiting[i].duration;
+        if (available[index] > waiting[i].target + 0.0001) missed++;
+      }
+      return missed;
     }
-
-    /* Rush reserve is used only while NORMAL hourly task waves are active.
-       During the :55–:57 loading window, wait for the full wave before locking.
-       From 9:00 PM until 2:55 AM, reserve is zero because no normal hourly wave
-       is expected; any unexpected cart that actually appears still enters jobs[]
-       immediately and can raise the recommendation from real workload. */
-    var allowRushReserve = !cycle.inReleaseWindow && !cycle.quietHours;
-    var rushReserve = allowRushReserve ? cbtRecRushReserve(openCount) : 0;
-    if (allowRushReserve) {
-      var plannedCount = openCount + rushReserve;
-      var horizonNeed = cbtRecNeedForCount(plannedCount, cycle.minutesToNextRelease);
-      if (horizonNeed > maxNeed) maxNeed = horizonNeed;
-    }
-
-    /* Final safety cap: never recommend more batchers than there are
-       currently open carts on the dashboard. */
-    var taskCap = Math.max(0, Math.min(CBT_REC_MAX_BATCHERS, openCount));
-    maxNeed = Math.max(1, Math.min(taskCap, maxNeed));
-    urgentNeed = Math.max(0, Math.min(taskCap, urgentNeed));
-
-    return {
-      raw: maxNeed,
-      urgentRaw: urgentNeed,
-      openCount: openCount,
-      rushReserve: rushReserve,
-      overdue: overdue,
-      dueByNextRelease: dueByNextRelease,
-      earliestMinutes: (rows[0].deadline - nowMs) / 60000,
-      cycle: cycle
-    };
+    var cap = Math.min(CBT_REC_MAX_BATCHERS, jobs.length);
+    var low = Math.min(cap, Math.max(activeTimes.length, jobs.length ? 1 : 0));
+    /* At most 38 bounded trials: select the first feasible greedy plan rather
+       than assuming schedule feasibility is monotonic for every mixed queue. */
+    while (low < cap && simulate(low) > 0) low++;
+    var missed = simulate(low);
+    return { raw: low, urgentRaw: low, openCount: jobs.length, rushReserve: 0,
+      overdue: overdue, dueByNextRelease: waiting.filter(function(v) { return v.deadline <= cycle.minutesToNextRelease; }).length,
+      earliestMinutes: earliest, cycle: cycle, rate: rate, fallbackCount: fallbackCount,
+      atRisk: intrinsicRisk, capacityLimited: missed > 0, activeWorkers: activeTimes.length,stalled:stalled };
   }
 
   function cbtRecLockedValue(calc) {
@@ -2965,8 +3026,7 @@
     var taskCap = Math.max(0, Math.min(CBT_REC_MAX_BATCHERS, Number(calc.openCount) || 0));
 
     if (!state || state.cycleKey !== cycleKey) {
-      /* New :57 cycle: create a fresh baseline from the workload that exists
-         now. It can rise later, but it will not fall until the next :57. */
+      /* New :57 cycle: create a fresh baseline from the current workload. */
       var firstLocked = Math.max(0, Math.min(taskCap, Number(calc.raw) || 0));
       state = {
         cycleKey: cycleKey,
@@ -2980,22 +3040,26 @@
       return state.locked;
     }
 
-    /* If open task count falls, the locked recommendation must also fall so
-       it never exceeds the current task count visible on the dashboard. */
-    var currentLocked = Math.max(0, Math.min(taskCap, Number(state.locked) || 0));
-    if (currentLocked !== Number(state.locked)) {
-      state.locked = currentLocked;
-      state.updatedAt = Date.now();
-      cbtRecSaveState(state);
-    }
-
-    /* During a SCHEDULED :55–:57 loading window, newly released next-hour
-       carts should not make the old hour jump. Overnight :55 timestamps are
-       not release windows and therefore do not trigger this rule. */
-    var candidate = calc.cycle.inReleaseWindow ? calc.urgentRaw : calc.raw;
+    /* Real released work is scheduled by its deadline, including :55–:57. */
+    var candidate = calc.raw;
     candidate = Math.max(0, Math.min(taskCap, Number(candidate) || 0));
 
-    if (candidate > (Number(state.locked) || 0)) {
+    /* Escalate immediately; release staff only after 60 seconds of sustained
+       lower demand. Empty workload clears immediately. No extra timer. */
+    if (candidate > 0 && candidate < (Number(state.locked) || 0)) {
+      if (state.lowerCandidate !== candidate) {
+        state.lowerCandidate = candidate;
+        state.lowerSince = Date.now();
+        cbtRecSaveState(state);
+      }
+      if (Date.now() - Number(state.lowerSince) < 60000)
+        return Math.max(0, Math.min(taskCap, Number(state.locked) || 0));
+    } else if (state.lowerCandidate != null) {
+      delete state.lowerCandidate;
+      delete state.lowerSince;
+      cbtRecSaveState(state);
+    }
+    if (candidate !== (Number(state.locked) || 0)) {
       state.locked = candidate;
       state.maxRaw = Math.max(Number(state.maxRaw)||0, candidate);
       state.updatedAt = Date.now();
@@ -3009,8 +3073,14 @@
     if (!calc) return '';
     var parts = [];
 
-    parts.push('Locked hourly target: ' + recommended);
-    parts.push('slow-plan: 20m/cart · batchers reuse capacity after each cart');
+    parts.push('Current staffing target: ' + recommended);
+    parts.push('deadline-aware plan: remaining packages + handoff + 15% margin');
+    parts.push(calc.rate != null ? 'conservative team rate: ' + calc.rate.toFixed(2) + ' packages/min' :
+      'limited rate data: 3 packages/min baseline; unknown-size carts use 10m plus overhead');
+    if (calc.fallbackCount) parts.push(calc.fallbackCount + ' missing-data fallbacks');
+    if (calc.atRisk) parts.push(calc.atRisk + ' carts already late or individually at risk; extra people cannot split one cart');
+    if (calc.stalled) parts.push(calc.stalled + ' stalled carts need review; not used as team speed');
+    if (calc.capacityLimited) parts.push('staffing cap reached: recovery targets may still be missed');
     parts.push(calc.openCount + ' open cart' + (calc.openCount === 1 ? '' : 's'));
 
     if (calc.overdue > 0) {
@@ -3021,7 +3091,7 @@
 
     if (calc.rushReserve > 0) parts.push('+' + calc.rushReserve + ' rush reserve');
     if (calc.cycle && calc.cycle.quietHours) parts.push('overnight: no normal hourly drop expected');
-    parts.push('resets at next :57 store time');
+    parts.push('total staff target, not extra staff; overdue work uses a recovery target');
 
     return parts.join(' · ');
   }
@@ -3093,9 +3163,29 @@
     if (old) old.remove();
   }
 
-  var _statsFetchInFlight = false;
+  function cbtUpdateTaskCounts() {
+    var total=afaSectionCount(/^Tasks\s*\(\d+\)\s*$/i), pending=0, seen=new Set(), cards=0;
+    document.querySelectorAll('job-card').forEach(function(card){
+      if(isInExcludedSection(card) || card.closest('[hidden],[aria-hidden="true"],#cbt-panel'))return;
+      if(!card.getClientRects().length)return;
+      var link=card.querySelector('a[href*="jobId="]');
+      var identity=link ? link.getAttribute('href') : card;
+      if(seen.has(identity))return;seen.add(identity);cards++;
+      var unassigned=/\b(?:UNASSIGNABLE|ASSIGNABLE)\b/i.test(card.innerText || card.textContent || '');
+      if(!unassigned)unassigned=Array.from(card.querySelectorAll('span,td,div')).some(function(el){return /^(?:UNASSIGNABLE|ASSIGNABLE)$/i.test((el.textContent || '').trim());});
+      if(unassigned)pending++;
+    });
+    if(total==null)total=cards;
+    pending=Math.min(total,pending);
+    [['cbt-stat-tasks',total],['cbt-stat-unassigned',pending]].forEach(function(pair){var el=document.getElementById(pair[0]);if(el && el.textContent!==String(pair[1]))el.textContent=String(pair[1]);});
+  }
+
+  var _statsFetchInFlight = false, _cbtLastStatsFetch=0, _cbtLastStatsStore='';
   function fetchAndUpdate() {
     if (_statsFetchInFlight || document.hidden || !isDashboardView() || !cbtApplicationReady() || !STORE_ID) return;
+    if(_cbtLastStatsStore===STORE_ID && Date.now()-_cbtLastStatsFetch<5000)return;
+    _cbtLastStatsStore=STORE_ID;_cbtLastStatsFetch=Date.now();
+    cbtUpdateTaskCounts();
     _statsFetchInFlight = true;
     removeFromHeader();
     var requestStore = STORE_ID;
@@ -3111,26 +3201,21 @@
         if (STORE_ID !== requestStore || !cbtApplicationReady()) return;
         if (!Array.isArray(data)) throw new Error('Unexpected job summary payload');
 
-        var staffingJobs = data.filter(cbtRecIsBatchingWork);
+        var staffingJobs = cbtRecUniqueJobs(data);
         var inProgress = staffingJobs.filter(function (j) {
           var st = String(j.operationState || j.state || '').toUpperCase();
           return st === 'IN_PROGRESS' || st === 'BATCHING';
         }).length;
 
-        /* Remaining stays package-based because that stat is useful as a
-           package backlog indicator. It is NOT used by Recommended anymore. */
-        var expected  = staffingJobs.reduce(function (s, j) {
-          return s + (Number(j.totalExpectedPackages) || 0);
+        /* Collected/batched counts overlap; subtract batched once per cart,
+           and clamp each cart before summing so one bad row cannot cancel others. */
+        var remaining = staffingJobs.reduce(function (s,j) {
+          return s + Math.max(0, (Number(j.totalExpectedPackages) || 0) -
+            Math.max(0, Number(j.packagesBatched) || 0));
         }, 0);
-        var batched   = staffingJobs.reduce(function (s, j) {
-          return s + (Number(j.packagesBatched) || 0);
-        }, 0);
-        var collected = staffingJobs.reduce(function (s, j) {
-          return s + (Number(j.packagesCollected) || 0);
-        }, 0);
-        var remaining = Math.max(0, expected - (batched + collected));
 
         var calc = cbtRecCalculate(data, Date.now());
+        inProgress=calc.activeWorkers || 0;
         var recommended = cbtRecLockedValue(calc);
 
         /* Recommended now means MINIMUM staffing target.
@@ -3573,16 +3658,15 @@
   // touches its own slice; pulls read the full tree and sum other devices.
   var FIREBASE_URL          = 'https://como-sync-default-rtdb.firebaseio.com';
   var FIREBASE_NAMES_PATH   = '/como_names.json';
-  var FIREBASE_HISTORY_PATH = '/como_history_v2.json';
-  var FIREBASE_WEEKLY_PATH  = '/como_weekly_v2.json';
   function syncEnabled()    { return true; }
   function syncUrl()        { return FIREBASE_URL + FIREBASE_NAMES_PATH; }
-  function syncHistoryUrl() { return FIREBASE_URL + FIREBASE_HISTORY_PATH; }
-  function syncWeeklyUrl()  { return FIREBASE_URL + FIREBASE_WEEKLY_PATH; }
-  function syncHistoryDeviceUrl(devId) { return FIREBASE_URL + '/como_history_v2/devices/' + devId + '.json'; }
-  function syncHistoryMetaUrl(devId)   { return FIREBASE_URL + '/como_history_v2/meta/' + devId + '.json'; }
-  function syncWeeklyDeviceUrl(devId)  { return FIREBASE_URL + '/como_weekly_v2/devices/'  + devId + '.json'; }
-  function syncWeeklyMetaUrl(devId)    { return FIREBASE_URL + '/como_weekly_v2/meta/' + devId + '.json'; }
+  function cbtReportRoot(kind) { return '/como_reports_v3/' + encodeURIComponent(STORE_ID || 'unknown') + '/' + kind; }
+  function syncHistoryUrl() { return FIREBASE_URL + cbtReportRoot('today') + '.json'; }
+  function syncWeeklyUrl()  { return FIREBASE_URL + cbtReportRoot('weekly') + '.json'; }
+  function syncHistoryDeviceUrl(devId) { return FIREBASE_URL + cbtReportRoot('today') + '/devices/' + devId + '.json'; }
+  function syncHistoryMetaUrl(devId)   { return FIREBASE_URL + cbtReportRoot('today') + '/meta/' + devId + '.json'; }
+  function syncWeeklyDeviceUrl(devId)  { return FIREBASE_URL + cbtReportRoot('weekly') + '/devices/' + devId + '.json'; }
+  function syncWeeklyMetaUrl(devId)    { return FIREBASE_URL + cbtReportRoot('weekly') + '/meta/' + devId + '.json'; }
 
   // ── Own vs Remote cache keys ──
   // OWN = only this device's recorded batches (pushed to Pantry)
@@ -3596,8 +3680,80 @@
   var HISTORY_SYNC_SCHEMA_KEY   = 'cbt_history_sync_schema_v2';
   var WEEKLY_SYNC_SCHEMA_KEY    = 'cbt_weekly_sync_schema_v2';
 
+  function cbtEventStoreMatches(id) {
+    try { return decodeURIComponent(id).split('|')[0] === String(STORE_ID || ''); } catch(e) { return false; }
+  }
+  function cbtStoreHistoryOnly(records) {
+    var out={};
+    Object.keys(records || {}).forEach(function(name) {
+      var row=records[name];
+      if (!row || typeof row!=='object') return;
+      var events={};
+      Object.keys(row._cbtEvents || {}).forEach(function(id) {
+        if(cbtEventStoreMatches(id))events[id]=row._cbtEvents[id];
+      });
+      if(Object.keys(events).length)out[name]={assoc:row.assoc || name,_cbtEvents:events,_cbtLegacy:{}};
+    });
+    return out;
+  }
+  function cbtScopeReportStorage() {
+    function localGet(key){try{return localStorage.getItem(key);}catch(e){return null;}}
+    function localSet(key,value){try{localStorage.setItem(key,value);}catch(e){}}
+    var suffix='_store_'+encodeURIComponent(STORE_ID || 'unknown');
+    var pairs=[['cbt_history',function(v){STORAGE_KEY=v;}],['cbt_history_date',function(v){DATE_KEY=v;}],
+      ['cbt_weekly_history',function(v){WEEKLY_KEY=v;}],['cbt_own_weekly',function(v){OWN_WEEKLY_KEY=v;}],
+      ['cbt_weekly_period_start',function(v){WEEKLY_PERIOD_KEY=v;}],
+      ['cbt_remote_history_cache',function(v){REMOTE_HISTORY_KEY=v;}],
+      ['cbt_remote_history_date',function(v){REMOTE_HISTORY_DATE_KEY=v;}],
+      ['cbt_remote_weekly_cache',function(v){REMOTE_WEEKLY_KEY=v;}],
+      ['cbt_remote_weekly_period_start',function(v){REMOTE_WEEKLY_PERIOD_KEY=v;}]];
+    pairs.forEach(function(pair){pair[1](pair[0]+suffix);});
+    /* One non-destructive migration: retain only positively identified
+       current-store cart events. Original unscoped data stays untouched. */
+    var marker='cbt_report_store_migrated_v3'+suffix;
+    if(!gmGet(marker,null) && !localGet(marker)){
+      function read(key){
+        var out={};
+        [gmGet(key,null),localGet(key)].forEach(function(v){
+          try {
+            var part=typeof v==='string'?JSON.parse(v):v;
+            if(!part || typeof part!=='object')return;
+            Object.keys(part).forEach(function(name){
+              if(key.indexOf('weekly')!==-1){
+                if(!out[name])out[name]={};
+                Object.keys(part[name] || {}).forEach(function(assoc){
+                  out[name][assoc]=cbtMergePerformance(out[name][assoc],part[name][assoc],true);
+                });
+              }else out[name]=cbtMergePerformance(out[name],part[name],true);
+            });
+          }catch(ignore){}
+        });return out;
+      }
+      function copy(oldKey,newKey,week){
+        if(gmGet(newKey,null) || localGet(newKey))return;
+        var old=read(oldKey), out={};
+        if(week)Object.keys(old).forEach(function(day){out[day]=cbtStoreHistoryOnly(old[day]);});
+        else out=cbtStoreHistoryOnly(old);
+        var json=JSON.stringify(out);gmSet(newKey,json);localSet(newKey,json);
+      }
+      copy('cbt_history',STORAGE_KEY,false);copy('cbt_own_weekly',OWN_WEEKLY_KEY,true);
+      copy('cbt_weekly_history',WEEKLY_KEY,true);
+      copy('cbt_remote_history_cache',REMOTE_HISTORY_KEY,false);copy('cbt_remote_weekly_cache',REMOTE_WEEKLY_KEY,true);
+      [['cbt_history_date',DATE_KEY],['cbt_weekly_period_start',WEEKLY_PERIOD_KEY],
+       ['cbt_remote_history_date',REMOTE_HISTORY_DATE_KEY],['cbt_remote_weekly_period_start',REMOTE_WEEKLY_PERIOD_KEY]].forEach(function(pair){
+        var value=gmGet(pair[0],null) || localGet(pair[0]);
+        if(value && !gmGet(pair[1],null)){gmSet(pair[1],value);localSet(pair[1],value);}
+      });
+      gmSet(marker,true);localSet(marker,'1');
+    }
+    _dispHistCache=null;_dispWeekCache=null;
+    _cbtBatchHistory=null;_cbtBatchHistoryDirty=false;
+    _cbtRecRates={store:'',at:0,values:[]};
+  }
+
   var taskCache = new Map();
   var _cbtRequestSequence = 0, _cbtLastSnapshotSequence = 0;
+  var _cbtLiveSnapshotReady = false;
   var _cbtSnapshotRefs = new Set(), _cbtIngestSequence = 0;
   var _cbtTaskSequences = new Map();
   var _cbtDataBatchDepth=0, _cbtBatchHistory=null, _cbtBatchHistoryDirty=false;
@@ -3664,6 +3820,7 @@
       }
     });
     _cbtLastSnapshotSequence = sequence;
+    _cbtLiveSnapshotReady = true;
     _cbtSnapshotRefs = new Set();
     canonical.forEach(function(data,ref){ if (cbtIsLiveBatch(data)) _cbtSnapshotRefs.add(ref); });
     var previousSequence = _cbtIngestSequence;
@@ -4075,10 +4232,10 @@
       var hdr = panel.querySelector('#cbt-header');
       if (hdr) hdr.style.zoom = Math.round(HEADER_FIXED_SCALE * z * 100) / 100;
 
-      /* Batchers, Recommended This Hour and Remaining follow the same
+      /* Batchers, Recommended and Remaining follow the same
          size change as the header, preserving their existing proportions. */
-      var stats = panel.querySelector('#cbt-stats-bar');
-      if (stats) stats.style.zoom = Math.round(STATS_FIXED_SCALE * z * 100) / 100;
+      var statsScale = Math.round(STATS_FIXED_SCALE * z * 100) / 100;
+      panel.querySelectorAll('#cbt-stats-bar').forEach(function(stats){stats.style.zoom=statsScale;});
 
       /* Give tabs, search and table text the same readable base scale as
          the header. Zoom scales row heights and spacing with the text, so
@@ -4432,41 +4589,36 @@
   var _weeklyPulled = false;
   var _weeklyPushQueued = false;
   var _weeklyFirstPullRetry = null;
-  var _syncHistoryPushTimer = null;
-  function syncHistoryPush() {
-    if (!syncEnabled()) return;
-    if (!_histPulled) { _histPushQueued = true; return; }
-    if (_syncHistoryPushTimer) return;
-    _syncHistoryPushTimer = setTimeout(function(){
-      _syncHistoryPushTimer = null;
+  var _cbtReportWrites={today:{busy:false,pending:false,timer:null},weekly:{busy:false,pending:false,timer:null}};
+  function cbtPushReport(kind) {
+    if(!STORE_ID)return;
+    var state=_cbtReportWrites[kind], week=kind==='weekly';
+    function queued(value){if(week)_weeklyPushQueued=value;else _histPushQueued=value;}
+    if (!(week?_weeklyPulled:_histPulled)) {queued(true);return;}
+    if(state.busy || state.timer){state.pending=true;return;}
+    state.timer=setTimeout(function(){
+      state.timer=null;state.busy=true;state.pending=false;queued(false);
+      var store=STORE_ID, schemaKey=week?WEEKLY_SYNC_SCHEMA_KEY:HISTORY_SYNC_SCHEMA_KEY;
       try {
-        var devId = MY_DEVICE_ID || getDeviceId();
-        var snapshotDate = todayStr();
-        var mySlice = sanitizeHistory(loadHistory());
-        // PUT to this device's own path — Firebase only updates this one
-        // node, leaving every other device's slice completely untouched.
-        cbtGmRequest({
-          method: 'PUT', url: syncHistoryDeviceUrl(devId),
-          headers: { 'Content-Type': 'application/json' },
-          data: JSON.stringify(mySlice),
-          onload: function(){
-            /* Date metadata is a sibling node so old script versions can keep
-               reading the flat device history without seeing fake associates. */
-            try {
-              cbtGmRequest({
-                method: 'PUT', url: syncHistoryMetaUrl(devId),
-                headers: { 'Content-Type': 'application/json' },
-                data: JSON.stringify({ date: snapshotDate, updatedAt: Date.now(), schema: 2 }),
-                onload: function(){ gmSet(HISTORY_SYNC_SCHEMA_KEY, '2'); },
-                onerror: function(){ _histPushQueued = true; }
-              });
-            } catch(e2) { _histPushQueued = true; }
-          },
-          onerror: function(){ _histPushQueued = true; }
-        });
-      } catch(e) {}
-    }, 2500);
+        var devId=MY_DEVICE_ID || getDeviceId(), data={};
+        var slice=week?sanitizeWeekly(loadWeekly()):sanitizeHistory(loadHistory());
+        var meta={storeId:store,updatedAt:Date.now(),schema:3};
+        if(week)meta.weekStart=currentWeekStartStr();else meta.date=todayStr();
+        data['devices/'+devId]=slice;data['meta/'+devId]=meta;
+        function finish(ok){
+          state.busy=false;
+          if(!ok){state.pending=true;queued(true);return;}
+          gmSet(schemaKey,'3');
+          if(state.pending || store!==STORE_ID)cbtPushReport(kind);
+        }
+        cbtGmRequest({method:'PATCH',url:week?syncWeeklyUrl():syncHistoryUrl(),
+          headers:{'Content-Type':'application/json'},data:JSON.stringify(data),
+          onload:function(res){finish(res.status>=200 && res.status<300);},
+          onerror:function(){finish(false);}});
+      } catch(e){state.busy=false;state.pending=true;queued(true);}
+    },2500);
   }
+  function syncHistoryPush() { if(syncEnabled())cbtPushReport('today'); }
   var _histPullInFlight = false;
   var _lastHistoryPullAt = 0;
 
@@ -4474,12 +4626,14 @@
     if (!syncEnabled()) { if (cb) cb(false); return; }
     if (_histPullInFlight) { if (cb) cb(false); return; }
     _histPullInFlight = true;
+    var pullStore=STORE_ID,pullDay=todayStr();
 
     try {
       cbtGmRequest({
         method: 'GET', url: syncHistoryUrl(), headers: { 'Content-Type': 'application/json' },
         onload: function(res){
           _histPullInFlight = false;
+          if(pullStore!==STORE_ID || pullDay!==todayStr()){if(cb)cb(false);return;}
           if (!(res.status >= 200 && res.status < 300) || !res.responseText) { if (cb) cb(false); return; }
           _lastHistoryPullAt = Date.now();
 
@@ -4560,42 +4714,7 @@
   }
 
   // ── Weekly sync (push/pull) ──
-  var _syncWeeklyPushTimer = null;
-  function syncWeeklyPush() {
-    if (!syncEnabled()) return;
-    if (!_weeklyPulled) { _weeklyPushQueued = true; return; }
-    if (_syncWeeklyPushTimer) return;
-    _syncWeeklyPushTimer = setTimeout(function(){
-      _syncWeeklyPushTimer = null;
-      try {
-        var devId = MY_DEVICE_ID || getDeviceId();
-        var snapshotWeek = currentWeekStartStr();
-        var mySlice = sanitizeWeekly(loadWeekly());
-        // PUT to this device's own weekly path — only updates this device's slice
-        cbtGmRequest({
-          method: 'PUT', url: syncWeeklyDeviceUrl(devId),
-          headers: { 'Content-Type': 'application/json' },
-          data: JSON.stringify(mySlice),
-          onload: function(){
-            try {
-              cbtGmRequest({
-                method: 'PUT', url: syncWeeklyMetaUrl(devId),
-                headers: { 'Content-Type': 'application/json' },
-                data: JSON.stringify({
-                  weekStart: snapshotWeek,
-                  updatedAt: Date.now(),
-                  schema: 2
-                }),
-                onload: function(){ gmSet(WEEKLY_SYNC_SCHEMA_KEY, '2'); },
-                onerror: function(){ _weeklyPushQueued = true; }
-              });
-            } catch(e2) { _weeklyPushQueued = true; }
-          },
-          onerror: function(){ _weeklyPushQueued = true; }
-        });
-      } catch(e) {}
-    }, 2500);
-  }
+  function syncWeeklyPush() { if(syncEnabled())cbtPushReport('weekly'); }
   var _weeklyPullInFlight = false;
   var _lastWeeklyPullAt = 0;
 
@@ -4626,12 +4745,14 @@
     if (!syncEnabled()) { if (cb) cb(false); return; }
     if (_weeklyPullInFlight) { if (cb) cb(false); return; }
     _weeklyPullInFlight = true;
+    var pullStore=STORE_ID,pullWeek=currentWeekStartStr();
 
     try {
       cbtGmRequest({
         method: 'GET', url: syncWeeklyUrl(), headers: { 'Content-Type': 'application/json' },
         onload: function(res){
           _weeklyPullInFlight = false;
+          if(pullStore!==STORE_ID || pullWeek!==currentWeekStartStr()){if(cb)cb(false);return;}
           if (!(res.status >= 200 && res.status < 300) || !res.responseText) { if (cb) cb(false); return; }
           _lastWeeklyPullAt = Date.now();
 
@@ -4894,6 +5015,20 @@
     base.lastRate=Number(metadata.lastRate)>0?Number(metadata.lastRate):null; base.lastAt=Number(metadata.lastAt)||0;
     return base;
   }
+  function cbtCompareCompletion(a,b) {
+    if(!b)return 1;
+    var revision=(Number(a.revision) || Number(a.endAt || a.at) || 0) -
+      (Number(b.revision) || Number(b.endAt || b.at) || 0);
+    if(revision)return revision;
+    var time=(Number(a.endAt || a.at) || 0)-(Number(b.endAt || b.at) || 0);
+    if(time)return time;
+    /* Equal-revision conflicts have no reliable ordering. Prefer the lower
+       package count deterministically rather than inflating a completion. */
+    var packages=Number(b.pkgs)-Number(a.pkgs);
+    if(packages)return packages;
+    return JSON.stringify([a.sec,a.startAt,a.endAt,a.missing,a.expected,a.cartRef]).localeCompare(
+      JSON.stringify([b.sec,b.startAt,b.endAt,b.missing,b.expected,b.cartRef]));
+  }
   function cbtMergePerformance(target, source, aliases) {
     source = source || {}; target = target || {};
     var base = cbtPerformanceLegacy(target), extra = cbtPerformanceLegacy(source);
@@ -4906,8 +5041,7 @@
       var rate = Number(e.pkgs)/(Number(e.sec)/60);
       if (!(rate>0) || !isFinite(rate) || !isFinite(Number(e.sec)) || rate > CBT_MAX_VALID_RATE) return;
       var old = events[id];
-      if (!old || Number(e.revision || e.at) > Number(old.revision || old.at) ||
-          (Number(e.revision || e.at) === Number(old.revision || old.at) && Number(e.pkgs)>Number(old.pkgs))) events[id]=e;
+      if (!old || cbtCompareCompletion(e,old)>0) events[id]=e;
     });
     var out = Object.assign({},target,{assoc:source.assoc || target.assoc,_cbtLegacy:base,_cbtEvents:events});
     CBT_TOTAL_FIELDS.forEach(function(field){ out[field]=base[field]; });
@@ -4935,9 +5069,9 @@
     Object.keys(records).forEach(function(assoc){
       Object.keys(records[assoc]._cbtEvents || {}).forEach(function(id){
         var event=records[assoc]._cbtEvents[id], prior=owners[id];
-        if (!prior || Number(event.revision || event.at)>prior.revision ||
-            (Number(event.revision || event.at)===prior.revision && assoc<prior.assoc)) {
-          owners[id]={assoc:assoc,revision:Number(event.revision || event.at)};
+        var order=prior?cbtCompareCompletion(event,prior.event):1;
+        if (!prior || order>0 || (order===0 && assoc<prior.assoc)) {
+          owners[id]={assoc:assoc,event:event};
         }
       });
     });
@@ -5054,6 +5188,9 @@
     _dispHistCache = null;
     _dispWeekCache = null;
 
+    if (_cbtCompletionMemo) _cbtCompletionMemo.clear();
+    cbtScheduleReportRefresh();
+
     /* Publish an empty current-day slice immediately. */
     try { if (_histPulled) syncHistoryPush(); else _histPushQueued = true; } catch(e7) {}
     try { syncWeeklyPush(); } catch(e8) {}
@@ -5084,7 +5221,7 @@
     var p = cbtStoreClockParts();
     var seconds = (24 * 3600) - (p.hour * 3600 + p.minute * 60 + p.second);
     if (seconds <= 0) seconds = 1;
-    var delay = Math.min(seconds * 1000 + 1200, 6 * 3600 * 1000);
+    var delay = Math.min(seconds * 1000 + 50, 6 * 3600 * 1000);
 
     _todayBoundaryTimer = setTimeout(function() {
       _todayBoundaryTimer = null;
@@ -5193,7 +5330,7 @@
   /* ══════════════════════════════════════
      HALL OF FAME
 
-     Top 30 all-time peak rates. Two kinds of data, stored differently for
+     All recorded all-time peak rates. Two kinds of data, stored differently for
      good reason:
 
        peaks  -> ONE shared record per associate at /como_hof_v2/peaks/{login}.
@@ -5215,7 +5352,7 @@
   var HOF_MIN_PKGS = 20;      /* a record needs a real batch behind it */
   var HOF_MIN_SEC  = 120;
   var HOF_MAX_RATE = CBT_MAX_VALID_RATE; /* shared trusted-rate ceiling */
-  var HOF_TOP      = 30;
+  var HOF_TOP      = Infinity; // No associate display limit.
 
   /* v23.9.84 TRUSTED FASTEST RESET
      --------------------------------
@@ -5539,10 +5676,10 @@
     var own = hofLoadOwnTotals();
     if (completion && completion.id) {
       var previous=own[key] && own[key]._cbtEvents && own[key]._cbtEvents[completion.id];
-      if (previous && (Number(previous.revision)>Number(completion.revision) ||
-          (Number(previous.revision)===Number(completion.revision) && Number(previous.pkgs)>=Number(pkgs)))) return;
+      var completedEvent={pkgs:Number(pkgs),sec:Number(elapsedSec),at:Number(completion.at),revision:Number(completion.revision)};
+      if (previous && cbtCompareCompletion(completedEvent,previous)<=0) return;
       var addition={assoc:assoc,_cbtEvents:{},_cbtLegacy:{}};
-      addition._cbtEvents[completion.id]={pkgs:Number(pkgs),sec:Number(elapsedSec),at:Number(completion.at),revision:Number(completion.revision)};
+      addition._cbtEvents[completion.id]=completedEvent;
       own[key]=cbtMergeHofTotals(own[key],addition,false);
     } else {
       // Compatibility for callers without a source batch identity.
@@ -5616,7 +5753,7 @@
         Number(l.rate) > 0 && Number(l.rate) <= CBT_MAX_VALID_RATE &&
         Number(l.pkgs) > 0 && Number(l.elapsedSec) >= 30
           ? Number(l.rate) : null;
-      if (!(peakRate > 0) && !(latestRate > 0)) continue;
+      if (!(peakRate > 0)) continue;
 
       rows.push({
         key: k,
@@ -5630,8 +5767,7 @@
       });
     }
 
-    /* Peak rows stay first and keep the existing Fastest ranking. Latest-only
-       rows come afterward, newest completion first, and have rank "—". */
+    /* Only qualifying peaks enter the ranked Fastest board. */
     rows.sort(function(a, b){
       var ap = Number(a.rate) > 0, bp = Number(b.rate) > 0;
       if (ap && !bp) return -1;
@@ -5654,80 +5790,8 @@
     }
     var hofTerm = (hofSearchTerm || '').toLowerCase().trim();
     if (hofTerm) {
-      /* Fastest search must work like Today / Weekly: a person can be found
-         even when they have never set a qualifying Fastest peak. Real Fastest
-         ranks are stamped above from the complete peak board and are NEVER
-         recomputed after filtering. Search-only people stay unranked (—). */
-      var seenKey = Object.create(null), extraByKey = Object.create(null);
-      for (var rk2 = 0; rk2 < rows.length; rk2++) seenKey[rows[rk2].key] = true;
-
-      function addSearchOnly(key, assoc, runs, pkgs, priority) {
-        key = key || hofKey(assoc || '');
-        if (!key || seenKey[key]) return;
-        var cur = extraByKey[key];
-        if (!cur) {
-          var lr = latest[key] || null;
-          cur = extraByKey[key] = {
-            key:key, assoc:assoc||key, rate:null, at:null, rank:null,
-            latestRate:lr && Number(lr.schema)===HOF_SCHEMA &&
-              Number(lr.rate)>0 && Number(lr.rate)<=CBT_MAX_VALID_RATE &&
-              Number(lr.pkgs)>0 && Number(lr.elapsedSec)>=30 ? Number(lr.rate) : null,
-            latestAt:lr && lr.at ? lr.at : null,
-            runs:0, pkgs:0, _priority:-1
-          };
-        }
-        if (assoc) cur.assoc = assoc;
-        /* Prefer Hall-of-Fame totals, then Weekly, then Today, then a saved
-           name with no numeric history. This avoids double-counting the same
-           person's data across the different history stores. */
-        if (priority > cur._priority) {
-          cur._priority = priority;
-          cur.runs = Number(runs) || 0;
-          cur.pkgs = Number(pkgs) || 0;
-        }
-      }
-
-      /* Native Fastest totals (best source when present). */
-      var totalKeys = Object.create(null), kk;
-      for (kk in own) totalKeys[kk] = true;
-      for (kk in remote) totalKeys[kk] = true;
-      for (kk in totalKeys) {
-        var oo = own[kk] || {}, rr = remote[kk] || {}, totals=mergedTotals[kk] || cbtMergeHofTotals(oo,rr,false);
-        addSearchOnly(kk, oo.assoc || rr.assoc || kk,totals.runs,totals.pkgs,3);
-      }
-
-      /* Weekly history catches associates who existed before Fastest totals
-         began recording, or who have not met the peak threshold yet. */
-      var weeklySearchData = sanitizeWeekly(getDisplayWeekly()), weeklyAgg = Object.create(null);
-      for (var wday in weeklySearchData) {
-        for (var wa in weeklySearchData[wday]) {
-          var wd = weeklySearchData[wday][wa] || {};
-          var wk = hofKey(wa);
-          if (!wk) continue;
-          if (!weeklyAgg[wk]) weeklyAgg[wk] = { assoc:wa, runs:0, pkgs:0 };
-          weeklyAgg[wk].runs += Number(wd.runs) || 0;
-          weeklyAgg[wk].pkgs += Number(wd.totalPkgs) || 0;
-        }
-      }
-      for (kk in weeklyAgg) addSearchOnly(kk, weeklyAgg[kk].assoc, weeklyAgg[kk].runs, weeklyAgg[kk].pkgs, 2);
-
-      /* Today's history is another fallback for a brand-new associate. */
-      var todaySearchData = getDisplayHistory();
-      for (kk in todaySearchData) {
-        var td = todaySearchData[kk] || {};
-        addSearchOnly(hofKey(td.assoc || kk), td.assoc || kk, td.runs, td.totalPkgs, 1);
-      }
-
-      /* Finally make every permanently saved name searchable, even with no
-         batch data yet. */
-      var savedSearchNames = loadAllNames();
-      for (kk in savedSearchNames) {
-        var sn = savedSearchNames[kk];
-        addSearchOnly(hofKey(sn), sn, 0, 0, 0);
-      }
-
-      var extra = Object.keys(extraByKey).map(function(kx){ return extraByKey[kx]; });
-      rows = rows.concat(extra).filter(function(x){
+      /* Search only the qualifying ranked board; retain full-board ranks. */
+      rows = rows.filter(function(x){
         return (x.assoc || '').toLowerCase().indexOf(hofTerm) !== -1;
       });
       rows = prioritizeNameMatches(rows, hofTerm, function(x){ return x.assoc; });
@@ -5873,6 +5937,49 @@
     return rate;
   }
 
+  var _cbtCurrentAttempts = new Map();
+  function cbtComputeLiveRow(data) {
+    var row=computeRow(data), now=cbtNowMs();
+    var key=String(STORE_ID)+'|'+String(data.jobId || data.id || data.shortClientRef || '');
+    var owner=String(data.associateId || data.associate || data.driverAssignment || '').trim().toLowerCase();
+    var generation=cbtTaskGeneration(data), start=null, count=Number(data.packagesBatched);
+    var ops=Array.isArray(data.operationDetails)?data.operationDetails:[];
+    ops.forEach(function(op){
+      if(!op || String(op.name || '').toUpperCase()!=='BATCHING')return;
+      var state=String(op.state || op.operationState || '').toUpperCase();
+      if(cbtNormalizeEpochMs(op.end) || /^(COMPLETED|COMPLETE|FINISHED|DONE)$/.test(state))return;
+      var time=cbtNormalizeEpochMs(op.start);
+      if(time && time<=now && now-time<=CBT_MAX_LIVE_AGE_MS && (!start || time>start))start=time;
+    });
+    var prior=_cbtCurrentAttempts.get(key), changedOwner=prior && owner && prior.owner && owner!==prior.owner;
+    var newJob=prior && generation && prior.generation && generation!==prior.generation &&
+      !(String(generation).indexOf('batch:')===0 && String(prior.generation).indexOf('batch:')===0);
+    var newAttempt=prior && start && prior.apiStart && start!==prior.apiStart;
+    if(!prior || newJob || newAttempt || changedOwner || (isFinite(count) && count<prior.lastPkgs)) {
+      // A reassignment timestamp is not supplied by this API. Never claim the
+      // previous owner's start as the new owner's time; label observation time.
+      prior={owner:owner,generation:generation,apiStart:start,ms:changedOwner&&!newJob&&!newAttempt?now:start,
+        observed:!!(changedOwner&&!newJob&&!newAttempt),baseAt:now,basePkgs:count,lastPkgs:count};
+      _cbtCurrentAttempts.set(key,prior);
+    } else {
+      if(!prior.owner && owner)prior.owner=owner;
+      if(!prior.ms && start){prior.ms=start;prior.apiStart=start;}
+      if(isFinite(count))prior.lastPkgs=count;
+    }
+    row.taskStartMs=row.startMs;row.taskElapsedSec=row.elapsedSec;
+    row.startMs=prior.ms;row.elapsedSec=prior.ms?Math.max(0,(now-prior.ms)/1000):null;
+    row.timeTitle=prior.observed?'Time since this dashboard observed reassignment; actual assignment time unavailable':
+      prior.ms?'Time since current BATCHING attempt started; exact associate assignment time is not supplied':'Current attempt start unavailable';
+    var sameSpan=!prior.observed && prior.ms && row.taskStartMs && Math.abs(prior.ms-row.taskStartMs)<1000;
+    if(!sameSpan) {
+      var minutes=(now-prior.baseAt)/60000,delta=count-prior.basePkgs;
+      var rate=minutes>=1 && delta>0?delta/minutes:null;
+      row.scanRate=rate && isFinite(rate) && rate<=CBT_MAX_VALID_RATE?rate:null;
+      row.rateSource=row.scanRate!==null?'observed-delta':'pending';
+    }
+    return row;
+  }
+
   function computeRow(data, forceFinished) {
     var inProg = forceFinished ? false : cbtIsLiveBatch(data);
     var info = cbtBatchingOpInfo(data, inProg);
@@ -5982,11 +6089,11 @@
     var current=history[assoc] || {assoc:assoc};
     var expected=cbtNonnegative(data.totalExpectedPackages);
     var collected=data.packagesCollected == null ? pkgs : cbtNonnegative(data.packagesCollected);
-    var event={pkgs:pkgs,sec:elapsedSec,missing:Math.max(0,expected-collected),expected:expected,at:info.endMs,revision:cbtSourceUpdatedMs(data)||info.endMs};
+    var event={cartRef:String(data.shortClientRef || ""),startAt:info.startMs,endAt:info.endMs,pkgs:pkgs,sec:elapsedSec,missing:Math.max(0,expected-collected),expected:expected,at:info.endMs,revision:cbtSourceUpdatedMs(data)||info.endMs};
     _cbtCompletionMemo.delete(memoKey); _cbtCompletionMemo.set(memoKey,signature);
     if (_cbtCompletionMemo.size>1000) _cbtCompletionMemo.delete(_cbtCompletionMemo.keys().next().value);
     var previous=current._cbtEvents && current._cbtEvents[id];
-    if (previous && (Number(previous.revision)>event.revision || (Number(previous.revision)===event.revision && Number(previous.pkgs)>=event.pkgs))) return false;
+    if (previous && cbtCompareCompletion(event,previous)<=0) return false;
     var addition={assoc:assoc,_cbtEvents:{},_cbtLegacy:{}}; addition._cbtEvents[id]=event;
     history[assoc]=cbtMergePerformance(current,addition,false);
     history=cbtReconcileEventOwners(history);
@@ -6264,8 +6371,18 @@
         '</div>' +
         '<div class="cbt-stat-card">' +
           '<div class="cbt-stat-icon">\uD83D\uDCCA</div>' +
-          '<div class="cbt-stat-label">Recommended This Hour</div>' +
+          '<div class="cbt-stat-label">Recommended</div>' +
           '<div class="cbt-stat-value"><span id="cbt-stat-rec">\u2014</span><span id="cbt-stat-dot"></span></div>' +
+        '</div>' +
+        '<div class="cbt-stat-card">' +
+          '<div class="cbt-stat-icon">📋</div>' +
+          '<div class="cbt-stat-label">Tasks</div>' +
+          '<div class="cbt-stat-value" id="cbt-stat-tasks">—</div>' +
+        '</div>' +
+        '<div class="cbt-stat-card">' +
+          '<div class="cbt-stat-icon">👤</div>' +
+          '<div class="cbt-stat-label">Unassigned</div>' +
+          '<div class="cbt-stat-value" id="cbt-stat-unassigned">—</div>' +
         '</div>' +
         '<div class="cbt-stat-card">' +
           '<div class="cbt-stat-icon">\uD83D\uDCE6</div>' +
@@ -6277,7 +6394,7 @@
         '<span class="cbt-tab active" data-tab="live">Live</span>' +
         '<span class="cbt-tab" data-tab="history">Today</span>' +
         '<span class="cbt-tab" data-tab="weekly">Weekly</span>' +
-        '<span class="cbt-tab" data-tab="hof" title="Top 30 fastest batchers of all time">Fastest</span>' +
+        '<span class="cbt-tab" data-tab="hof" title="All fastest batchers with recorded data">Fastest</span>' +
         '<span class="cbt-tab" data-tab="names">Names</span>' +
       '</div>' +
       '<div id="cbt-unified-search">' +
@@ -6294,7 +6411,7 @@
             '<th class="cbt-sortable-live" data-sort="elapsed" style="width:30%;text-align:center;">Elapsed</th>' +
             '<th class="cbt-sortable-live" data-sort="rate" style="width:30%;text-align:center;">Bags/min \u25BC</th>' +
           '</tr></thead><tbody id="cbt-tbody"></tbody></table>' +
-          '<div id="cbt-empty">No active batching tasks</div>' +
+          '<div id="cbt-empty">Loading live data…</div>' +
           '<div id="cbt-live-results"></div>' +
         '</div>' +
         '<div id="cbt-history-view" style="display:none">' +
@@ -6848,7 +6965,7 @@
     var html = '';
     var shown = new Set();
 
-    var history = getDisplayHistory(), histEntries = Object.values(history).filter(function(e){ return e.assoc && e.assoc.toLowerCase().indexOf(term) !== -1; });
+    var history = cbtVerifiedToday(), histEntries = Object.values(history).filter(function(e){ return e.assoc && e.assoc.toLowerCase().indexOf(term) !== -1; });
     histEntries = prioritizeNameMatches(histEntries, term, function(e){ return e.assoc; });
     if (histEntries.length > 0) {
       html += '<div class="cbt-search-result-section">TODAY</div>';
@@ -6861,7 +6978,7 @@
       });
     }
 
-    var weekly = sanitizeWeekly(getDisplayWeekly()), agg = {};
+    var weekly = cbtVerifiedWeek(), agg = {};
     for (var dk of Object.keys(weekly)) {
       for (var a of Object.keys(weekly[dk])) {
         if (a.toLowerCase().indexOf(term) === -1) continue;
@@ -6994,9 +7111,11 @@
           var name = (d.associateId||d.associate||d.driverAssignment||d.shortClientRef||'').toLowerCase();
           if (name.indexOf(lowerTerm) === -1) return;
         }
-        rows.push({ d: d, r: computeRow(d) });
+        rows.push({ d: d, r: cbtComputeLiveRow(d) });
       }
     });
+    var liveAttemptKeys=new Set();taskCache.forEach(function(d){if(cbtIsLiveBatch(d))liveAttemptKeys.add(String(STORE_ID)+'|'+String(d.jobId || d.id || d.shortClientRef || ''));});
+    _cbtCurrentAttempts.forEach(function(v,k){if(!liveAttemptKeys.has(k))_cbtCurrentAttempts.delete(k);});
     /* While the user is explicitly sorting by Bags/min, the LOW-first
        grouping is suspended — otherwise LOW rows stayed pinned at the top in
        their own fixed order and clicking the column appeared to do nothing.
@@ -7028,6 +7147,7 @@
     });
     updateLiveSortHeaders();
     if(rows.length===0){tbody._cbtLiveStructure = null;setHTML(tbody,'');empty.style.display='block';
+      empty.textContent = _cbtLiveSnapshotReady ? 'No active batching tasks' : 'Loading live data…';
       var body2=document.querySelector('#cbt-body');
       if(body2&&!body2.style.height){body2.style.height='350px';body2.style.maxHeight='350px';}
       return;}
@@ -7048,7 +7168,7 @@
         'Rate pending until enough trusted timing/progress is available';
       var slowAlert=(r.scanRate!==null&&r.scanRate<ALERT_RATE&&r.elapsedSec>120)?'<span class="cbt-live-status-slot"><span class="cbt-slow-alert">⚠ SLOW</span></span>':'';
       html+='<tr><td><span class="cbt-cw"><span class="cbt-cw-top"><span class="cbt-assoc" role="button" tabindex="0" title="Open associate profile">'+afaEsc(assoc)+'</span>'+slowAlert+'</span><span class="cbt-ref">'+afaEsc(shortRef)+'</span></span></td>';
-      html+='<td><span class="cbt-elapsed '+elCls+'" data-start="'+(r.startMs||'')+'" data-live="'+(r.inProgress?'1':'0')+'">'+elTxt+'</span></td>';
+      html+='<td title="'+afaEsc(r.timeTitle || '')+'"><span class="cbt-elapsed '+elCls+'" data-start="'+(r.startMs||'')+'" data-live="'+(r.inProgress?'1':'0')+'">'+elTxt+'</span></td>';
       html+='<td><span class="cbt-rate '+rateCls+'" title="'+rateTitle+'">'+rateTxt+'</span></td></tr>';
     }
     var structure = html.replace(/(<span class="cbt-elapsed [^"]*" data-start="[^"]*" data-live="[^"]*">)[^<]*(<\/span>)/g, '$1$2');
@@ -7067,11 +7187,83 @@
     });
   }
 
+  function cbtVerifiedToday() {
+    return cbtVerifiedReports({[todayStr()]:getDisplayHistory()},false).days[todayStr()] || {};
+  }
+  function cbtVerifiedWeek() {
+    return cbtVerifiedReports(getDisplayWeekly(),true).days;
+  }
+  function cbtVerifiedReportNote(report) {
+    return 'Verified unique cart completions only. ' + report.legacyAssociates +
+      ' associate records contain unverifiable legacy totals; retained but excluded. ' +
+      report.excludedEvents + ' out-of-period or invalid event copies excluded.';
+  }
+
+  var _cbtVerifiedReportCache=new WeakMap();
+  function cbtVerifiedReports(slices, weekly) {
+    var days={}, owners=new Map(), legacy=new Set(), excluded=0;
+    var tz=getStoreTimezone(), currentDay=todayStr(), now=cbtNowMs();
+    var source=weekly?slices:(slices && slices[currentDay]) || slices;
+    var cacheKey=String(STORE_ID)+'|'+tz+'|'+currentDay+'|'+weekly+'|'+_cbtProfileRevision;
+    var cached=source && typeof source==='object'?_cbtVerifiedReportCache.get(source):null;
+    if(cached && cached.key===cacheKey && now>=cached.at && now-cached.at<5000)return cached.value;
+    var dateFmt=new Intl.DateTimeFormat('en-US',{timeZone:tz,year:'numeric',month:'numeric',day:'numeric'});
+    Object.keys(slices || {}).forEach(function(bucket) {
+      Object.keys(slices[bucket] || {}).forEach(function(name) {
+        var row=slices[bucket][name];
+        if (!row || typeof row!=='object') return;
+        var assoc=cbtAssociateKey(row.assoc || name);
+        if (!assoc) return;
+        var base=cbtPerformanceLegacy(row);
+        if (CBT_TOTAL_FIELDS.some(function(field){return base[field]>0;})) legacy.add(assoc);
+        Object.keys(row._cbtEvents || {}).forEach(function(id) {
+          if(!cbtEventStoreMatches(id)){excluded++;return;}
+          var e=row._cbtEvents[id];
+          if (!e || typeof e!=='object') {excluded++;return;}
+          var at=Number(e.endAt || e.at), sec=Number(e.sec), pkgs=Number(e.pkgs);
+          if(e.startAt!=null){
+            var start=Number(e.startAt);
+            if(!isFinite(start) || start<=0 || start>=at){excluded++;return;}
+            sec=(at-start)/1000;
+          }
+          var rate=pkgs*60/sec;
+          if (!isFinite(at) || at<=0 || at>now || isNaN(new Date(at).getTime()) ||
+              !isFinite(sec) || sec<30 || !isFinite(pkgs) || pkgs<=0 ||
+              !isFinite(rate) || rate>CBT_MAX_VALID_RATE) {excluded++;return;}
+          var day=dateFmt.format(new Date(at));
+          var normalized=Object.assign({},e,{at:at,endAt:at,sec:sec});
+          var revision=Number(e.revision) || at, previous=owners.get(id);
+          var order=previous?cbtCompareCompletion(normalized,previous.event):1;
+          if (!previous || order>0 ||
+              (order===0 && assoc.localeCompare(previous.assoc)<0)) {
+            owners.set(id,{assoc:assoc,day:day,revision:revision,event:normalized});
+          }
+        });
+      });
+    });
+    owners.forEach(function(item,id) {
+      if(weekly ? !cbtIsDateInCurrentWeek(item.day) : item.day!==currentDay){excluded++;return;}
+      var day=days[item.day] || (days[item.day]={});
+      var row=day[item.assoc] || (day[item.assoc]={assoc:item.assoc,_cbtLegacy:{},_cbtEvents:{}});
+      row._cbtEvents[id]=item.event;
+    });
+    Object.keys(days).forEach(function(day) {
+      Object.keys(days[day]).forEach(function(assoc) {
+        days[day][assoc]=cbtMergePerformance({},days[day][assoc],true);
+      });
+    });
+    var result={days:days,legacyAssociates:legacy.size,excludedEvents:excluded};
+    if(source && typeof source==='object')_cbtVerifiedReportCache.set(source,{key:cacheKey,at:now,value:result});
+    return result;
+  }
+
   function renderHistory() {
     var tbody=document.querySelector('#cbt-hist-tbody'),empty=document.querySelector('#cbt-hist-empty'),summary=document.querySelector('#cbt-hist-summary');
     if(!tbody||!empty) return;
-    var history=getDisplayHistory(),entries=Object.values(history).filter(cbtHasPerformanceData);
-    if(entries.length===0){setHTML(tbody,'');empty.style.display='block';if(summary)summary.innerHTML='';
+    var verified=cbtVerifiedReports({[todayStr()]:getDisplayHistory()},false);
+    var history=verified.days[todayStr()] || {},entries=Object.values(history).filter(cbtHasPerformanceData);
+    if(summary)summary.title=cbtVerifiedReportNote(verified);
+    if(entries.length===0){setHTML(tbody,'');empty.style.display='block';empty.textContent=verified.legacyAssociates?'No verified completed carts today. Legacy records are retained.':'No completed carts today.';if(summary)summary.innerHTML='';
       if(historySearchTerm) renderHistoryCrossSearch(historySearchTerm);
       return;}
     empty.style.display='none';
@@ -7131,7 +7323,7 @@
     if(!crossEl) return;
     if(!term){ crossEl.innerHTML=''; return; }
     term = term.toLowerCase();
-    var weekly = sanitizeWeekly(getDisplayWeekly()), agg = {};
+    var weekly = cbtVerifiedWeek(), agg = {};
     for(var dk of Object.keys(weekly)){
       for(var a of Object.keys(weekly[dk])){
         if(a.toLowerCase().indexOf(term)===-1) continue;
@@ -7144,7 +7336,7 @@
     }
     var entries = prioritizeNameMatches(Object.values(agg), term, function(e){ return e.assoc; });
     var shown = new Set();
-    var todayHist = getDisplayHistory();
+    var todayHist = cbtVerifiedToday();
     Object.values(todayHist).forEach(function(e){ if(e.assoc.toLowerCase().indexOf(term)!==-1) shown.add(e.assoc.toLowerCase()); });
     var html='';
     if(entries.length>0){
@@ -7194,7 +7386,9 @@
   function renderWeekly() {
     var tbody=document.querySelector('#cbt-weekly-tbody'),empty=document.querySelector('#cbt-weekly-empty'),summary=document.querySelector('#cbt-weekly-summary');
     if(!tbody||!empty) return;
-    var weekly=sanitizeWeekly(getDisplayWeekly()),agg={};
+    var verified=cbtVerifiedReports(getDisplayWeekly(),true);
+    var weekly=verified.days,agg={};
+    if(summary)summary.title=cbtVerifiedReportNote(verified);
     for(var dayKey of Object.keys(weekly)){
       for(var assoc of Object.keys(weekly[dayKey])){
         var d3=weekly[dayKey][assoc];
@@ -7214,7 +7408,7 @@
         lastRate:Number(a.lastRate)>0?Number(a.lastRate):null,lastAt:Number(a.lastAt)||0,
         hrs:sec,missPct:a.totalExpected>0?(a.totalMissing/a.totalExpected*100):0};
     });
-    if(all.length===0){setHTML(tbody,'');empty.style.display='block';if(summary)summary.innerHTML='';
+    if(all.length===0){setHTML(tbody,'');empty.style.display='block';empty.textContent=verified.legacyAssociates?'No verified completed carts this week. Legacy records are retained.':'No completed carts this week.';if(summary)summary.innerHTML='';
       if(weeklySearchTerm) renderWeeklyCrossSearch(weeklySearchTerm);
       return;}
     empty.style.display='none';
@@ -7342,7 +7536,7 @@
     if(!crossEl) return;
     if(!term){ crossEl.innerHTML=''; return; }
     term = term.toLowerCase();
-    var history = loadHistory();
+    var history = cbtVerifiedToday();
     var entries = Object.values(history).filter(function(e){ return e.assoc.toLowerCase().indexOf(term)!==-1; });
     entries = prioritizeNameMatches(entries, term, function(e){ return e.assoc; });
     var shown = new Set();
@@ -7350,7 +7544,7 @@
     /* This used to iterate pruneWeeklyOlderThan's return value, but that
        function returns nothing — Object.keys(undefined) threw and the
        cross-search below never rendered. Read the weekly data directly. */
-    var weeklyData = sanitizeWeekly(getDisplayWeekly());
+    var weeklyData = cbtVerifiedWeek();
     for(var wdk of Object.keys(weeklyData)){
       for(var wa of Object.keys(weeklyData[wdk])){
         if(wa.toLowerCase().indexOf(term)!==-1) shown.add(wa.toLowerCase());
@@ -7453,7 +7647,7 @@
       }
     });
 
-    var weekly = sanitizeWeekly(getDisplayWeekly()), agg = {};
+    var weekly = cbtVerifiedWeek(), agg = {};
     for (var dk of Object.keys(weekly)) {
       for (var a of Object.keys(weekly[dk])) {
         if (a.toLowerCase().indexOf(term) === -1) continue;
@@ -8478,14 +8672,48 @@
      Staged for Pickup act as hard stops for the scan. */
   /* The count the dashboard shows next to a section heading. Used as the
      authority the popup must agree with. */
+  var _afaHeadingCache = new Map();
   function afaSectionCount(labelRe) {
-    var all;
-    try { all = document.body.querySelectorAll('*'); } catch(e) { return null; }
-    for (var i = 0; i < all.length; i++) {
-      var t = (all[i].textContent || '').trim();
-      if (t.length >= 60 || !labelRe.test(t)) continue;
+    if (!document.body) return null;
+    var cacheKey = labelRe.source + '/' + labelRe.flags;
+    var visibility = new WeakMap();
+    function visible(node) {
+      if (!node || !node.isConnected) return false;
+      if (visibility.has(node)) return visibility.get(node);
+      var ok = !node.hidden && node.getAttribute('aria-hidden') !== 'true';
+      if (ok) {
+        var style = window.getComputedStyle(node);
+        ok = style.display !== 'none' && style.visibility !== 'hidden' && style.visibility !== 'collapse';
+      }
+      if (ok && node.parentElement) ok = visible(node.parentElement);
+      visibility.set(node, ok);
+      return ok;
+    }
+    function count(node) {
+      if (!node || node.closest('#cbt-panel,#cbt-tp,#cbt-afa-overlay,#cbt-profile-overlay') || !visible(node)) return null;
+      var t = (node.textContent || '').trim();
+      labelRe.lastIndex = 0;
+      if (t.length >= 60 || !labelRe.test(t)) return null;
       var m = t.match(/\((\d+)\)/);
-      if (m) return parseInt(m[1], 10);
+      return m ? parseInt(m[1], 10) : null;
+    }
+    var cached = _afaHeadingCache.get(cacheKey), result = count(cached);
+    if (result !== null) return result;
+    _afaHeadingCache.delete(cacheKey);
+    var headings = document.body.querySelectorAll('h1,h2,h3,h4,h5,h6,[role="heading"],legend');
+    for (var i = 0; i < headings.length; i++) {
+      result = count(headings[i]);
+      if (result !== null) { _afaHeadingCache.set(cacheKey, headings[i]); return result; }
+    }
+    /* Custom headings: inspect short text nodes, never serialize every
+       container's subtree. Cache the matching element for subsequent ticks. */
+    var walker = document.createTreeWalker(document.body, 4), textNode;
+    while ((textNode = walker.nextNode())) {
+      var text = (textNode.nodeValue || '').trim();
+      labelRe.lastIndex = 0;
+      if (!text || text.length >= 60 || !labelRe.test(text)) continue;
+      result = count(textNode.parentElement);
+      if (result !== null) { _afaHeadingCache.set(cacheKey, textNode.parentElement); return result; }
     }
     return null;
   }
@@ -11255,12 +11483,17 @@
         STORE_ID = nextStore;
         taskCache.clear();
         _cbtTaskSequences.clear(); _cbtSnapshotRefs.clear(); _cbtLastSnapshotSequence = 0;
+        _cbtLiveSnapshotReady = false;
         _cbtLiveStartByRef = Object.create(null);
         _cbtMissingPollsByRef = Object.create(null);
         _cbtObservedProgressByRef = Object.create(null);
         _afaJobIndex = Object.create(null);
         _afaJobInfo = Object.create(null);
         _storeTimezoneCache = null;
+        cbtScopeReportStorage();
+        _histPulled=false;_weeklyPulled=false;
+        _histPushQueued=false;_weeklyPushQueued=false;
+        cbtScheduleReportRefresh();
       }
       if (!isDashboardView()) detachMainPanel();
       _fastMountUntil = Date.now() + 15000;
@@ -11376,7 +11609,7 @@
       fetchAndUpdate();
       setInterval(pollActiveTasks, POLL_MS);
       setInterval(tickLive, TICK_MS);
-      setInterval(fetchAndUpdate, 1000);
+      setInterval(fetchAndUpdate, 5000);
     }
   }
 
@@ -11403,16 +11636,27 @@
     _cbtProfilePending = true;
     cbtIdle(function(){ _cbtProfilePending=false; if (_cbtProfile) cbtRenderProfile(); },300);
   }
-  function cbtProfileSummary(slices, assoc, timezone) {
-    var total={}, days=Object.keys(slices), key=cbtAssociateKey(assoc);
+  function cbtProfileSummary(slices, assoc, timezone, weekly) {
+    if(weekly==null)weekly=Object.keys(slices).some(function(day){return day!==todayStr();});
+    var report=cbtVerifiedReports(slices,weekly);
+    var total={}, days=Object.keys(report.days), key=cbtAssociateKey(assoc), legacyCarts=0,legacyPkgs=0;
+    Object.keys(slices).forEach(function(day){
+      if(weekly?!cbtIsDateInCurrentWeek(day):day!==todayStr())return;
+      Object.keys(slices[day] || {}).forEach(function(name){
+        var row=slices[day][name];
+        if(row && cbtAssociateKey(row.assoc || name)===key){
+          var old=cbtPerformanceLegacy(row);legacyCarts+=old.runs;legacyPkgs+=old.totalPkgs;
+        }
+      });
+    });
     days.forEach(function(day){
-      var records=cbtReconcileEventOwners(sanitizeHistory(slices[day] || {}));
+      var records=report.days[day];
       Object.keys(records).forEach(function(k){
         var row=records[k];
         if (cbtAssociateKey(row.assoc || k)===key) total=cbtMergePerformance(total,row,false);
       });
     });
-    var hours={}, trackedPkgs=0, trackedCarts=0, fast=0;
+    var hours={}, trackedPkgs=0, trackedCarts=0, trackedSec=0, latestAt=0, latestRate=null, fast=0;
     var fmtParts=new Intl.DateTimeFormat('en-US',{timeZone:timezone,minute:'2-digit',second:'2-digit'});
     var hourFmt=new Intl.DateTimeFormat('en-US',{timeZone:timezone,month:'short',day:'numeric',hour:'numeric',minute:'2-digit',timeZoneName:'short'});
     Object.keys(total._cbtEvents || {}).forEach(function(id){
@@ -11424,20 +11668,22 @@
       var parts=fmtParts.formatToParts(new Date(at)), minute=0, second=0;
       parts.forEach(function(p){if(p.type==='minute') minute=Number(p.value);if(p.type==='second') second=Number(p.value);});
       var start=at-minute*60000-second*1000-(at%1000);
-      var bucket=hours[start] || (hours[start]={at:start,label:hourFmt.format(new Date(start)),carts:0,pkgs:0,sec:0});
+      var bucket=hours[start] || (hours[start]={at:start,label:hourFmt.format(new Date(start)),carts:0,pkgs:0,sec:0,details:[]});
       bucket.carts++;bucket.pkgs+=pkgs;bucket.sec+=sec;
+      var ref=e.cartRef;
+      if(!ref){try{ref=decodeURIComponent(id).split('|')[1];}catch(ignore){}}
+      bucket.details.push({ref:ref || 'Cart ID unavailable',start:Number(e.startAt) || at-sec*1000,end:at,pkgs:pkgs,sec:sec,rate:rate});
+      trackedSec+=sec;if(at>latestAt){latestAt=at;latestRate=rate;}
       trackedPkgs+=pkgs;trackedCarts++;fast=Math.max(fast,rate);
     });
-    var legacy=cbtPerformanceLegacy(total);
-    // Legacy peak metadata is already subject to the script's trusted-rate migration.
-    var legacyFast=Number(legacy.bestRate)||0;
-    if (isFinite(legacyFast) && legacyFast>0 && legacyFast<=CBT_MAX_VALID_RATE) fast=Math.max(fast,legacyFast);
-    return {carts:Number(total.runs)||0,pkgs:Number(total.totalPkgs)||0,
-      average:Number(total.totalSec)>0?Number(total.totalPkgs)/(Number(total.totalSec)/60):null,
-      fastest:fast || null,latest:Number(total.lastRate)>0?Number(total.lastRate):null,
+    // Verified totals and hourly rows share one ledger; legacy aggregates are
+    // retained separately because their identities/timestamps cannot be verified.
+    return {carts:trackedCarts,pkgs:trackedPkgs,
+      average:trackedSec>0?trackedPkgs/(trackedSec/60):null,
+      fastest:fast || null,latest:latestRate,
       hours:Object.keys(hours).map(function(k){return hours[k];}).sort(function(a,b){return a.at-b.at;}),
-      untrackedCarts:Math.max(0,(Number(total.runs)||0)-trackedCarts),
-      untrackedPkgs:Math.max(0,(Number(total.totalPkgs)||0)-trackedPkgs)};
+      untrackedCarts:legacyCarts,
+      untrackedPkgs:legacyPkgs};
   }
   function cbtProfileLiveRate(assoc) {
     var pkgs=0, sec=0, key=cbtAssociateKey(assoc);
@@ -11460,13 +11706,24 @@
       Math.max(1,window.innerWidth-24)/680,Math.max(1,window.innerHeight-24)/Math.max(1,card.scrollHeight || 580)));
     if(Number(card.style.zoom)!==zoom)card.style.zoom=zoom;
   }
+  function cbtCartTimeTaken(start, end) {
+    start = Number(start); end = Number(end);
+    if (!isFinite(start) || !isFinite(end) || start <= 0 || end <= 0 ||
+        end < start || isNaN(new Date(start).getTime()) || isNaN(new Date(end).getTime()))
+      return 'Unavailable';
+    var seconds = Math.floor((end - start) / 1000);
+    var hours = Math.floor(seconds / 3600), minutes = Math.floor(seconds % 3600 / 60);
+    var remainder = seconds % 60;
+    return (hours ? hours + ' hr ' : '') + minutes + ' min ' + remainder + ' sec';
+  }
+
   function cbtRenderProfile() {
     if (!_cbtProfile || !_cbtProfile.card.isConnected) return;
     var p=_cbtProfile, today=todayStr(), timezone=getStoreTimezone();
     var cacheKey=p.assoc+'|'+p.period+'|'+today+'|'+timezone+'|'+_cbtProfileRevision;
     if (p.cacheKey!==cacheKey) {
       var slices=p.period==='week'?getDisplayWeekly():Object.fromEntries([[today,getDisplayHistory()]]);
-      p.summary=cbtProfileSummary(slices,p.assoc,timezone);p.cacheKey=cacheKey;
+      p.summary=cbtProfileSummary(slices,p.assoc,timezone,p.period==='week');p.cacheKey=cacheKey;
     }
     var m=p.summary;
     function rate(n){return isFinite(n)&&n>0?Number(n).toFixed(1):'—';}
@@ -11479,13 +11736,23 @@
     var endFmt=new Intl.DateTimeFormat('en-US',{timeZone:timezone,hour:'numeric',minute:'2-digit',timeZoneName:'short'});
     var html=m.hours.map(function(h){
       var end=endFmt.format(new Date(h.at+3600000));
-      return '<tr><td>'+afaEsc(h.label+' – '+end)+'</td><td>'+h.carts+'</td><td>'+h.pkgs+'</td><td>'+rate(h.pkgs/(h.sec/60))+'</td></tr>';
+      var clock=new Intl.DateTimeFormat('en-US',{timeZone:timezone,hour:'numeric',minute:'2-digit',second:'2-digit',timeZoneName:'short'});
+      var detail=h.details.slice().sort(function(a,b){return a.end-b.end;}).map(function(d){
+        function timestamp(value) {
+          return isFinite(value) && value > 0 && !isNaN(new Date(value).getTime())
+            ? clock.format(new Date(value)) : 'Unavailable';
+        }
+        return '<tr><td>'+afaEsc(d.ref)+'</td><td>'+afaEsc(timestamp(d.start))+'</td><td>'+afaEsc(timestamp(d.end))+'</td><td>'+afaEsc(cbtCartTimeTaken(d.start,d.end))+'</td><td>'+d.pkgs+'</td><td>'+rate(d.rate)+'</td></tr>';
+      }).join('');
+      var expanded=p.expandedHour===String(h.at);
+      return '<tr><td><button type="button" data-profile-hour="'+h.at+'" aria-expanded="'+expanded+'">'+afaEsc(h.label+' – '+end)+'</button></td><td>'+h.carts+'</td><td>'+h.pkgs+'</td><td>'+rate(h.pkgs/(h.sec/60))+'</td></tr>'+
+        (expanded?'<tr class="cbt-profile-detail-row"><td colspan="4"><div class="cbt-profile-details"><strong class="cbt-profile-details-title">Cart details</strong><div class="cbt-profile-details-scroll"><table><thead><tr><th>Cart</th><th>Started</th><th>Finished</th><th>Time Taken</th><th>Packages</th><th>Rate</th></tr></thead><tbody>'+detail+'</tbody></table></div></div></td></tr>':'');
     }).join('');
     html=html || '<tr><td colspan="4">No timestamped completed carts in this period.</td></tr>';
     var tbody=p.card.querySelector('tbody');changed=changed || tbody._cbtLastHTML!==html;
     setHTML(tbody,html);
     var note='Store time: '+timezone+'. Carts and packages are grouped by completion hour. Rates are packages per minute of recorded batching time.';
-    if (m.untrackedCarts || m.untrackedPkgs) note+=' Older totals ('+m.untrackedCarts+' carts, '+m.untrackedPkgs+' packages) are included above but have no hourly detail.';
+    if (m.untrackedCarts || m.untrackedPkgs) note+=' Older unverified totals: '+m.untrackedCarts+' carts, '+m.untrackedPkgs+' packages. Preserved separately; excluded from these verified totals and rates because cart identities or timestamps are unavailable.';
     var noteEl=p.card.querySelector('[data-profile-note]');if(noteEl.textContent!==note){noteEl.textContent=note;changed=true;}
     if(changed)cbtScaleProfile();
   }
@@ -11496,17 +11763,49 @@
     var dark=document.getElementById('cbt-panel');if(dark && dark.classList.contains('dark'))overlay.classList.add('dark');
     overlay.innerHTML='<section id="cbt-profile-card" role="dialog" aria-modal="true" aria-labelledby="cbt-profile-title">'+
       '<header><strong id="cbt-profile-title">'+afaEsc(assoc)+' · Profile</strong><button type="button" data-profile-close aria-label="Close associate profile">×</button></header>'+
-      '<div class="cbt-profile-controls"><label>Period <select aria-label="Profile period"><option value="today">Today</option><option value="week">This week</option></select></label><span title="All rate values below use packages per minute of batching time">Rate Unit: Packages/Minute</span></div>'+
+      '<div class="cbt-profile-controls"><span>Period <span class="cbt-profile-period"><button type="button" data-profile-period-toggle aria-label="Profile period" aria-haspopup="menu" aria-expanded="false">Today ▾</button><span class="cbt-profile-period-menu" role="menu" aria-label="Profile period" hidden><button type="button" role="menuitemradio" data-profile-period="today" aria-checked="true">Today</button><button type="button" role="menuitemradio" data-profile-period="week" aria-checked="false">This week</button></span></span></span><span title="All rate values below use packages per minute of batching time">Rate Unit: Packages/Minute</span></div>'+
       '<div class="cbt-profile-metrics" data-profile-metrics></div><div class="cbt-profile-table-wrap"><table><thead><tr><th>Completion hour</th><th>Carts</th><th>Packages</th><th>Rate</th></tr></thead><tbody></tbody></table></div>'+
       '<p data-profile-note></p></section>';
     document.body.appendChild(overlay);
     var card=overlay.querySelector('section');_cbtProfile={assoc:assoc,period:activeTab==='weekly'?'week':'today',overlay:overlay,card:card,trigger:trigger};
-    var select=card.querySelector('select');select.value=_cbtProfile.period;
-    select.addEventListener('change',function(){if(_cbtProfile){_cbtProfile.period=select.value;cbtRenderProfile();}});
-    overlay.addEventListener('click',function(e){if(e.target===overlay || e.target.closest('[data-profile-close]'))cbtCloseProfile();});
+    var periodToggle=card.querySelector('[data-profile-period-toggle]'),
+      periodMenu=card.querySelector('.cbt-profile-period-menu');
+    function closePeriod(focus) {
+      periodMenu.hidden=true;periodToggle.setAttribute('aria-expanded','false');
+      if(focus)periodToggle.focus();
+    }
+    function updatePeriod() {
+      periodToggle.textContent=(_cbtProfile.period==='week'?'This week':'Today')+' ▾';
+      periodMenu.querySelectorAll('[data-profile-period]').forEach(function(b){
+        b.setAttribute('aria-checked',String(b.getAttribute('data-profile-period')===_cbtProfile.period));
+      });
+    }
+    function openPeriod(focus) {
+      periodMenu.hidden=false;periodToggle.setAttribute('aria-expanded','true');
+      if(focus)periodMenu.querySelector('[aria-checked="true"]').focus();
+    }
+    updatePeriod();
+    overlay.addEventListener('click',function(e){
+      if(e.target.closest('[data-profile-period-toggle]')){
+        if(periodMenu.hidden)openPeriod(false);else closePeriod(false);return;
+      }
+      var option=e.target.closest('[data-profile-period]');
+      if(option && _cbtProfile){
+        _cbtProfile.period=option.getAttribute('data-profile-period');
+        _cbtProfile.expandedHour=null;updatePeriod();closePeriod(true);cbtRenderProfile();return;
+      }
+      closePeriod(false);
+      var hour=e.target.closest('[data-profile-hour]');if(hour && _cbtProfile){var value=hour.getAttribute('data-profile-hour');_cbtProfile.expandedHour=_cbtProfile.expandedHour===value?null:value;cbtRenderProfile();return;}if(e.target===overlay || e.target.closest('[data-profile-close]'))cbtCloseProfile();
+    });
     overlay.addEventListener('keydown',function(e){
-      if(e.key==='Escape'){e.preventDefault();e.stopPropagation();cbtCloseProfile();}
-      else if(e.key==='Tab') {var controls=card.querySelectorAll('button,select'),first=controls[0],last=controls[controls.length-1];if(e.shiftKey && document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey && document.activeElement===last){e.preventDefault();first.focus();}}
+      if(e.key==='Escape'){e.preventDefault();e.stopPropagation();if(!periodMenu.hidden)closePeriod(true);else cbtCloseProfile();}
+      else if((e.key==='ArrowDown' || e.key==='ArrowUp' || e.key==='Home' || e.key==='End') && e.target.closest('.cbt-profile-period')){
+        e.preventDefault();if(periodMenu.hidden){openPeriod(true);return;}
+        var options=Array.from(periodMenu.querySelectorAll('button')),index=options.indexOf(document.activeElement);
+        index=e.key==='Home'?0:e.key==='End'?options.length-1:(index+(e.key==='ArrowDown'?1:-1)+options.length)%options.length;
+        options[index].focus();
+      }
+      else if(e.key==='Tab') {closePeriod(false);var controls=Array.from(card.querySelectorAll('button,select')).filter(function(b){return !b.closest('[hidden]');}),first=controls[0],last=controls[controls.length-1];if(e.shiftKey && document.activeElement===first){e.preventDefault();last.focus();}else if(!e.shiftKey && document.activeElement===last){e.preventDefault();first.focus();}}
     });
     cbtRenderProfile();card.querySelector('button').focus();
   }
@@ -11599,6 +11898,7 @@
     }
     _cbtStartupDone = true;
     MY_DEVICE_ID = getDeviceId();
+    cbtScopeReportStorage();
     /* Mount visible UI first. Background initialization must not hold up the
        dashboard; preserve migration ordering before starting shared sync. */
     cbtAfterFirstPaint(function(){
