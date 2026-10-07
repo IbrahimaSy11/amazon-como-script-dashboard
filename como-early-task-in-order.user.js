@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.155
+// @version      23.9.157
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -80,7 +80,7 @@
 
     /* ── Time Left column (task sorting) — ORIGINAL, untouched ── */
     .etf-timeleft {
-      font-size: 22px; font-weight: 600;
+      font-size: 24px; font-weight: 600;
       font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
       background: none !important; border: none !important;
       padding: 0 !important; border-radius: 0 !important; white-space: nowrap;
