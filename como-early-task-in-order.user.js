@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.127
+// @version      23.9.128
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -8503,9 +8503,9 @@
           .then(function(j){
             clearTimeout(timer);
             if (j) { try { afaRecordJobs(j, 0); } catch(e) {} }
-            resolve();
-          }, function(){ clearTimeout(timer); resolve(); });
-      } catch(e) { resolve(); }
+            resolve(j);
+          }, function(){ clearTimeout(timer); resolve(null); });
+      } catch(e) { resolve(null); }
     });
   }
 
@@ -9544,8 +9544,22 @@
   /* All visible dashboard task sources are completion candidates. Eligibility
      is verified on demand; section/status never substitutes for an enabled button. */
   function afaScanCompletionCandidates() {
-    var found = [], seen = Object.create(null);
+    var found = [], seen = Object.create(null), visibility=new WeakMap();
+    function visible(node) {
+      if(!node)return false;
+      if(node.closest('#cbt-panel,#cbt-tp,#cbt-afa-overlay,#cbt-profile-overlay,[hidden],[aria-hidden="true"]'))return false;
+      while(node && node!==document.body) {
+        if(!visibility.has(node)) {
+          var style=getComputedStyle(node);
+          visibility.set(node,style.display!=='none' && style.visibility!=='hidden' && style.visibility!=='collapse');
+        }
+        if(!visibility.get(node))return false;
+        node=node.parentElement;
+      }
+      return true;
+    }
     function add(a, card) {
+      if(!visible(a || card))return;
       var ref = a ? (a.textContent || '').trim() : '';
       var id = null, match = a && (a.getAttribute('href') || '').match(/[?&]jobId=([^&#]+)/i);
       if (match) { try { id=decodeURIComponent(match[1]); } catch(e) {id=match[1];} }
@@ -9566,6 +9580,21 @@
     // Side sections may use plain anchors rather than job-card components.
     document.querySelectorAll('a[href*="jobId="]').forEach(function(a){add(a,null);});
     return found;
+  }
+
+  function afaFilterCurrentCompletionTasks(list, payload) {
+    var items=cbtLiveItems(payload);
+    if(items===null && payload && Array.isArray(payload.activeJobs))items=payload.activeJobs;
+    if(items===null && payload && payload.data && typeof payload.data==='object')items=cbtLiveItems(payload.data);
+    if(items===null)throw new Error('Current task list could not be verified — no completion requests sent');
+    var ids=new Set(),refs=new Set();
+    items.forEach(function(row){
+      if(!row || typeof row!=='object')return;
+      if(/^(COMPLETED|COMPLETE|CANCELLED|CANCELED|DONE|FINISHED|CLOSED)$/.test(String(row.state || '').toUpperCase()))return;
+      ['id','jobId','jobID','taskId'].forEach(function(k){if(row[k]!=null)ids.add(String(row[k]));});
+      if(row.shortClientRef!=null)refs.add(String(row.shortClientRef).trim());
+    });
+    return (list || []).filter(function(item){return ids.has(String(item.id)) || refs.has(String(item.ref).trim());});
   }
 
   /* Merge candidate sources by cart identity. Flags are preserved because
@@ -9838,7 +9867,7 @@
       !AFA_COMPLETE_PATH
         ? 'Unavailable: the Complete Task request is not configured.'
         : (completeDisabled
-            ? 'No tasks with readable IDs are available to check right now.'
+            ? 'No tasks available to Auto Complete.'
             : 'Checks every task section using the native Complete Task request. Only server-approved completions count. Never Force Assigns.')
     );
 
@@ -9983,7 +10012,7 @@
 
       /* Refresh silently. The old visible "Checking..." state looked like a
          second loader after the user had already chosen an action. */
-      afaRefreshJobData().then(function(){
+      afaRefreshJobData().then(function(payload){
         if (_afaStop) {_afaRunning=false;afaSetBtn('▶ Run',false);afaSummary([],true,0,action);return;}
 
         var queue = [];
@@ -9998,7 +10027,7 @@
             .filter(function(x){ return x.id && !isSuppressed('partial', x); });
           opts = { mode: 'partial', autoComplete: false, completeOnly: false };
         } else if (action === 'complete') {
-          queue = afaScanCompletionCandidates()
+          queue = afaFilterCurrentCompletionTasks(afaScanCompletionCandidates(),payload)
             .filter(function(x){ return x.id && !isSuppressed('complete', x); });
           opts = { mode: 'complete', autoComplete: true, completeOnly: true };
         }
