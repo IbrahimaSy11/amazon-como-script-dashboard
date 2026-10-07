@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.157
+// @version      23.9.159
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -9810,10 +9810,40 @@
     return found;
   }
 
+  function afaCompletionItems(payload,depth) {
+    depth=depth || 0;
+    if(Array.isArray(payload))return payload;
+    if(!payload || typeof payload!=='object' || depth>4)return null;
+    var found=false,items=[];
+    ['activeJobs','jobs','tasks','summaries','items','results','jobSummaries','activeJobSummaries'].forEach(function(key){
+      if(Array.isArray(payload[key])){found=true;items=items.concat(payload[key]);}
+    });
+    if(found)return items;
+    var wrappers=['data','result','response','activeJobsWithSiteSummary'];
+    for(var i=0;i<wrappers.length;i++) {
+      var nested=afaCompletionItems(payload[wrappers[i]],depth+1);
+      if(nested!==null)return nested;
+    }
+    return null;
+  }
+  function afaRefreshCompletionData() {
+    var store=STORE_ID;
+    return afaRefreshJobData().then(function(payload){
+      if(STORE_ID!==store)throw new Error('Store changed during task verification');
+      if(afaCompletionItems(payload)!==null)return payload;
+      // One fallback read, only on an explicit Auto Complete action.
+      return cbtFetchJson(COMO_BASE+'/api/store/'+encodeURIComponent(store)+'/activeJobSummary',{
+        credentials:'include',cache:'no-store',headers:{Accept:'application/json'}
+      }).then(function(result){
+        if(STORE_ID!==store)throw new Error('Store changed during task verification');
+        if(afaCompletionItems(result.data)===null)throw new Error('Task refresh returned an unsupported response; no completion requests sent');
+        try { afaRecordJobs(result.data,0); } catch(e) {}
+        return result.data;
+      });
+    });
+  }
   function afaFilterCurrentCompletionTasks(list, payload) {
-    var items=cbtLiveItems(payload);
-    if(items===null && payload && Array.isArray(payload.activeJobs))items=payload.activeJobs;
-    if(items===null && payload && payload.data && typeof payload.data==='object')items=cbtLiveItems(payload.data);
+    var items=afaCompletionItems(payload);
     if(items===null)throw new Error('Current task list could not be verified — no completion requests sent');
     var ids=new Set(),refs=new Set();
     items.forEach(function(row){
@@ -10240,7 +10270,7 @@
 
       /* Refresh silently. The old visible "Checking..." state looked like a
          second loader after the user had already chosen an action. */
-      afaRefreshJobData().then(function(payload){
+      (action==='complete'?afaRefreshCompletionData():afaRefreshJobData()).then(function(payload){
         if (_afaStop) {_afaRunning=false;afaSetBtn('▶ Run',false);afaSummary([],true,0,action);return;}
 
         var queue = [];
