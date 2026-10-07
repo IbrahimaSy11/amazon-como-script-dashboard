@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.128
+// @version      23.9.130
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -2879,9 +2879,12 @@
     nowMs = Number(nowMs) || Date.now();
     var cycle = cbtRecCycleInfo(nowMs);
 
-    var jobs = Array.isArray(data)
+    // The main task list is authoritative for staffing; side-section work
+    // and aggregate totals must not request batchers when Tasks (0) is shown.
+    var mainTasks = afaSectionCount(/^Tasks\s*\(\d+\)\s*$/i);
+    var jobs = mainTasks === 0 ? [] : (Array.isArray(data)
       ? data.filter(cbtRecIsBatchingWork)
-      : [];
+      : []);
 
     var openCount = jobs.length;
     if (!openCount) {
@@ -9541,9 +9544,11 @@
     });
   }
 
-  /* All visible dashboard task sources are completion candidates. Eligibility
-     is verified on demand; section/status never substitutes for an enabled button. */
+  /* An explicitly empty main Tasks section blocks Auto Complete, even when
+     aggregate totals or side sections still contain job links. */
   function afaScanCompletionCandidates() {
+    // Anchoring excludes the aggregate "Tasks (14):" status heading.
+    if (afaSectionCount(/^Tasks\s*\(\d+\)\s*$/i) === 0) return [];
     var found = [], seen = Object.create(null), visibility=new WeakMap();
     function visible(node) {
       if(!node)return false;
