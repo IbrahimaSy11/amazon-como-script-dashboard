@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.149
+// @version      23.9.154
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -3181,14 +3181,39 @@
   }
 
   var _statsFetchInFlight = false, _cbtLastStatsFetch=0, _cbtLastStatsStore='';
+  var _cbtStatsRevision=0, _cbtStatsCurrent=null, _cbtStatsInputSignature='';
+  var _cbtStatsPending=null, _cbtStatsScheduled=false;
+  function cbtQueueCurrentStats(data) {
+    _cbtStatsPending={data:data,store:STORE_ID,revision:_cbtStatsRevision};
+    if(_cbtStatsScheduled)return;
+    _cbtStatsScheduled=true;
+    cbtIdle(function(){
+      _cbtStatsScheduled=false;var pending=_cbtStatsPending;_cbtStatsPending=null;
+      if(pending && pending.store===STORE_ID && pending.revision===_cbtStatsRevision)cbtApplyCurrentStats(pending.data);
+    },700);
+  }
+  function cbtApplyCurrentStats(data) {
+    var signature=String(STORE_ID)+'|'+Math.floor(Date.now()/5000)+'|'+data.map(function(d){return cbtTaskSignature(d)+'|'+String(d.operationState || '')+'|'+String(d.jobBatchTarget || d.batchTarget || '');}).join('\n');
+    if(signature===_cbtStatsInputSignature && _cbtStatsCurrent)return;
+    _cbtStatsInputSignature=signature;
+    var jobs=cbtRecUniqueJobs(data),calc=cbtRecCalculate(data,Date.now());
+    var remaining=jobs.reduce(function(s,j){return s+Math.max(0,(Number(j.totalExpectedPackages)||0)-Math.max(0,Number(j.packagesBatched)||0));},0);
+    var actual=calc.activeWorkers || 0,recommended=cbtRecLockedValue(calc),color='gray';
+    if(recommended>0)color=actual>=recommended?'#3fb950':((recommended-actual>=3 || actual/recommended<0.75)?'#f85149':'#e3b341');
+    _cbtStatsCurrent={store:STORE_ID,args:[actual,remaining,recommended,color,cbtRecTooltip(calc,recommended)]};
+    _cbtStatsRevision++;
+    updateStats.apply(null,_cbtStatsCurrent.args);
+    cbtUpdateTaskCounts();
+  }
   function fetchAndUpdate() {
     if (_statsFetchInFlight || document.hidden || !isDashboardView() || !cbtApplicationReady() || !STORE_ID) return;
+    // Read the inexpensive visible counts even when the API is throttled.
+    cbtUpdateTaskCounts();
     if(_cbtLastStatsStore===STORE_ID && Date.now()-_cbtLastStatsFetch<5000)return;
     _cbtLastStatsStore=STORE_ID;_cbtLastStatsFetch=Date.now();
-    cbtUpdateTaskCounts();
     _statsFetchInFlight = true;
     removeFromHeader();
-    var requestStore = STORE_ID;
+    var requestStore = STORE_ID, statsRevision=_cbtStatsRevision;
 
     /* Use the original fetch for this script-owned stats request so our global
        passive JSON interceptor does not parse/process the same payload twice. */
@@ -3200,44 +3225,8 @@
       .then(function (data) {
         if (STORE_ID !== requestStore || !cbtApplicationReady()) return;
         if (!Array.isArray(data)) throw new Error('Unexpected job summary payload');
-
-        var staffingJobs = cbtRecUniqueJobs(data);
-        var inProgress = staffingJobs.filter(function (j) {
-          var st = String(j.operationState || j.state || '').toUpperCase();
-          return st === 'IN_PROGRESS' || st === 'BATCHING';
-        }).length;
-
-        /* Collected/batched counts overlap; subtract batched once per cart,
-           and clamp each cart before summing so one bad row cannot cancel others. */
-        var remaining = staffingJobs.reduce(function (s,j) {
-          return s + Math.max(0, (Number(j.totalExpectedPackages) || 0) -
-            Math.max(0, Number(j.packagesBatched) || 0));
-        }, 0);
-
-        var calc = cbtRecCalculate(data, Date.now());
-        inProgress=calc.activeWorkers || 0;
-        var recommended = cbtRecLockedValue(calc);
-
-        /* Recommended now means MINIMUM staffing target.
-           Having more batchers than Recommended is not an error. */
-        var dotColor = 'gray';
-        if (recommended > 0) {
-          if (inProgress >= recommended) {
-            dotColor = '#3fb950';
-          } else {
-            var deficit = recommended - inProgress;
-            var coverage = recommended > 0 ? inProgress / recommended : 1;
-            dotColor = (deficit >= 3 || coverage < 0.75) ? '#f85149' : '#e3b341';
-          }
-        }
-
-        updateStats(
-          inProgress,
-          remaining,
-          recommended,
-          dotColor,
-          cbtRecTooltip(calc, recommended)
-        );
+        if(statsRevision!==_cbtStatsRevision)return;
+        cbtApplyCurrentStats(data);
         removeFromHeader();
       })
       .catch(function () {})
@@ -3835,6 +3824,11 @@
       try { afaRecordJobs(payload,0); } catch(e) {}
     }); } finally { _cbtIngestSequence = previousSequence; }
     cbtPruneOldLiveStarts();
+    // Reuse full Live data once per existing five-second stats cadence.
+    // Incomplete totals continue to wait for the summary endpoint.
+    if(items.length===0 || (canonical.size>0 && Array.from(canonical.values()).every(function(d){return d.totalExpectedPackages!=null && isFinite(Number(d.totalExpectedPackages));}))) {
+      cbtQueueCurrentStats(Array.from(canonical.values()));
+    }
     requestLiveRender(); // Includes an authoritative empty array/count of zero.
     return true;
   }
@@ -6375,14 +6369,14 @@
           '<div class="cbt-stat-value"><span id="cbt-stat-rec">\u2014</span><span id="cbt-stat-dot"></span></div>' +
         '</div>' +
         '<div class="cbt-stat-card">' +
-          '<div class="cbt-stat-icon">📋</div>' +
-          '<div class="cbt-stat-label">Tasks</div>' +
-          '<div class="cbt-stat-value" id="cbt-stat-tasks">—</div>' +
-        '</div>' +
-        '<div class="cbt-stat-card">' +
           '<div class="cbt-stat-icon">👤</div>' +
           '<div class="cbt-stat-label">Unassigned</div>' +
           '<div class="cbt-stat-value" id="cbt-stat-unassigned">—</div>' +
+        '</div>' +
+        '<div class="cbt-stat-card">' +
+          '<div class="cbt-stat-icon">📋</div>' +
+          '<div class="cbt-stat-label">Tasks</div>' +
+          '<div class="cbt-stat-value" id="cbt-stat-tasks">—</div>' +
         '</div>' +
         '<div class="cbt-stat-card">' +
           '<div class="cbt-stat-icon">\uD83D\uDCE6</div>' +
@@ -6637,6 +6631,7 @@
        freshly mounted Live table receives that cached data immediately. */
     if (activeTab === 'live' && taskCache.size) requestLiveRender();
     // Returning to the dashboard refreshes stats promptly after off-page polling pauses.
+    if(_cbtStatsCurrent && _cbtStatsCurrent.store===STORE_ID)updateStats.apply(null,_cbtStatsCurrent.args);
     fetchAndUpdate();
   }
 
