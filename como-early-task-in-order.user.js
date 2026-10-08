@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.173
+// @version      23.9.176
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -2917,9 +2917,9 @@
     /* Unfinished elapsed spans never define the team's future-cart speed. */
     if (rates.length < 3) return null;
     rates.sort(function(a,b) { return a - b; });
-    /* Lower quartile, not a personal best; never assume faster than the
+    /* Lower-middle historical rate, not a personal best; never assume faster than the
        original 30-package / 10-minute baseline for general staffing. */
-    return Math.min(3, rates[Math.floor((rates.length - 1) * 0.25)]);
+    return Math.min(3, rates[Math.floor((rates.length - 1) * 0.40)]);
   }
 
   var _cbtRecProgress=new Map();
@@ -2991,7 +2991,7 @@
       if (known) duration = remaining / (useRate || 3);
       else { duration = CBT_REC_CART_MINUTES; fallbackCount++; }
       /* Include handoff/finishing overhead and a modest uncertainty margin. */
-      duration = (duration + (active ? 0.75 : 1.5)) * 1.15;
+      duration = (duration + (active ? 0.75 : 1.5)) * 1.05;
       if(isStalled)duration+=5; /* Review allowance, not a team-wide speed penalty. */
       var deadline = cbtRecJobDeadlineMs(job);
       if (!deadline) { deadline = nextRelease; fallbackCount++; }
@@ -4173,7 +4173,7 @@
   var UI_SCALE_MIN  = 0.01, UI_SCALE_MAX = Infinity, UI_SCALE_STEP = 0.1, UI_SCALE_DEFAULT = 0.7;
   var _uiScale = UI_SCALE_DEFAULT;
   var SEARCH_POPUP_BASE_SCALE = 1.4, RUN_POPUP_BASE_SCALE = 1.8;
-  var ASSOCIATE_AUTOCOMPLETE_BASE_SCALE = 1.6;
+  var ASSOCIATE_AUTOCOMPLETE_BASE_SCALE = 1.92;
 
   function clampUiScale(v) {
     v = parseFloat(v);
@@ -4201,9 +4201,9 @@
     return dpr / _cbtBaseDpr;
   }
   function cbtAutomaticUiScale() {
-    // Apply the requested 20% reduction to every shared UI scale while
-    // retaining browser responsiveness and proportional saved preferences.
-    return clampUiScale((.2 + .5 / cbtBrowserZoom()) * .8);
+    // Increase shared interface sizing by 20% from the previous .8 factor.
+    // Time Left uses its independent sizing and is deliberately unaffected.
+    return clampUiScale((.2 + .5 / cbtBrowserZoom()) * .96);
   }
   function cbtResponsivePopupScale() {
     // Window shape must not change UI magnification. Retain the shared zoom
