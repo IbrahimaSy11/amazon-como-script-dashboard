@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.176
+// @version      23.9.159
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -80,7 +80,7 @@
 
     /* ── Time Left column (task sorting) — ORIGINAL, untouched ── */
     .etf-timeleft {
-      font-size: var(--cbt-timeleft-font, 20px); font-weight: 600;
+      font-size: 24px; font-weight: 600;
       font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
       background: none !important; border: none !important;
       padding: 0 !important; border-radius: 0 !important; white-space: nowrap;
@@ -89,7 +89,7 @@
     .etf-timeleft.critical { color: #e3b341; }
     .etf-timeleft.ok       { color: #3fb950; }
     .etf-col-header {
-      font-size: var(--cbt-timeleft-title-font, 18px); font-weight: 400; color: #333;
+      font-size: 18px; font-weight: 400; color: #333;
       font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
       white-space: nowrap; text-align: center; width: 100%; display: block;
     }
@@ -2556,25 +2556,6 @@
     return false;
   }
 
-  var _etfTitleFrame = null;
-  function alignTimeLeftTitle() {
-    if (_etfTitleFrame !== null || document.hidden) return;
-    _etfTitleFrame = requestAnimationFrame(function () {
-      _etfTitleFrame = null;
-      var title = document.querySelector('.job-card-header .etf-col-header');
-      var value = document.querySelector('job-card .etf-timeleft');
-      if (!title || !value || !title.parentElement) return;
-      // Native header and card wrappers have different horizontal gutters.
-      // Align their actual centers without changing the task column widths.
-      var headRect = title.parentElement.getBoundingClientRect();
-      var valueRect = value.getBoundingClientRect();
-      if (!headRect.width || !valueRect.width) return;
-      var offset = (valueRect.left + valueRect.width / 2) - (headRect.left + headRect.width / 2);
-      var transform = 'translateX(' + (Math.round(offset * 100) / 100) + 'px)';
-      if (title.style.transform !== transform) title.style.transform = transform;
-    });
-  }
-
   function injectAllTimers() {
     if (!isDashboardView() || document.hidden) return;
     _cbtSectionMemo = new WeakMap();
@@ -2582,7 +2563,6 @@
     try {
       document.querySelectorAll('div.row.job-card-header, job-card').forEach(refreshTimerHost);
     } finally { _cbtSectionMemo = null; _cbtSiblingMemo = null; }
-    alignTimeLeftTitle();
   }
 
   function tickTimers() {
@@ -2917,9 +2897,9 @@
     /* Unfinished elapsed spans never define the team's future-cart speed. */
     if (rates.length < 3) return null;
     rates.sort(function(a,b) { return a - b; });
-    /* Lower-middle historical rate, not a personal best; never assume faster than the
+    /* Lower quartile, not a personal best; never assume faster than the
        original 30-package / 10-minute baseline for general staffing. */
-    return Math.min(3, rates[Math.floor((rates.length - 1) * 0.40)]);
+    return Math.min(3, rates[Math.floor((rates.length - 1) * 0.25)]);
   }
 
   var _cbtRecProgress=new Map();
@@ -2991,7 +2971,7 @@
       if (known) duration = remaining / (useRate || 3);
       else { duration = CBT_REC_CART_MINUTES; fallbackCount++; }
       /* Include handoff/finishing overhead and a modest uncertainty margin. */
-      duration = (duration + (active ? 0.75 : 1.5)) * 1.05;
+      duration = (duration + (active ? 0.75 : 1.5)) * 1.15;
       if(isStalled)duration+=5; /* Review allowance, not a team-wide speed penalty. */
       var deadline = cbtRecJobDeadlineMs(job);
       if (!deadline) { deadline = nextRelease; fallbackCount++; }
@@ -4173,7 +4153,7 @@
   var UI_SCALE_MIN  = 0.01, UI_SCALE_MAX = Infinity, UI_SCALE_STEP = 0.1, UI_SCALE_DEFAULT = 0.7;
   var _uiScale = UI_SCALE_DEFAULT;
   var SEARCH_POPUP_BASE_SCALE = 1.4, RUN_POPUP_BASE_SCALE = 1.8;
-  var ASSOCIATE_AUTOCOMPLETE_BASE_SCALE = 1.92;
+  var ASSOCIATE_AUTOCOMPLETE_BASE_SCALE = 1.6;
 
   function clampUiScale(v) {
     v = parseFloat(v);
@@ -4201,14 +4181,17 @@
     return dpr / _cbtBaseDpr;
   }
   function cbtAutomaticUiScale() {
-    // Increase shared interface sizing by 20% from the previous .8 factor.
-    // Time Left uses its independent sizing and is deliberately unaffected.
-    return clampUiScale((.2 + .5 / cbtBrowserZoom()) * .96);
+    // Apply the requested 20% reduction to every shared UI scale while
+    // retaining browser responsiveness and proportional saved preferences.
+    return clampUiScale((.2 + .5 / cbtBrowserZoom()) * .8);
   }
   function cbtResponsivePopupScale() {
-    // Window shape must not change UI magnification. Retain the shared zoom
-    // behavior and saved preference without an inverse viewport-area factor.
-    return loadUiScale();
+    // Separate window resizing from browser zoom; multiplying by browser zoom
+    // converts CSS viewport dimensions back to the existing 100%-zoom basis.
+    var zoom=cbtBrowserZoom();
+    var width=Math.max(1,window.innerWidth*zoom), height=Math.max(1,window.innerHeight*zoom);
+    var windowFactor=Math.sqrt((1920*1080)/(width*height));
+    return loadUiScale()*windowFactor;
   }
   function loadUiScale() {
     if (_uiScaleBias == null) {
@@ -4236,16 +4219,6 @@
     _uiScaleLoaded = true;
     try { _uiScale = loadUiScale(); } catch(e) {}
     var z = _uiScale, popupZ=cbtResponsivePopupScale();
-    // Preserve the visible 67% appearance: 20 CSS px * .67 = 13.4px.
-    // Only cancel native magnification; do not add inverse growth on top.
-    var timerZoom=Number(window.outerWidth)/Number(window.innerWidth);
-    if(!isFinite(timerZoom)||timerZoom<=0)timerZoom=cbtBrowserZoom();
-    timerZoom=Math.max(.25,Math.min(5,timerZoom));
-    var timerFont=13.4/timerZoom;
-    document.documentElement.style.setProperty('--cbt-timeleft-font',String(Math.round(timerFont*100)/100)+'px');
-    // Preserve the title's existing 18px appearance at the same 67% anchor.
-    document.documentElement.style.setProperty('--cbt-timeleft-title-font',String(Math.round(18*.67/timerZoom*100)/100)+'px');
-    alignTimeLeftTitle();
     var panel = document.getElementById('cbt-panel');
     if (panel) {
       /* Keep the original proportions, but let A- / A+ resize the header
@@ -4276,7 +4249,7 @@
     ['cbt-afa-card', 'cbt-qr-card'].forEach(function(id){
       var card = document.getElementById(id); if (!card) return;
       var missingQr = card.classList.contains('cbt-afa-missing-qr-card');
-      var popupScale = popupZ * (id === 'cbt-afa-card' ? (missingQr ? 1.3 : RUN_POPUP_BASE_SCALE) : 1.2);
+      var popupScale = popupZ * (id === 'cbt-afa-card' ? (missingQr ? 1.3 : RUN_POPUP_BASE_SCALE) : 1);
       {
         // Fit the complete fixed-layout card, keeping QR squares and proportions.
         var logicalWidth = missingQr ? 980 : (id==='cbt-qr-card' ? 340 : 560);
