@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.182
+// @version      23.9.183
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -28,7 +28,7 @@
   /* A second installation must not stack network hooks and observers. */
   if (document.documentElement.hasAttribute('data-cbt-runtime-v23985')) return;
   document.documentElement.setAttribute('data-cbt-runtime-v23985', '1');
-  document.documentElement.setAttribute('data-cbt-version', '23.9.182');
+  document.documentElement.setAttribute('data-cbt-version', '23.9.183');
 
   var _cbtAuthCache = {route: '', until: 0, value: false};
   function cbtAuthPage() {
@@ -4249,8 +4249,8 @@
   var UI_SCALE_MIN  = 0.01, UI_SCALE_MAX = Infinity, UI_SCALE_STEP = 0.1, UI_SCALE_DEFAULT = 0.7;
   var _uiScale = UI_SCALE_DEFAULT;
   var UI_BASE_VISIBLE_SCALE = 0.70;
-  var SEARCH_POPUP_BASE_SCALE = 1.4, RUN_POPUP_BASE_SCALE = 1.7;
-  var HIGHLIGHT_QR_BASE_SCALE = 1.0;
+  var SEARCH_POPUP_BASE_SCALE = 1.4, RUN_POPUP_BASE_SCALE = 1.5;
+  var HIGHLIGHT_QR_BASE_SCALE = 0.85;
   var ASSOCIATE_AUTOCOMPLETE_BASE_SCALE = 1.6;
 
   function clampUiScale(v) {
