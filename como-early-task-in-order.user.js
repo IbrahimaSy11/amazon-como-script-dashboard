@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.183
+// @version      23.9.185
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -28,7 +28,7 @@
   /* A second installation must not stack network hooks and observers. */
   if (document.documentElement.hasAttribute('data-cbt-runtime-v23985')) return;
   document.documentElement.setAttribute('data-cbt-runtime-v23985', '1');
-  document.documentElement.setAttribute('data-cbt-version', '23.9.183');
+  document.documentElement.setAttribute('data-cbt-version', '23.9.185');
 
   var _cbtAuthCache = {route: '', until: 0, value: false};
   function cbtAuthPage() {
@@ -1472,7 +1472,7 @@
       position: relative;
       display: flex; align-items: center; justify-content: space-between;
       min-height: 28px;
-      padding: 9px 11px; background: #f7f9fb;
+      padding: 7px 11px; background: #f7f9fb;
       border-bottom: 1px solid #e1e7ee;
       cursor: grab;
       user-select: none;
@@ -1484,7 +1484,7 @@
       position: absolute;
       left: 50%; top: 50%;
       transform: translate(-50%, -50%);
-      font-size: 12px; font-weight: 800; color: #0d1b2a;
+      font-size: 15px; font-weight: 800; color: #0d1b2a;
       letter-spacing: .045em; text-transform: uppercase;
       display: flex; align-items: center; gap: 6px;
       white-space: nowrap;
@@ -1548,15 +1548,15 @@
       shape-rendering: crispEdges;
     }
     #cbt-qr-err {
-      display: none; color: var(--cb-red); font-size: 10px; font-weight: 700;
+      display: none; color: var(--cb-red); font-size: 12px; font-weight: 700;
       text-align: center; padding: 0 10px 5px;
     }
     #cbt-qr-input {
       display: block; width: calc(100% - 24px); box-sizing: border-box;
-      margin: 0 12px 14px; padding: 11px 12px;
+      margin: 0 12px 14px; padding: 9px 12px;
       min-height: 44px;
       border: 1px solid #d8e0e8; border-radius: 7px;
-      font-size: 16px; font-weight: 700; letter-spacing: .01em;
+      font-size: 20px; font-weight: 700; letter-spacing: .01em;
       font-family: var(--cb-mono); color: #152536;
       background: #ffffff;
       outline: none; text-align: center;
@@ -3915,6 +3915,7 @@
       });
       deepCaptureNames(payload,0);
       try { afaRecordJobs(payload,0); } catch(e) {}
+      try { p1hNoteLiveTaskChanges(canonical); } catch(eP1hChanges) {}
       try { p1hScheduleVisibleScan(); } catch(eP1h) {}
     }); } finally { _cbtIngestSequence = previousSequence; }
     cbtPruneOldLiveStarts();
@@ -8715,20 +8716,27 @@
      a time, results are cached, and the existing dashboard update flow merely
      schedules a debounced scan. No extra MutationObserver or rapid interval.
   ══════════════════════════════════════ */
-  var P1H_CACHE_MS = 45000;
-  var P1H_RETRY_MS = 12000;
-  var P1H_REQUEST_GAP_MS = 70;
-  var P1H_MAX_REQUESTS = 3;
+  var P1H_POSITIVE_CACHE_MS = 90000;
+  var P1H_NEGATIVE_CACHE_MS = 180000;
+  var P1H_RETRY_MS = 60000;
+  var P1H_REQUEST_GAP_MS = 120;
+  var P1H_MAX_REQUESTS = 1;
+  var P1H_STARTUP_DELAY_MS = 1800;
   var P1H_SESSION_KEY = 'cbt_p1h_positive_v239168';
   var _p1hCache = new Map();       /* job id -> {match, expires} */
   var _p1hRefToId = new Map();     /* visible short reference -> job id */
   var _p1hIdToRef = new Map();     /* job id -> most recent visible reference */
+  var _p1hVisibleCards = new Map(); /* job id -> currently rendered rows */
   var _p1hQueue = [];
   var _p1hQueued = new Set();
   var _p1hInFlight = new Set();
   var _p1hActiveRequests = 0;
   var _p1hScheduleTimer = null;
+  var _p1hPumpTimer = null;
   var _p1hPersistTimer = null;
+  var _p1hLastScanAt = 0;
+  var _p1hStartupReadyAt = Date.now() + P1H_STARTUP_DELAY_MS;
+  var _p1hLiveSignatures = new Map();
 
   function p1hRestorePositiveMatches() {
     try {
@@ -8768,6 +8776,36 @@
   }
 
   p1hRestorePositiveMatches();
+
+  /* Only meaningful task-state changes invalidate a cached location result.
+     Package-progress counters intentionally are not part of this signature;
+     otherwise every scan would restart the job-detail request cycle. */
+  function p1hNoteLiveTaskChanges(canonical) {
+    if (!canonical || typeof canonical.forEach !== 'function') return;
+    var seen = new Set();
+    canonical.forEach(function(data, ref){
+      var id = _afaJobIndex[ref] || _p1hRefToId.get(ref);
+      if (!id || !data) return;
+      id = String(id); seen.add(id);
+      var signature = [
+        data.state || '', data.operationState || '',
+        cbtTaskGeneration(data) || '',
+        data.associateId || data.associate || '',
+        data.driverAssignment || '', data.totalExpectedPackages || ''
+      ].join('|');
+      var previous = _p1hLiveSignatures.get(id);
+      _p1hLiveSignatures.set(id, signature);
+      if (previous !== undefined && previous !== signature) {
+        var cached = _p1hCache.get(id);
+        if (cached) cached.expires = 0;
+      }
+    });
+    if (_p1hLiveSignatures.size > 500) {
+      _p1hLiveSignatures.forEach(function(value, id){
+        if (!seen.has(id) && !_p1hCache.has(id)) _p1hLiveSignatures.delete(id);
+      });
+    }
+  }
 
   function p1hStartsHere(value) {
     return /^P-1-H/i.test(String(value == null ? '' : value).trim());
@@ -8852,9 +8890,18 @@
     }
   }
 
+  function p1hRememberCard(jobId, card) {
+    if (!jobId || !card) return;
+    jobId = String(jobId);
+    var cards = _p1hVisibleCards.get(jobId);
+    if (!cards) { cards = []; _p1hVisibleCards.set(jobId, cards); }
+    if (cards.indexOf(card) === -1) cards.push(card);
+  }
+
   function p1hApplyCachedToCard(card) {
     var identity = p1hCardIdentity(card);
     if (!identity) return;
+    p1hRememberCard(identity.id, card);
     var cached = _p1hCache.get(identity.id);
     if (cached) {
       p1hSetCardHighlight(card, cached.match, identity.id);
@@ -8875,11 +8922,15 @@
 
   function p1hApplyToVisibleJob(jobId, match) {
     if (!isDashboardView()) return;
-    document.querySelectorAll('job-card').forEach(function(card){
-      var identity = p1hCardIdentity(card);
-      if (!identity || identity.id !== jobId) return;
+    var cards = _p1hVisibleCards.get(String(jobId)) || [];
+    var connected = [];
+    cards.forEach(function(card){
+      if (!card || !card.isConnected) return;
+      connected.push(card);
       p1hSetCardHighlight(card, match, jobId);
     });
+    if (connected.length) _p1hVisibleCards.set(String(jobId), connected);
+    else _p1hVisibleCards.delete(String(jobId));
   }
 
   function p1hStartRequest(item) {
@@ -8891,7 +8942,7 @@
     function finishRequest() {
       _p1hInFlight.delete(item.id);
       _p1hActiveRequests = Math.max(0, _p1hActiveRequests - 1);
-      setTimeout(p1hProcessQueue, P1H_REQUEST_GAP_MS);
+      p1hSchedulePump(P1H_REQUEST_GAP_MS);
     }
 
     afaFetchJobInfo(item.id).then(function(payload){
@@ -8901,7 +8952,9 @@
         var matched = payload ? p1hPayloadMatches(payload) : !!(previous && previous.match);
         _p1hCache.set(item.id, {
           match: matched,
-          expires: Date.now() + (payload ? P1H_CACHE_MS : P1H_RETRY_MS)
+          expires: Date.now() + (payload
+            ? (matched ? P1H_POSITIVE_CACHE_MS : P1H_NEGATIVE_CACHE_MS)
+            : P1H_RETRY_MS)
         });
         p1hApplyToVisibleJob(item.id, matched);
         if (matched !== oldMatch) p1hPersistPositiveMatches();
@@ -8925,10 +8978,23 @@
     }
   }
 
+  function p1hSchedulePump(delay) {
+    if (_p1hPumpTimer !== null || !_p1hQueue.length || document.hidden || !isDashboardView()) return;
+    var startupWait = Math.max(0, _p1hStartupReadyAt - Date.now());
+    _p1hPumpTimer = setTimeout(function(){
+      _p1hPumpTimer = null;
+      if (document.hidden || !isDashboardView()) return;
+      cbtIdle(function(){
+        if (!document.hidden && isDashboardView()) p1hProcessQueue();
+      }, 900);
+    }, Math.max(Number(delay) || 0, startupWait));
+  }
+
   function p1hScanVisibleTasks() {
     if (!isDashboardView() || document.hidden) return;
     var now = Date.now();
     var visibleIds = new Set();
+    _p1hVisibleCards = new Map();
     document.querySelectorAll('job-card').forEach(function(card){
       var identity = p1hCardIdentity(card);
       if (!identity) {
@@ -8937,6 +9003,7 @@
         return;
       }
       visibleIds.add(identity.id);
+      p1hRememberCard(identity.id, card);
       var cached = _p1hCache.get(identity.id);
       if (cached) p1hSetCardHighlight(card, cached.match, identity.id);
       else {
@@ -8962,15 +9029,17 @@
         if (!visibleIds.has(id) && entry.expires + 5 * 60000 < now) _p1hCache.delete(id);
       });
     }
-    p1hProcessQueue();
+    p1hSchedulePump(0);
   }
 
   function p1hScheduleVisibleScan() {
     if (_p1hScheduleTimer !== null || !isDashboardView()) return;
+    var scanDelay = Math.max(40, 450 - (Date.now() - _p1hLastScanAt));
     _p1hScheduleTimer = setTimeout(function(){
       _p1hScheduleTimer = null;
+      _p1hLastScanAt = Date.now();
       try { p1hScanVisibleTasks(); } catch(e) {}
-    }, 40);
+    }, scanDelay);
   }
 
 
@@ -11860,7 +11929,10 @@
         STORE_ID = nextStore;
         taskCache.clear();
         _p1hCache.clear(); _p1hRefToId.clear(); _p1hIdToRef.clear();
+        _p1hVisibleCards.clear(); _p1hLiveSignatures.clear();
         _p1hQueue.length = 0; _p1hQueued.clear(); _p1hInFlight.clear();
+        if (_p1hPumpTimer !== null) { clearTimeout(_p1hPumpTimer); _p1hPumpTimer = null; }
+        _p1hStartupReadyAt = Date.now() + P1H_STARTUP_DELAY_MS;
         try { sessionStorage.removeItem(P1H_SESSION_KEY); } catch(eP1hStore) {}
         _cbtTaskSequences.clear(); _cbtSnapshotRefs.clear(); _cbtLastSnapshotSequence = 0;
         _cbtLiveSnapshotReady = false;
@@ -11924,6 +11996,11 @@
     /* Style + visible UI mount happen together AFTER COMO has had a chance to
        paint its own page, so there is no unstyled flash and less competition
        with Angular's initial render. */
+    /* Count the P-1-H background-request grace period from the moment the
+       dashboard features actually start, not from early userscript parsing.
+       Slow COMO startups therefore still receive the full quiet window. */
+    _p1hStartupReadyAt = Math.max(_p1hStartupReadyAt,
+      Date.now() + P1H_STARTUP_DELAY_MS);
     try {
       if (!style.isConnected) document.head.appendChild(style);
     } catch(e) {}
