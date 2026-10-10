@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.181
+// @version      23.9.182
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -28,7 +28,7 @@
   /* A second installation must not stack network hooks and observers. */
   if (document.documentElement.hasAttribute('data-cbt-runtime-v23985')) return;
   document.documentElement.setAttribute('data-cbt-runtime-v23985', '1');
-  document.documentElement.setAttribute('data-cbt-version', '23.9.181');
+  document.documentElement.setAttribute('data-cbt-version', '23.9.182');
 
   var _cbtAuthCache = {route: '', until: 0, value: false};
   function cbtAuthPage() {
@@ -9166,8 +9166,8 @@
 
   /* ── Missing Package QR — READ ONLY ──
      This helper runs only after the user deliberately clicks the red action
-     in ▶ Run. It checks the normal Tasks list PLUS Problem Solve and
-     Partially Batched, then finds the first job whose details contain a
+     in ▶ Run. It checks the normal Tasks list plus Problem Solve, then finds
+     jobs whose details contain a
      package with Status = MISSING or DAMAGED.
 
      QR #1 = the Scannable Id from the SAME MISSING/DAMAGED package row.
@@ -9175,8 +9175,8 @@
      If the job has no CART_... value, only QR #1 is generated.
 
      Discovery checks only alert-looking rows in the main Tasks list for
-     performance, but checks EVERY readable row in Problem Solve and Partially
-     Batched because missing/damaged packages can move there without the same warning
+     performance, but checks EVERY readable row in Problem Solve because
+     missing/damaged packages can move there without the same warning
      marker. No writes, assignment changes, completion calls, or background
      observers are added by this feature. */
 
@@ -9426,9 +9426,8 @@
     for (var i = 0; i < cards.length; i++) {
       var card = cards[i];
 
-      /* job-card rows under Problem Solve / Partially Batched, if a page
-         version renders them that way, are handled by the explicit section
-         scans below so section labeling stays correct. */
+      /* Rows outside the main Tasks section are handled separately below so
+         Problem Solve is included while Partially Batched stays excluded. */
       try {
         if (isInExcludedSection(card)) continue;
       } catch(e) {}
@@ -9472,34 +9471,6 @@
         'Problem Solve',
         10000 + p,
         15
-      ));
-    }
-
-    /* 3) Partially Batched.
-       A completed/partially-finished cart can also land here before staging,
-       so Missing Package QR checks it too. Staged for Pickup remains excluded
-       because the user only requested Problem Solve + Partially Batched. */
-    var partialStops = [
-      /^Staged\s+for\s+Pickup/i,
-      /^Problem\s+Solve/i,
-      /^Unassigned/i,
-      /^Assigned/i,
-      /^Utilization/i,
-      /^Late\s+Batch/i
-    ];
-    var partialAnchors = afaSectionAnchors(
-      /^Partially\s+Batched(\s*\(\d+\))?$/i,
-      partialStops
-    );
-    for (var q = 0; q < partialAnchors.length; q++) {
-      /* Check EVERY readable Partially Batched job. Missing-package rows in
-         this section do not always carry the same red warning triangle because
-         the whole cart itself may simply not be ready yet. */
-      pushCandidate(afaMissingCandidateFromAnchor(
-        partialAnchors[q],
-        'Partially Batched',
-        20000 + q,
-        10
       ));
     }
 
@@ -9773,7 +9744,7 @@
     if (!entries.length) {
       afaShell(
         'Missing Package QR',
-        '<div id="cbt-afa-lead">No MISSING or DAMAGED package was found in Tasks, Problem Solve, or Partially Batched.</div>' +
+        '<div id="cbt-afa-lead">No MISSING or DAMAGED package was found in Tasks or Problem Solve.</div>' +
         '<div class="cbt-afa-note">Nothing was changed. This action is read-only.</div>',
         '<button class="cbt-afa-act" data-afa="back">Back</button>'
       );
@@ -9936,7 +9907,7 @@
       'Missing Package QR',
       '<div id="cbt-afa-lead">Finding MISSING / DAMAGED packages…</div>' +
       '<div id="cbt-afa-bar"><div id="cbt-afa-fill"></div></div>' +
-      '<div id="cbt-afa-live" style="color:var(--cb-text2);font-size:12px;">Checking Tasks alerts + all Problem Solve + all Partially Batched.</div>',
+      '<div id="cbt-afa-live" style="color:var(--cb-text2);font-size:12px;">Checking Tasks alerts + all Problem Solve.</div>',
       '<button class="cbt-afa-act" data-afa="close">Cancel</button>'
     );
 
@@ -10522,8 +10493,8 @@
         '</button>' +
         '<span class="cbt-afa-action-copy" id="cbt-afa-missing-copy">' +
           (missingCandidates.length
-            ? 'Checking warning rows in Tasks plus every Problem Solve and Partially Batched row. The button enables if a real MISSING or DAMAGED package is found.'
-            : 'No readable task IDs are available in Tasks, Problem Solve, or Partially Batched right now. This button is disabled.') +
+            ? 'Checking warning rows in Tasks plus every Problem Solve row. The button enables if a real MISSING or DAMAGED package is found.'
+            : 'No readable task IDs are available in Tasks or Problem Solve right now. This button is disabled.') +
         '</span>' +
       '</div>';
 
@@ -10607,7 +10578,7 @@
       if (finished) {
         btn.innerHTML = '<span class="cbt-afa-missing-triangle">▲</span>No Missing/Damaged';
         copy.textContent =
-          'No MISSING or DAMAGED package was found in Tasks, Problem Solve, or Partially Batched. This button is disabled.';
+          'No MISSING or DAMAGED package was found in Tasks or Problem Solve. This button is disabled.';
       }
       cbtScheduleUiScale();
     }
