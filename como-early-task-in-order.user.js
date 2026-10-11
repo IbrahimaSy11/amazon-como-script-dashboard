@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         COMO - Early Task In Order With Timer & Batcher Dashboard
 // @namespace    https://github.com/uny2-ops
-// @version      23.9.185
+// @version      23.9.186
 // @description  Sorts tasks in order by earliest Batch Target + Time Left column + Batcher Timer Dashboard
 // @author       Ibrahim
 // @match        https://como-operations-dashboard-iad.iad.proxy.amazon.com/*
@@ -28,7 +28,7 @@
   /* A second installation must not stack network hooks and observers. */
   if (document.documentElement.hasAttribute('data-cbt-runtime-v23985')) return;
   document.documentElement.setAttribute('data-cbt-runtime-v23985', '1');
-  document.documentElement.setAttribute('data-cbt-version', '23.9.185');
+  document.documentElement.setAttribute('data-cbt-version', '23.9.186');
 
   var _cbtAuthCache = {route: '', until: 0, value: false};
   function cbtAuthPage() {
@@ -91,7 +91,13 @@
     .etf-col-header {
       font-size: inherit; font-weight: 400; color: #333;
       font-family: "Helvetica Neue", Helvetica, Arial, sans-serif;
-      white-space: nowrap; text-align: center; width: 100%; display: block;
+      white-space: nowrap; text-align: center; width: 100%;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .etf-col-title-wrap { position: relative; display: inline-block; }
+    .etf-col-icon {
+      position: absolute; right: calc(100% + 0.22em); top: 50%;
+      transform: translateY(-50%); line-height: 1;
     }
     .etf-col-cell { display: flex; align-items: center; justify-content: center; text-align: center; }
 
@@ -2565,8 +2571,8 @@
         btCol.parentNode.insertBefore(existingCol, btCol.nextSibling);
       }
       if (isHeader) {
-        if (!existingCol.querySelector('.etf-col-header')) {
-          existingCol.innerHTML = '<span class="etf-col-header">\u23F1 Time Left</span>';
+        if (!existingCol.querySelector('.etf-col-title-wrap')) {
+          existingCol.innerHTML = '<span class="etf-col-header"><span class="etf-col-title-wrap"><span class="etf-col-icon" aria-hidden="true">\u23F1</span>Time Left</span></span>';
         }
         syncTimeLeftTypography(btCol, existingCol, true);
         return;
@@ -2591,7 +2597,7 @@
     newCol.className = 'col-lg-2 etf-col-cell';
     newCol.style.cssText = 'padding-left:5px;padding-right:5px;';
     if (isHeader) {
-      newCol.innerHTML = '<span class="etf-col-header">\u23F1 Time Left</span>';
+      newCol.innerHTML = '<span class="etf-col-header"><span class="etf-col-title-wrap"><span class="etf-col-icon" aria-hidden="true">\u23F1</span>Time Left</span></span>';
     } else {
       var btRaw = btCol.textContent.replace(/[^\d:APMapm\s]/g, '').trim();
       var m2 = btRaw.match(/\d{1,2}:\d{2}\s*(?:AM|PM)/i);
